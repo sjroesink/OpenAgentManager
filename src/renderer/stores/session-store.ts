@@ -21,6 +21,7 @@ interface SessionState {
     connectionId: string,
     workingDir: string,
     useWorktree: boolean,
+    workspaceId: string,
     title?: string
   ) => Promise<SessionInfo>
   setActiveSession: (sessionId: string | null) => void
@@ -32,6 +33,7 @@ interface SessionState {
 
   // Helpers
   getActiveSession: () => SessionInfo | undefined
+  getSessionsByWorkspace: (workspaceId: string) => SessionInfo[]
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -39,11 +41,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: null,
   pendingPermissions: [],
 
-  createSession: async (connectionId, workingDir, useWorktree, title) => {
+  createSession: async (connectionId, workingDir, useWorktree, workspaceId, title) => {
     const session = await window.api.invoke('session:create', {
       connectionId,
       workingDir,
       useWorktree,
+      workspaceId,
       title
     })
     set((state) => ({
@@ -55,6 +58,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setActiveSession: (sessionId) => {
     set({ activeSessionId: sessionId })
+
+    // Bridge: sync project-store with the active session's workspace
+    if (sessionId) {
+      const session = get().sessions.find((s) => s.sessionId === sessionId)
+      if (session) {
+        const { useWorkspaceStore } = require('./workspace-store')
+        const { useProjectStore } = require('./project-store')
+        const workspace = useWorkspaceStore.getState().workspaces.find(
+          (w: { id: string }) => w.id === session.workspaceId
+        )
+        if (workspace) {
+          useProjectStore.getState().openProject(workspace.path)
+          useWorkspaceStore.getState().touchWorkspace(workspace.id)
+        }
+      }
+    }
   },
 
   sendPrompt: async (text) => {
@@ -79,6 +98,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     try {
       await window.api.invoke('session:prompt', { sessionId: activeSessionId, text })
+
+      // Prompt completed successfully — mark session as active and finalize streaming message
+      set((state) => ({
+        sessions: state.sessions.map((s) => {
+          if (s.sessionId !== activeSessionId) return s
+          const messages = s.messages.map((m) =>
+            m.isStreaming ? { ...m, isStreaming: false } : m
+          )
+          return { ...s, status: 'active' as const, messages }
+        })
+      }))
     } catch (error) {
       set((state) => ({
         sessions: state.sessions.map((s) =>
@@ -123,6 +153,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   getActiveSession: () => {
     const { sessions, activeSessionId } = get()
     return sessions.find((s) => s.sessionId === activeSessionId)
+  },
+
+  getSessionsByWorkspace: (workspaceId) => {
+    return get().sessions.filter((s) => s.workspaceId === workspaceId)
   }
 }))
 

@@ -347,8 +347,14 @@ export class AcpClient {
 
   private handleSessionUpdate(params: Record<string, unknown>): void {
     const sessionId = params.sessionId as string
-    const sessionUpdate = params.sessionUpdate as Record<string, unknown> | undefined
-    const update = sessionUpdate || params
+    // ACP session/update notification structure:
+    // { sessionId, update: { sessionUpdate: "agent_message_chunk", content: {...}, ... } }
+    const update = params.update as Record<string, unknown> | undefined
+
+    if (!update) {
+      logger.warn(`Session update missing 'update' field: ${JSON.stringify(params)}`)
+      return
+    }
 
     // Transform to our SessionUpdate format
     const event: SessionUpdateEvent = {
@@ -363,53 +369,62 @@ export class AcpClient {
   }
 
   private transformSessionUpdate(raw: Record<string, unknown>): SessionUpdateEvent['update'] {
-    const type = raw.type as string
+    // ACP uses 'sessionUpdate' as the discriminator field, not 'type'
+    const updateType = raw.sessionUpdate as string
 
-    switch (type) {
-      case 'agent_message_chunk':
+    switch (updateType) {
+      case 'agent_message_chunk': {
+        const content = raw.content as Record<string, unknown> | undefined
         return {
           type: 'text_chunk',
           messageId: (raw.messageId as string) || 'current',
-          text: ((raw.content as Record<string, unknown>)?.text as string) || (raw.text as string) || ''
+          text: (content?.text as string) || ''
         }
+      }
 
-      case 'agent_thought_chunk':
+      case 'agent_thought_chunk': {
+        const content = raw.content as Record<string, unknown> | undefined
         return {
           type: 'thinking_chunk',
           messageId: (raw.messageId as string) || 'current',
-          text: ((raw.content as Record<string, unknown>)?.text as string) || (raw.text as string) || ''
+          text: (content?.text as string) || ''
         }
+      }
 
-      case 'tool_call':
+      case 'tool_call': {
         return {
           type: 'tool_call_start',
           messageId: (raw.messageId as string) || 'current',
           toolCall: {
-            toolCallId: (raw.toolCall as Record<string, unknown>)?.id as string || uuid(),
-            title: (raw.toolCall as Record<string, unknown>)?.name as string || 'Tool Call',
-            name: (raw.toolCall as Record<string, unknown>)?.name as string || 'unknown',
-            status: 'running',
-            input: JSON.stringify((raw.toolCall as Record<string, unknown>)?.input)
+            toolCallId: (raw.toolCallId as string) || uuid(),
+            title: (raw.title as string) || 'Tool Call',
+            name: (raw.title as string) || 'unknown',
+            status: (raw.status as string) || 'running',
+            input: raw.input ? JSON.stringify(raw.input) : undefined
           }
         }
+      }
 
-      case 'tool_call_status_update':
+      case 'tool_call_update': {
         return {
           type: 'tool_call_update',
-          toolCallId: (raw.toolUseId as string) || (raw.toolCallId as string) || '',
+          toolCallId: (raw.toolCallId as string) || '',
           status: (raw.status as 'completed' | 'failed') || 'completed',
           output: raw.output as string
         }
+      }
 
-      case 'agent_response_complete':
+      case 'plan':
+      case 'user_message_chunk':
+        // These are informational updates, pass as text chunks
         return {
-          type: 'message_complete',
-          messageId: (raw.messageId as string) || 'current',
-          stopReason: (raw.stopReason as 'end_turn') || 'end_turn'
+          type: 'text_chunk',
+          messageId: 'current',
+          text: ''
         }
 
       default:
-        // Pass through as text chunk for unrecognized update types
+        logger.debug(`Unhandled session update type: ${updateType}`)
         return {
           type: 'text_chunk',
           messageId: 'current',
