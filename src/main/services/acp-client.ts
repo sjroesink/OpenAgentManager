@@ -237,7 +237,7 @@ export class AcpClient {
       this.pendingRequests.set(id, { resolve, reject })
 
       const json = JSON.stringify(request) + '\n'
-      logger.debug(`[${this.agentId}:send] ${method} (id=${id})`)
+      logger.info(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
   }
@@ -284,13 +284,16 @@ export class AcpClient {
   }
 
   private handleMessage(msg: JsonRpcResponse): void {
+    // Log all incoming messages
+    logger.info(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
+
     // Response to our request
     if (msg.id !== undefined && !msg.method) {
       const pending = this.pendingRequests.get(msg.id)
       if (pending) {
         this.pendingRequests.delete(msg.id)
         if (msg.error) {
-          pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}`))
+          pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}${msg.error.data ? ' | data: ' + JSON.stringify(msg.error.data) : ''}`))
         } else {
           pending.resolve(msg.result)
         }
