@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenAgentManager — Agent-agnostic desktop coding environment</title>
+  <meta name="description" content="An open-source desktop environment for AI coding agents. Works with Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, and any ACP-compatible agent.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --surface-0: #0f0f0f;
+      --surface-1: #1a1a1a;
+      --surface-2: #242424;
+      --surface-3: #2e2e2e;
+      --border: #333333;
+      --border-subtle: #2a2a2a;
+      --text-primary: #e5e5e5;
+      --text-secondary: #a0a0a0;
+      --text-muted: #666666;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --accent-text: #ffffff;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--surface-0);
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent-hover); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    code, pre {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(15, 15, 15, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: white;
+    }
+
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .header-links a {
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .header-links a:hover {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn:hover { text-decoration: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: var(--surface-2);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-3);
+      border-color: var(--text-muted);
+    }
+
+    .btn-sm {
+      padding: 6px 14px;
+      font-size: 13px;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 80px 0 60px;
+    }
+
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 18px;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 32px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Install section */
+    .install-section {
+      padding: 40px 0 60px;
+    }
+
+    .install-section h2 {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .install-subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      font-size: 15px;
+    }
+
+    .os-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-bottom: 24px;
+    }
+
+    .os-tab {
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
+    }
+
+    .os-tab:hover {
+      color: var(--text-primary);
+      background: var(--surface-1);
+    }
+
+    .os-tab.active {
+      background: var(--surface-2);
+      color: var(--text-primary);
+      border-color: var(--border);
+    }
+
+    .install-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .install-panel { display: none; }
+    .install-panel.active { display: block; }
+
+    .install-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .install-cmd {
+      position: relative;
+      background: var(--surface-0);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .install-cmd code {
+      font-size: 13px;
+      color: var(--success);
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s ease;
+    }
+
+    .copy-btn:hover {
+      background: var(--surface-3);
+      color: var(--text-primary);
+    }
+
+    .install-or {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      margin: 16px 0;
+    }
+
+    .install-download {
+      text-align: center;
+    }
+
+    .install-note {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 12px;
+      text-align: center;
+    }
+
+    /* Features */
+    .features {
+      padding: 60px 0;
+    }
+
+    .features h2 {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .features-subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+      font-size: 15px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 24px;
+      transition: border-color 0.15s ease;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--surface-2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+
+    .feature-card h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .feature-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Screenshots */
+    .screenshots {
+      padding: 60px 0;
+    }
+
+    .screenshots h2 {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .screenshots-subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      font-size: 15px;
+    }
+
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 16px;
+    }
+
+    .screenshot-placeholder {
+      background: var(--surface-1);
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      aspect-ratio: 16/10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Donation */
+    .donate {
+      padding: 60px 0;
+    }
+
+    .donate-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 40px;
+      text-align: center;
+      max-width: 550px;
+      margin: 0 auto;
+    }
+
+    .donate-card h2 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .donate-card p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+
+    .donate-emoji {
+      font-size: 36px;
+      margin-bottom: 16px;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 32px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    footer a {
+      color: var(--text-secondary);
+    }
+
+    footer .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 12px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .hero p { font-size: 16px; }
+      .install-card { padding: 20px; }
+      .screenshots-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="container">
+      <div class="logo">
+        <div class="logo-icon">O</div>
+        OpenAgentManager
+      </div>
+      <div class="header-links">
+        <a href="#features">Features</a>
+        <a href="#install">Download</a>
+        <a href="https://github.com/sjroesink/OpenAgentManager" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <h1>The open desktop environment<br>for <span>AI coding agents</span></h1>
+      <p>Connect to any ACP-compatible agent &mdash; Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, and more. You pick the agent, not the app.</p>
+      <div class="hero-actions">
+        <a href="#install" class="btn btn-primary">Download for free</a>
+        <a href="https://github.com/sjroesink/OpenAgentManager" class="btn btn-secondary" target="_blank">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="install-section" id="install">
+    <div class="container">
+      <h2>Install in one line</h2>
+      <p class="install-subtitle">Paste in your terminal and you're ready to go.</p>
+
+      <div class="os-tabs">
+        <button class="os-tab" data-os="windows" onclick="showOS('windows')">Windows</button>
+        <button class="os-tab" data-os="macos" onclick="showOS('macos')">macOS</button>
+        <button class="os-tab" data-os="linux" onclick="showOS('linux')">Linux</button>
+      </div>
+
+      <div class="install-card">
+
+        <!-- Windows -->
+        <div class="install-panel" data-os="windows">
+          <div class="install-label">PowerShell</div>
+          <div class="install-cmd">
+            <code>irm https://sjroesink.github.io/OpenAgentManager/install.ps1 | iex</code>
+            <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+          </div>
+          <div class="install-or">or download directly</div>
+          <div class="install-download">
+            <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest/download/OpenAgentManager-win-x64.exe" class="btn btn-secondary btn-sm">Download .exe (x64)</a>
+          </div>
+        </div>
+
+        <!-- macOS -->
+        <div class="install-panel" data-os="macos">
+          <div class="install-label">Terminal</div>
+          <div class="install-cmd">
+            <code>curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | sh</code>
+            <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+          </div>
+          <div class="install-or">or download directly</div>
+          <div class="install-download">
+            <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest/download/OpenAgentManager-mac-arm64.dmg" class="btn btn-secondary btn-sm" style="margin-right:8px">Download .dmg (Apple Silicon)</a>
+            <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest/download/OpenAgentManager-mac-x64.dmg" class="btn btn-secondary btn-sm">Download .dmg (Intel)</a>
+          </div>
+        </div>
+
+        <!-- Linux -->
+        <div class="install-panel" data-os="linux">
+          <div class="install-label">Terminal</div>
+          <div class="install-cmd">
+            <code>curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | sh</code>
+            <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+          </div>
+          <div class="install-or">or download directly</div>
+          <div class="install-download">
+            <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest/download/OpenAgentManager-linux-x64.AppImage" class="btn btn-secondary btn-sm">Download .AppImage (x64)</a>
+          </div>
+          <p class="install-note">The install script places the AppImage in ~/.local/bin</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features" id="features">
+    <div class="container">
+      <h2>Features</h2>
+      <p class="features-subtitle">Everything you need to work with AI coding agents, in one app.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#129302;</div>
+          <h3>Agent Agnostic</h3>
+          <p>Works with any ACP-compatible agent &mdash; Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, Junie, Kimi, and more. You're never locked in.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#128270;</div>
+          <h3>ACP Registry</h3>
+          <p>Browse, search, and install agents from the central ACP agent registry. One click to add a new agent to your workflow.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#127795;</div>
+          <h3>Git Worktree Isolation</h3>
+          <p>Optionally isolate each thread on its own branch with git worktrees. Parallel tasks never interfere with each other.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#9889;</div>
+          <h3>Streaming Responses</h3>
+          <p>See text, thinking blocks, and tool calls in real time as the agent works. No waiting for the full response.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#128209;</div>
+          <h3>Diff Review &amp; Commit</h3>
+          <p>See exactly what files the agent changed with inline diffs. Stage and commit changes right from the app.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#128274;</div>
+          <h3>Permission System</h3>
+          <p>Approve or deny agent actions like file writes and command execution via UI dialogs. You stay in control.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#128187;</div>
+          <h3>Built-in Terminal</h3>
+          <p>Per-session terminal for testing agent changes immediately. No need to switch windows.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">&#128736;</div>
+          <h3>Multi-Workspace Support</h3>
+          <p>Organize your work across multiple workspaces. Run different agents on different projects simultaneously.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screenshots -->
+  <section class="screenshots" id="screenshots">
+    <div class="container">
+      <h2>See it in action</h2>
+      <p class="screenshots-subtitle">A glimpse of OpenAgentManager in use.</p>
+
+      <div class="screenshots-grid">
+        <div class="screenshot-placeholder">
+          <!-- Replace with: <img src="screenshots/main-view.png" alt="Main view"> -->
+          Screenshot coming soon
+        </div>
+        <div class="screenshot-placeholder">
+          <!-- Replace with: <img src="screenshots/agent-browser.png" alt="Agent browser"> -->
+          Screenshot coming soon
+        </div>
+        <div class="screenshot-placeholder">
+          <!-- Replace with: <img src="screenshots/diff-review.png" alt="Diff review"> -->
+          Screenshot coming soon
+        </div>
+        <div class="screenshot-placeholder">
+          <!-- Replace with: <img src="screenshots/terminal.png" alt="Terminal"> -->
+          Screenshot coming soon
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Donate -->
+  <section class="donate" id="donate">
+    <div class="container">
+      <div class="donate-card">
+        <div class="donate-emoji">&#127866;</div>
+        <h2>Buy me a drink</h2>
+        <p>Enjoying OpenAgentManager? If this project saved you time or made your workflow better, consider sponsoring on GitHub. Totally optional, always appreciated.</p>
+        <a href="https://github.com/sponsors/sjroesink" class="btn btn-primary" target="_blank">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.565 20.565 0 008 13.393a20.561 20.561 0 003.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.75.75 0 01-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5z"/></svg>
+          Sponsor on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sjroesink/OpenAgentManager">GitHub</a>
+        <a href="https://agentclientprotocol.com/">ACP Protocol</a>
+        <a href="https://github.com/sjroesink/OpenAgentManager/blob/main/LICENSE">MIT License</a>
+      </div>
+      <p>OpenAgentManager is free and open source.</p>
+    </div>
+  </footer>
+
+  <script>
+    function showOS(os) {
+      document.querySelectorAll('.os-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.install-panel').forEach(p => p.classList.remove('active'));
+      document.querySelector(`.os-tab[data-os="${os}"]`).classList.add('active');
+      document.querySelector(`.install-panel[data-os="${os}"]`).classList.add('active');
+    }
+
+    function copyCmd(btn) {
+      const code = btn.parentElement.querySelector('code').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    }
+
+    // Auto-detect OS
+    (function() {
+      const ua = navigator.userAgent.toLowerCase();
+      let os = 'linux';
+      if (ua.includes('win')) os = 'windows';
+      else if (ua.includes('mac')) os = 'macos';
+      showOS(os);
+    })();
+  </script>
+
+</body>
+</html>

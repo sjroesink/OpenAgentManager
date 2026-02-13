@@ -12,7 +12,11 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "lint": "eslint . --ext .ts,.tsx",
     "postinstall": "electron-builder install-app-deps",
-    "install:node-pty": "npm install node-pty && electron-builder install-app-deps"
+    "install:node-pty": "npm install node-pty && electron-builder install-app-deps",
+    "build:win": "electron-vite build && electron-builder --win",
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.14.1",
