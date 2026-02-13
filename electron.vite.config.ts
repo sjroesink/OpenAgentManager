@@ -1,0 +1,38 @@
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from 'tailwindcss'
+import autoprefixer from 'autoprefixer'
+import { resolve } from 'path'
+
+export default defineConfig({
+  main: {
+    plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        '@shared': resolve('src/shared')
+      }
+    }
+  },
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        '@shared': resolve('src/shared')
+      }
+    }
+  },
+  renderer: {
+    resolve: {
+      alias: {
+        '@shared': resolve('src/shared'),
+        '@renderer': resolve('src/renderer')
+      }
+    },
+    plugins: [react()],
+    css: {
+      postcss: {
+        plugins: [tailwindcss, autoprefixer]
+      }
+    }
+  }
+})

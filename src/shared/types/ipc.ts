@@ -1,0 +1,115 @@
+// ============================================================
+// IPC Channel Definitions & Payloads
+// Typed contract between main and renderer processes
+// ============================================================
+
+import type { AcpRegistry, InstalledAgent, AgentConnection } from './agent'
+import type {
+  SessionInfo,
+  CreateSessionRequest,
+  PromptResult,
+  SessionUpdateEvent,
+  PermissionRequestEvent,
+  PermissionResponse
+} from './session'
+import type { ProjectInfo, FileTreeNode, FileChange, DiffResult } from './project'
+import type { GitStatus, WorktreeInfo, CommitResult } from './git'
+import type { AppSettings } from './settings'
+
+// ============================================================
+// Request/Response channels (ipcMain.handle / ipcRenderer.invoke)
+// ============================================================
+export interface IpcChannels {
+  // --- Registry ---
+  'registry:fetch': { request: void; response: AcpRegistry }
+  'registry:get-cached': { request: void; response: AcpRegistry | null }
+
+  // --- Agent Management ---
+  'agent:install': { request: { agentId: string }; response: InstalledAgent }
+  'agent:uninstall': { request: { agentId: string }; response: void }
+  'agent:list-installed': { request: void; response: InstalledAgent[] }
+  'agent:launch': { request: { agentId: string; projectPath: string }; response: AgentConnection }
+  'agent:terminate': { request: { connectionId: string }; response: void }
+  'agent:authenticate': {
+    request: { connectionId: string; method: string; credentials?: Record<string, string> }
+    response: void
+  }
+  'agent:list-connections': { request: void; response: AgentConnection[] }
+
+  // --- Sessions ---
+  'session:create': { request: CreateSessionRequest; response: SessionInfo }
+  'session:prompt': { request: { sessionId: string; text: string }; response: PromptResult }
+  'session:cancel': { request: { sessionId: string }; response: void }
+  'session:list': { request: void; response: SessionInfo[] }
+  'session:permission-response': { request: PermissionResponse; response: void }
+
+  // --- Files ---
+  'file:read-tree': { request: { dirPath: string; depth?: number }; response: FileTreeNode[] }
+  'file:read': { request: { filePath: string }; response: string }
+  'file:get-changes': { request: { workingDir: string }; response: FileChange[] }
+
+  // --- Project ---
+  'project:open': { request: { path: string }; response: ProjectInfo }
+  'project:select-directory': { request: void; response: string | null }
+
+  // --- Git ---
+  'git:status': { request: { projectPath: string }; response: GitStatus }
+  'git:create-worktree': {
+    request: { basePath: string; sessionId: string; baseBranch?: string }
+    response: WorktreeInfo
+  }
+  'git:remove-worktree': { request: { projectPath: string; worktreePath: string }; response: void }
+  'git:list-worktrees': { request: { projectPath: string }; response: WorktreeInfo[] }
+  'git:commit': {
+    request: { worktreePath: string; message: string; files: string[] }
+    response: CommitResult
+  }
+  'git:diff': { request: { worktreePath: string; filePath?: string }; response: DiffResult }
+
+  // --- Terminal ---
+  'terminal:create': { request: { cwd: string; sessionId: string }; response: string }
+  'terminal:write': { request: { terminalId: string; data: string }; response: void }
+  'terminal:resize': { request: { terminalId: string; cols: number; rows: number }; response: void }
+  'terminal:kill': { request: { terminalId: string }; response: void }
+
+  // --- Settings ---
+  'settings:get': { request: void; response: AppSettings }
+  'settings:set': { request: Partial<AppSettings>; response: void }
+  'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
+}
+
+// ============================================================
+// Event channels (main -> renderer, streaming)
+// ============================================================
+export interface IpcEvents {
+  'session:update': SessionUpdateEvent
+  'session:permission-request': PermissionRequestEvent
+  'terminal:data': { terminalId: string; data: string }
+  'agent:status-change': { connectionId: string; status: AgentConnection['status']; error?: string }
+}
+
+// ============================================================
+// Type helper for the preload API
+// ============================================================
+export interface ElectronAPI {
+  invoke<T extends keyof IpcChannels>(
+    channel: T,
+    data: IpcChannels[T]['request']
+  ): Promise<IpcChannels[T]['response']>
+
+  on<T extends keyof IpcEvents>(
+    channel: T,
+    callback: (data: IpcEvents[T]) => void
+  ): () => void
+
+  off<T extends keyof IpcEvents>(
+    channel: T,
+    callback: (data: IpcEvents[T]) => void
+  ): void
+}
+
+declare global {
+  interface Window {
+    api: ElectronAPI
+  }
+}

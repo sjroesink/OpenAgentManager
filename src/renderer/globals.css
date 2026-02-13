@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-surface-0: #0f0f0f;
+  --color-surface-1: #1a1a1a;
+  --color-surface-2: #242424;
+  --color-surface-3: #2e2e2e;
+  --color-border: #333333;
+  --color-border-subtle: #2a2a2a;
+  --color-text-primary: #e5e5e5;
+  --color-text-secondary: #a0a0a0;
+  --color-text-muted: #666666;
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-accent-text: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Title bar drag region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Markdown code blocks */
+.markdown-body pre {
+  background: var(--color-surface-2);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 13px;
+}
+
+.markdown-body code {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 13px;
+}
+
+.markdown-body p code {
+  background: var(--color-surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Transitions */
+.panel-transition {
+  transition: width 0.2s ease, height 0.2s ease;
+}

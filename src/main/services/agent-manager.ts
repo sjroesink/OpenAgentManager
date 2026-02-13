@@ -1,0 +1,335 @@
+import { BrowserWindow } from 'electron'
+import type {
+  AcpRegistryAgent,
+  InstalledAgent,
+  AgentConnection,
+  AgentStatus,
+  BinaryDistribution
+} from '@shared/types/agent'
+import { registryService } from './registry-service'
+import { settingsService } from './settings-service'
+import { downloadService } from './download-service'
+import { AcpClient } from './acp-client'
+import { getCurrentPlatformTarget, getNpxCommand, getUvxCommand } from '../util/platform'
+import { logger } from '../util/logger'
+
+/**
+ * AgentManager handles the full agent lifecycle:
+ * - Discovery (via registry)
+ * - Installation (npx record / binary download)
+ * - Launching (spawn child process)
+ * - Connection (ACP protocol init)
+ * - Termination
+ */
+export class AgentManagerService {
+  private installed = new Map<string, InstalledAgent>()
+  private connections = new Map<string, AcpClient>()
+  private mainWindow: BrowserWindow | null = null
+
+  constructor() {
+    this.loadInstalled()
+  }
+
+  setMainWindow(window: BrowserWindow): void {
+    this.mainWindow = window
+    // Update existing connections
+    for (const client of this.connections.values()) {
+      client.setMainWindow(window)
+    }
+  }
+
+  // ============================
+  // Installation
+  // ============================
+
+  async install(agentId: string): Promise<InstalledAgent> {
+    const registry = await registryService.fetch()
+    const agent = registry.agents.find((a) => a.id === agentId)
+    if (!agent) {
+      throw new Error(`Agent not found in registry: ${agentId}`)
+    }
+
+    let installed: InstalledAgent
+
+    if (agent.distribution.npx) {
+      installed = this.installNpx(agent)
+    } else if (agent.distribution.uvx) {
+      installed = this.installUvx(agent)
+    } else if (agent.distribution.binary) {
+      installed = await this.installBinary(agent)
+    } else {
+      throw new Error(`No supported distribution method for agent: ${agentId}`)
+    }
+
+    this.installed.set(agentId, installed)
+    this.saveInstalled()
+
+    logger.info(`Agent installed: ${installed.name} (${installed.distributionType})`)
+    return installed
+  }
+
+  private installNpx(agent: AcpRegistryAgent): InstalledAgent {
+    return {
+      registryId: agent.id,
+      name: agent.name,
+      version: agent.version,
+      description: agent.description,
+      installedAt: new Date().toISOString(),
+      distributionType: 'npx',
+      npxPackage: agent.distribution.npx!.package,
+      icon: agent.icon,
+      authors: agent.authors,
+      license: agent.license
+    }
+  }
+
+  private installUvx(agent: AcpRegistryAgent): InstalledAgent {
+    return {
+      registryId: agent.id,
+      name: agent.name,
+      version: agent.version,
+      description: agent.description,
+      installedAt: new Date().toISOString(),
+      distributionType: 'uvx',
+      uvxPackage: agent.distribution.uvx!.package,
+      icon: agent.icon,
+      authors: agent.authors,
+      license: agent.license
+    }
+  }
+
+  private async installBinary(agent: AcpRegistryAgent): Promise<InstalledAgent> {
+    const platform = getCurrentPlatformTarget()
+    if (!platform) {
+      throw new Error('Unsupported platform for binary agent installation')
+    }
+
+    const binaryDist = agent.distribution.binary as BinaryDistribution
+    const target = binaryDist[platform]
+    if (!target) {
+      throw new Error(`No binary available for platform: ${platform}`)
+    }
+
+    const executablePath = await downloadService.downloadAndExtract(
+      agent.id,
+      agent.version,
+      target
+    )
+
+    return {
+      registryId: agent.id,
+      name: agent.name,
+      version: agent.version,
+      description: agent.description,
+      installedAt: new Date().toISOString(),
+      distributionType: 'binary',
+      executablePath,
+      icon: agent.icon,
+      authors: agent.authors,
+      license: agent.license
+    }
+  }
+
+  uninstall(agentId: string): void {
+    // Terminate any active connections first
+    for (const [connId, client] of this.connections) {
+      if (client.agentId === agentId) {
+        client.terminate()
+        this.connections.delete(connId)
+      }
+    }
+
+    this.installed.delete(agentId)
+    this.saveInstalled()
+    logger.info(`Agent uninstalled: ${agentId}`)
+  }
+
+  listInstalled(): InstalledAgent[] {
+    return Array.from(this.installed.values())
+  }
+
+  // ============================
+  // Launching & Connection
+  // ============================
+
+  async launch(agentId: string, projectPath: string): Promise<AgentConnection> {
+    const agent = this.installed.get(agentId)
+    if (!agent) {
+      throw new Error(`Agent not installed: ${agentId}`)
+    }
+
+    const registry = registryService.getCached()
+    const registryAgent = registry?.agents.find((a) => a.id === agentId)
+
+    // Resolve spawn command
+    const { command, args, env } = this.resolveSpawnCommand(agent, registryAgent)
+
+    // Get agent-specific settings
+    const agentSettings = settingsService.getAgentSettings(agentId)
+    const finalEnv: Record<string, string> = { ...env }
+
+    // Add API key if configured
+    if (agentSettings?.apiKey) {
+      // Common env var patterns for API keys
+      finalEnv['API_KEY'] = agentSettings.apiKey
+      finalEnv['ANTHROPIC_API_KEY'] = agentSettings.apiKey
+      finalEnv['OPENAI_API_KEY'] = agentSettings.apiKey
+    }
+
+    // Merge custom env
+    if (agentSettings?.customEnv) {
+      Object.assign(finalEnv, agentSettings.customEnv)
+    }
+
+    // Add custom args
+    const finalArgs = [...args, ...(agentSettings?.customArgs || [])]
+
+    // Create ACP client
+    const client = new AcpClient(agentId, command, finalArgs, finalEnv, projectPath)
+    if (this.mainWindow) {
+      client.setMainWindow(this.mainWindow)
+    }
+
+    // Update status
+    const emitStatus = (status: AgentStatus, error?: string) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('agent:status-change', {
+          connectionId: client.connectionId,
+          status,
+          error
+        })
+      }
+    }
+
+    try {
+      emitStatus('launching')
+
+      // Spawn the process
+      await client.start()
+
+      // Initialize ACP
+      const initResult = await client.initialize()
+
+      this.connections.set(client.connectionId, client)
+      emitStatus('connected')
+
+      const connection: AgentConnection = {
+        connectionId: client.connectionId,
+        agentId,
+        agentName: initResult.agentName,
+        status: initResult.authMethods.length > 0 ? 'authenticating' : 'connected',
+        pid: client.pid,
+        startedAt: new Date().toISOString(),
+        capabilities: initResult.capabilities,
+        authMethods: initResult.authMethods
+      }
+
+      return connection
+    } catch (error) {
+      client.terminate()
+      emitStatus('error', (error as Error).message)
+      throw error
+    }
+  }
+
+  async authenticate(
+    connectionId: string,
+    method: string,
+    credentials?: Record<string, string>
+  ): Promise<void> {
+    const client = this.connections.get(connectionId)
+    if (!client) throw new Error(`Connection not found: ${connectionId}`)
+    await client.authenticate(method, credentials)
+  }
+
+  terminate(connectionId: string): void {
+    const client = this.connections.get(connectionId)
+    if (client) {
+      client.terminate()
+      this.connections.delete(connectionId)
+    }
+  }
+
+  getClient(connectionId: string): AcpClient | undefined {
+    return this.connections.get(connectionId)
+  }
+
+  listConnections(): AgentConnection[] {
+    return Array.from(this.connections.values()).map((client) => ({
+      connectionId: client.connectionId,
+      agentId: client.agentId,
+      agentName: client.agentName,
+      status: client.isRunning ? 'connected' as const : 'terminated' as const,
+      pid: client.pid,
+      startedAt: '',
+      capabilities: client.capabilities || undefined,
+      authMethods: client.authMethods
+    }))
+  }
+
+  // ============================
+  // Helpers
+  // ============================
+
+  private resolveSpawnCommand(
+    installed: InstalledAgent,
+    registryAgent?: AcpRegistryAgent
+  ): { command: string; args: string[]; env: Record<string, string> } {
+    const dist = registryAgent?.distribution
+
+    if (installed.distributionType === 'npx' && installed.npxPackage) {
+      const npxDist = dist?.npx
+      return {
+        command: getNpxCommand(),
+        args: [installed.npxPackage, ...(npxDist?.args || [])],
+        env: npxDist?.env || {}
+      }
+    }
+
+    if (installed.distributionType === 'uvx' && installed.uvxPackage) {
+      const uvxDist = dist?.uvx
+      return {
+        command: getUvxCommand(),
+        args: [installed.uvxPackage, ...(uvxDist?.args || [])],
+        env: uvxDist?.env || {}
+      }
+    }
+
+    if (installed.distributionType === 'binary' && installed.executablePath) {
+      const platform = getCurrentPlatformTarget()
+      const binaryTarget = platform ? dist?.binary?.[platform] : null
+      return {
+        command: installed.executablePath,
+        args: binaryTarget?.args || [],
+        env: {}
+      }
+    }
+
+    throw new Error(`Cannot resolve spawn command for agent: ${installed.registryId}`)
+  }
+
+  private loadInstalled(): void {
+    try {
+      const settings = settingsService.get()
+      // Installed agents are stored separately in electron-store
+      const store = new (require('electron-store'))({ name: 'installed-agents' })
+      const agents = store.get('agents', {}) as Record<string, InstalledAgent>
+      for (const [id, agent] of Object.entries(agents)) {
+        this.installed.set(id, agent)
+      }
+    } catch {
+      // Fresh install, no agents yet
+    }
+  }
+
+  private saveInstalled(): void {
+    try {
+      const store = new (require('electron-store'))({ name: 'installed-agents' })
+      store.set('agents', Object.fromEntries(this.installed))
+    } catch (err) {
+      logger.error('Failed to save installed agents:', err)
+    }
+  }
+}
+
+export const agentManager = new AgentManagerService()
