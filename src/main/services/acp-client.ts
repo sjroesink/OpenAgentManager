@@ -117,10 +117,16 @@ export class AcpClient {
   }> {
     const result = await this.sendRequest('initialize', {
       protocolVersion: ACP_PROTOCOL_VERSION,
-      clientInfo: CLIENT_INFO,
-      capabilities: {
-        textFiles: true,
-        terminals: true
+      clientInfo: {
+        name: CLIENT_INFO.name,
+        version: CLIENT_INFO.version
+      },
+      clientCapabilities: {
+        fs: {
+          readTextFile: true,
+          writeTextFile: true
+        },
+        terminal: true
       }
     }) as {
       protocolVersion?: number
@@ -149,13 +155,14 @@ export class AcpClient {
 
   /** Authenticate with the agent */
   async authenticate(method: string, credentials?: Record<string, string>): Promise<void> {
-    await this.sendRequest('authenticate', { method, ...credentials })
+    await this.sendRequest('authenticate', { methodId: method, ...credentials })
   }
 
   /** Create a new session */
-  async newSession(workingDirectory: string): Promise<string> {
+  async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
     const result = (await this.sendRequest('session/new', {
-      workingDirectory
+      cwd,
+      mcpServers
     })) as { sessionId: string }
     return result.sessionId
   }
@@ -164,14 +171,12 @@ export class AcpClient {
   async prompt(sessionId: string, text: string): Promise<{ stopReason: string }> {
     const result = (await this.sendRequest('session/prompt', {
       sessionId,
-      prompt: {
-        messages: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text }]
-          }
-        ]
-      }
+      prompt: [
+        {
+          type: 'text',
+          data: text
+        }
+      ]
     })) as { stopReason: string }
     return result
   }
