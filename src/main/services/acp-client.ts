@@ -174,7 +174,7 @@ export class AcpClient {
       prompt: [
         {
           type: 'text',
-          data: text
+          text
         }
       ]
     })) as { stopReason: string }
