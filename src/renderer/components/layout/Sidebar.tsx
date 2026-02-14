@@ -6,8 +6,8 @@ import { WorkspaceSection } from '../sidebar/WorkspaceSection'
 import { Button } from '../common/Button'
 
 export function Sidebar() {
-  const { sidebarVisible, sidebarWidth, setNewThreadDialogOpen } = useUiStore()
-  const workspaces = useWorkspaceStore((s) => s.workspaces)
+  const { sidebarVisible, sidebarWidth } = useUiStore()
+  const { workspaces, createWorkspace } = useWorkspaceStore()
   const sessions = useSessionStore((s) => s.sessions)
   const startDraftThread = useSessionStore((s) => s.startDraftThread)
 
@@ -17,14 +17,21 @@ export function Sidebar() {
     b.lastAccessedAt.localeCompare(a.lastAccessedAt)
   )
 
-  const handleNewThread = () => {
+  const handleNewThread = async () => {
     if (sortedWorkspaces.length > 0) {
       // Start a draft on the most recently accessed workspace
       const topWorkspace = sortedWorkspaces[0]
       startDraftThread(topWorkspace.id, topWorkspace.path)
     } else {
-      // No workspaces — open the dialog to create one
-      setNewThreadDialogOpen(true)
+      // No workspaces — pick a directory and create one
+      const path = await window.api.invoke('workspace:select-directory', undefined)
+      if (!path) return
+      try {
+        const ws = await createWorkspace(path)
+        startDraftThread(ws.id, ws.path)
+      } catch (err) {
+        console.error('Failed to create workspace:', err)
+      }
     }
   }
 

@@ -10,7 +10,7 @@ import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
 import { downloadService } from './download-service'
 import { AcpClient } from './acp-client'
-import { getCurrentPlatformTarget, getNpxCommand, getUvxCommand } from '../util/platform'
+import { getCurrentPlatformTarget, getNpxCommand, getUvxCommand, toWslPath } from '../util/platform'
 import { logger } from '../util/logger'
 
 /**
@@ -184,8 +184,39 @@ export class AgentManagerService {
     // Add custom args
     const finalArgs = [...args, ...(agentSettings?.customArgs || [])]
 
+    // Determine spawn parameters (potentially wrapped for WSL)
+    let spawnCommand = command
+    let spawnArgs = finalArgs
+    let spawnCwd = projectPath
+    let useWsl = false
+
+    if (process.platform === 'win32' && agentSettings?.runInWsl) {
+      useWsl = true
+      const wslDistroArgs = agentSettings.wslDistribution
+        ? ['-d', agentSettings.wslDistribution]
+        : []
+      const wslCwd = toWslPath(projectPath)
+
+      // Build env export string for WSL
+      const envExports = Object.entries(finalEnv)
+        .map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
+        .join(' && ')
+
+      const innerCmd = [command, ...finalArgs].join(' ')
+      const fullCmd = envExports
+        ? `${envExports} && cd '${wslCwd}' && ${innerCmd}`
+        : `cd '${wslCwd}' && ${innerCmd}`
+
+      spawnCommand = 'wsl'
+      spawnArgs = [...wslDistroArgs, '--', 'bash', '-ic', fullCmd]
+      // cwd doesn't matter for wsl.exe, but keep a valid Windows dir
+      spawnCwd = projectPath
+
+      logger.info(`WSL spawn: wsl ${spawnArgs.join(' ')}`)
+    }
+
     // Create ACP client
-    const client = new AcpClient(agentId, command, finalArgs, finalEnv, projectPath)
+    const client = new AcpClient(agentId, spawnCommand, spawnArgs, useWsl ? {} : finalEnv, spawnCwd, useWsl)
     if (this.mainWindow) {
       client.setMainWindow(this.mainWindow)
     }

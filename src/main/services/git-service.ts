@@ -51,7 +51,7 @@ export class GitService {
   }
 
   /**
-   * Remove a worktree
+   * Remove a worktree (with retry for Windows EBUSY)
    */
   async removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
     const git = simpleGit(projectPath)
@@ -59,12 +59,35 @@ export class GitService {
       await git.raw(['worktree', 'remove', worktreePath, '--force'])
       logger.info(`Worktree removed: ${worktreePath}`)
     } catch (error) {
-      logger.warn(`Failed to remove worktree, trying manual cleanup:`, error)
-      // Fallback: remove directory and prune
+      logger.warn(`Failed to remove worktree via git, trying manual cleanup:`, error)
+      // Fallback: remove directory and prune, with retries for EBUSY on Windows
       if (fs.existsSync(worktreePath)) {
-        fs.rmSync(worktreePath, { recursive: true, force: true })
+        await this.rmWithRetry(worktreePath)
       }
       await git.raw(['worktree', 'prune'])
+    }
+  }
+
+  /**
+   * Remove a directory with retries to handle EBUSY on Windows.
+   * Processes may take a moment to release file handles after termination.
+   */
+  private async rmWithRetry(dirPath: string, maxRetries = 3, delayMs = 1000): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        fs.rmSync(dirPath, { recursive: true, force: true })
+        return
+      } catch (error: unknown) {
+        const isRetryable = error instanceof Error &&
+          'code' in error &&
+          ((error as NodeJS.ErrnoException).code === 'EBUSY' || (error as NodeJS.ErrnoException).code === 'EPERM')
+        if (isRetryable && attempt < maxRetries) {
+          logger.info(`Retry ${attempt}/${maxRetries} removing ${dirPath} after ${delayMs}ms...`)
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        } else {
+          throw error
+        }
+      }
     }
   }
 

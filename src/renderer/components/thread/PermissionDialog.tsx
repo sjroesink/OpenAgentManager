@@ -30,11 +30,8 @@ export function PermissionDialog() {
   const currentPermission = pendingPermissions[0]
   if (!currentPermission) return null
 
-  const safeToolCall = currentPermission.toolCall || { title: (currentPermission as unknown as Record<string, unknown>).title as string || 'Permission Required' }
-  const safeOptions = currentPermission.options || [
-    { optionId: 'reject', name: 'Reject', kind: 'reject_once' as const },
-    { optionId: 'allow', name: 'Allow', kind: 'allow_once' as const }
-  ]
+  const safeToolCall = currentPermission.toolCall
+  const safeOptions = currentPermission.options
   const title = formatToolTitle(safeToolCall)
   const details = formatToolDetails(safeToolCall.rawInput)
 

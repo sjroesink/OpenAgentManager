@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { sessionManager } from '../services/session-manager'
 import { threadStore } from '../services/thread-store'
+import { workspaceService } from '../services/workspace-service'
 import type { CreateSessionRequest, PermissionResponse, InteractionMode } from '@shared/types/session'
 
 export function registerSessionHandlers(): void {
@@ -36,5 +37,11 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle('session:permission-response', async (_event, response: PermissionResponse) => {
     sessionManager.resolvePermission(response)
+  })
+
+  ipcMain.handle('session:rebuild-cache', () => {
+    const workspaces = workspaceService.list().map((w) => ({ path: w.path, id: w.id }))
+    threadStore.rebuildCacheFromFolders(workspaces)
+    return { threadCount: threadStore.loadAll().length }
   })
 }

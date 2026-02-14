@@ -56,7 +56,10 @@ export function PromptInput() {
   const { interactionMode, setInteractionMode } = useUiStore()
 
   const session = getActiveSession()
+  const isInitializing = session?.status === 'initializing'
+  const isCreating = session?.status === 'creating'
   const isPrompting = session?.status === 'prompting'
+  const isBusy = isPrompting || isCreating || isInitializing
   const currentMode = MODE_CONFIG[interactionMode]
 
   // Close menu on outside click
@@ -75,7 +78,7 @@ export function PromptInput() {
   }, [modeMenuOpen])
 
   const handleSubmit = useCallback(async () => {
-    if (!text.trim() || !activeSessionId || isPrompting) return
+    if (!text.trim() || !activeSessionId || isBusy) return
 
     const prompt = text.trim()
     setText('')
@@ -86,7 +89,7 @@ export function PromptInput() {
     }
 
     await sendPrompt(prompt, interactionMode)
-  }, [text, activeSessionId, isPrompting, sendPrompt, interactionMode])
+  }, [text, activeSessionId, isBusy, sendPrompt, interactionMode])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -117,11 +120,12 @@ export function PromptInput() {
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
-            value={text}
+            value={isCreating && session?.pendingPrompt ? session.pendingPrompt : text}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line)'}
-            disabled={isPrompting}
+            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line)'}
+            disabled={isBusy}
+            readOnly={isInitializing || isCreating}
             rows={1}
             className="w-full bg-surface-1 border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors disabled:opacity-50"
             style={{ minHeight: '40px', maxHeight: '200px' }}
@@ -130,7 +134,7 @@ export function PromptInput() {
         <Button
           variant="primary"
           size="md"
-          disabled={!text.trim() || isPrompting}
+          disabled={!text.trim() || isBusy}
           onClick={handleSubmit}
           className="shrink-0 rounded-xl h-[40px] w-[40px] !p-0"
         >

@@ -2,6 +2,7 @@ import Store from 'electron-store'
 import { v4 as uuid } from 'uuid'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import { gitService } from './git-service'
+import { threadStore } from './thread-store'
 
 interface WorkspaceStoreSchema {
   workspaces: WorkspaceInfo[]
@@ -43,6 +44,10 @@ export class WorkspaceService {
 
     all.push(workspace)
     store.set('workspaces', all)
+
+    // Sync any existing .agent/ threads from this directory into the cache
+    threadStore.syncWorkspaceToCache(path, workspace.id)
+
     return workspace
   }
 
@@ -66,3 +71,6 @@ export class WorkspaceService {
 }
 
 export const workspaceService = new WorkspaceService()
+
+// Wire up the late-bound resolver to break circular dependency
+threadStore.setWorkspaceResolver((id) => workspaceService.get(id))

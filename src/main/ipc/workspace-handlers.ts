@@ -1,7 +1,9 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { exec } from 'child_process'
 import { workspaceService } from '../services/workspace-service'
+import { worktreeHookService } from '../services/worktree-hook-service'
 import type { WorkspaceInfo } from '@shared/types/workspace'
+import type { AgentProjectConfig } from '@shared/types/thread-format'
 
 export function registerWorkspaceHandlers(): void {
   ipcMain.handle('workspace:list', () => {
@@ -45,4 +47,21 @@ export function registerWorkspaceHandlers(): void {
   ipcMain.handle('workspace:open-in-vscode', async (_event, { path }: { path: string }) => {
     exec(`code "${path}"`)
   })
+
+  ipcMain.handle(
+    'workspace:get-config',
+    async (_event, { workspacePath }: { workspacePath: string }) => {
+      return worktreeHookService.readConfig(workspacePath)
+    }
+  )
+
+  ipcMain.handle(
+    'workspace:set-config',
+    async (
+      _event,
+      { workspacePath, config }: { workspacePath: string; config: AgentProjectConfig }
+    ) => {
+      worktreeHookService.writeConfig(workspacePath, config)
+    }
+  )
 }

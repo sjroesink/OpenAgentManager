@@ -6,6 +6,7 @@ import { registerTerminalHandlers } from './terminal-handlers'
 import { registerSettingsHandlers } from './settings-handlers'
 import { registerWorkspaceHandlers } from './workspace-handlers'
 import { registerWindowHandlers } from './window-handlers'
+import { registerSystemHandlers } from './system-handlers'
 
 /**
  * Register all IPC handlers.
@@ -20,4 +21,5 @@ export function registerAllIpcHandlers(): void {
   registerSettingsHandlers()
   registerWorkspaceHandlers()
   registerWindowHandlers()
+  registerSystemHandlers()
 }

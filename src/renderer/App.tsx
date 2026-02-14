@@ -3,15 +3,14 @@ import { AppLayout } from './components/layout/AppLayout'
 import { AgentBrowser } from './components/registry/AgentBrowser'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { PermissionDialog } from './components/thread/PermissionDialog'
-import { NewThreadDialog } from './components/sidebar/NewThreadDialog'
 import { useSessionStore } from './stores/session-store'
 import { useAgentStore } from './stores/agent-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useIpcEvent } from './hooks/useIpc'
-import type { SessionUpdateEvent, PermissionRequestEvent } from '@shared/types/session'
+import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
 export default function App() {
-  const { handleSessionUpdate, handlePermissionRequest, loadPersistedSessions } = useSessionStore()
+  const { handleSessionUpdate, handlePermissionRequest, handleHookProgress, loadPersistedSessions } = useSessionStore()
   const { updateConnectionStatus, loadInstalled } = useAgentStore()
   const { loadWorkspaces } = useWorkspaceStore()
 
@@ -30,6 +29,13 @@ export default function App() {
     [handlePermissionRequest]
   )
 
+  const onHookProgress = useCallback(
+    (event: WorktreeHookProgressEvent) => {
+      handleHookProgress(event)
+    },
+    [handleHookProgress]
+  )
+
   const onAgentStatusChange = useCallback(
     (event: { connectionId: string; status: string; error?: string }) => {
       updateConnectionStatus(
@@ -43,6 +49,7 @@ export default function App() {
 
   useIpcEvent('session:update', onSessionUpdate)
   useIpcEvent('session:permission-request', onPermissionRequest)
+  useIpcEvent('session:hook-progress', onHookProgress)
   useIpcEvent('agent:status-change', onAgentStatusChange)
 
   // Load installed agents, workspaces, and persisted sessions on startup
@@ -58,7 +65,6 @@ export default function App() {
       <AgentBrowser />
       <SettingsDialog />
       <PermissionDialog />
-      <NewThreadDialog />
     </>
   )
 }

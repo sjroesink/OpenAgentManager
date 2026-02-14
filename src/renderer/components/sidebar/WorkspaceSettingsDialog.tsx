@@ -1,0 +1,222 @@
+import React, { useState, useEffect, useCallback } from 'react'
+import { Dialog } from '../common/Dialog'
+import { Button } from '../common/Button'
+import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCommand } from '@shared/types/thread-format'
+
+interface WorkspaceSettingsDialogProps {
+  open: boolean
+  onClose: () => void
+  workspacePath: string
+  workspaceName: string
+}
+
+export function WorkspaceSettingsDialog({
+  open,
+  onClose,
+  workspacePath,
+  workspaceName
+}: WorkspaceSettingsDialogProps) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [symlinks, setSymlinks] = useState<SymlinkEntry[]>([])
+  const [commands, setCommands] = useState<PostSetupCommand[]>([])
+  const [initialPrompt, setInitialPrompt] = useState('')
+  const [fullConfig, setFullConfig] = useState<AgentProjectConfig | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    window.api
+      .invoke('workspace:get-config', { workspacePath })
+      .then((config) => {
+        setFullConfig(config)
+        const hooks = config?.worktreeHooks
+        setSymlinks(hooks?.symlinks || [])
+        setCommands(hooks?.postSetupCommands || [])
+        setInitialPrompt(hooks?.initialPrompt || '')
+      })
+      .catch((err) => console.error('Failed to load workspace config:', err))
+      .finally(() => setLoading(false))
+  }, [open, workspacePath])
+
+  const handleSave = useCallback(async () => {
+    setSaving(true)
+    try {
+      const hooks: WorktreeHooksConfig = {}
+      if (symlinks.length > 0) hooks.symlinks = symlinks
+      if (commands.length > 0) hooks.postSetupCommands = commands
+      if (initialPrompt.trim()) hooks.initialPrompt = initialPrompt.trim()
+
+      const config: AgentProjectConfig = {
+        ...fullConfig,
+        specVersion: fullConfig?.specVersion || '1.1',
+        worktreeHooks: Object.keys(hooks).length > 0 ? hooks : undefined
+      }
+
+      await window.api.invoke('workspace:set-config', { workspacePath, config })
+      onClose()
+    } catch (err) {
+      console.error('Failed to save workspace config:', err)
+    } finally {
+      setSaving(false)
+    }
+  }, [symlinks, commands, initialPrompt, fullConfig, workspacePath, onClose])
+
+  // Symlink helpers
+  const addSymlink = () => setSymlinks([...symlinks, { source: '' }])
+  const removeSymlink = (i: number) => setSymlinks(symlinks.filter((_, idx) => idx !== i))
+  const updateSymlink = (i: number, updates: Partial<SymlinkEntry>) => {
+    setSymlinks(symlinks.map((s, idx) => (idx === i ? { ...s, ...updates } : s)))
+  }
+
+  // Command helpers
+  const addCommand = () => setCommands([...commands, { command: '' }])
+  const removeCommand = (i: number) => setCommands(commands.filter((_, idx) => idx !== i))
+  const updateCommand = (i: number, updates: Partial<PostSetupCommand>) => {
+    setCommands(commands.map((c, idx) => (idx === i ? { ...c, ...updates } : c)))
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} title={`Worktree Setup - ${workspaceName}`}>
+      {loading ? (
+        <div className="text-text-muted text-sm py-8 text-center">Loading configuration...</div>
+      ) : (
+        <div className="space-y-6 min-w-[480px]">
+          {/* Symlinks */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-text-primary">Symlinks</h3>
+              <Button variant="ghost" size="sm" onClick={addSymlink}>
+                + Add
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mb-2">
+              Create symlinks in the worktree pointing to files/folders in the original repo.
+            </p>
+            {symlinks.length === 0 ? (
+              <div className="text-xs text-text-muted italic py-2">No symlinks configured</div>
+            ) : (
+              <div className="space-y-2">
+                {symlinks.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={entry.source}
+                      onChange={(e) => updateSymlink(i, { source: e.target.value })}
+                      placeholder="Source path (e.g. .env.local)"
+                      className="flex-1 px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <input
+                      type="text"
+                      value={entry.target || ''}
+                      onChange={(e) =>
+                        updateSymlink(i, { target: e.target.value || undefined })
+                      }
+                      placeholder="Target (optional)"
+                      className="w-36 px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                    <button
+                      onClick={() => removeSymlink(i)}
+                      className="p-1 text-text-muted hover:text-error rounded hover:bg-surface-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Post-setup commands */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-text-primary">Post-Setup Commands</h3>
+              <Button variant="ghost" size="sm" onClick={addCommand}>
+                + Add
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mb-2">
+              Shell commands to run in the worktree after creation.
+            </p>
+            {commands.length === 0 ? (
+              <div className="text-xs text-text-muted italic py-2">No commands configured</div>
+            ) : (
+              <div className="space-y-2">
+                {commands.map((cmd, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <div className="flex-1 space-y-1">
+                      <input
+                        type="text"
+                        value={cmd.command}
+                        onChange={(e) => updateCommand(i, { command: e.target.value })}
+                        placeholder="Command (e.g. npm install)"
+                        className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent font-mono"
+                      />
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="text"
+                          value={cmd.label || ''}
+                          onChange={(e) =>
+                            updateCommand(i, { label: e.target.value || undefined })
+                          }
+                          placeholder="Label (optional)"
+                          className="flex-1 px-2.5 py-1 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                        <label className="flex items-center gap-1 text-xs text-text-secondary whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={cmd.continueOnError || false}
+                            onChange={(e) =>
+                              updateCommand(i, { continueOnError: e.target.checked || undefined })
+                            }
+                            className="rounded border-border"
+                          />
+                          Continue on error
+                        </label>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeCommand(i)}
+                      className="p-1 mt-1 text-text-muted hover:text-error rounded hover:bg-surface-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Initial prompt */}
+          <section>
+            <h3 className="text-sm font-medium text-text-primary mb-2">Initial Prompt</h3>
+            <p className="text-xs text-text-muted mb-2">
+              Automatically sent to the agent when a worktree session starts.
+            </p>
+            <textarea
+              value={initialPrompt}
+              onChange={(e) => setInitialPrompt(e.target.value)}
+              placeholder="e.g. Read CONTRIBUTING.md and suggest what to work on next."
+              rows={3}
+              className="w-full px-3 py-2 text-xs bg-surface-2 border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+            />
+          </section>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button variant="secondary" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>
+              Save
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  )
+}

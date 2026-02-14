@@ -29,6 +29,8 @@ export interface AgentSettings {
   customArgs?: string[]
   customEnv?: Record<string, string>
   autoApproveRead?: boolean
+  runInWsl?: boolean
+  wslDistribution?: string
 }
 
 export interface McpSettings {

@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'child_process'
+import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import { v4 as uuid } from 'uuid'
@@ -49,7 +50,7 @@ interface PendingRequest {
 
 type PermissionResolver = (response: PermissionResponse) => void
 
-export class AcpClient {
+export class AcpClient extends EventEmitter {
   readonly connectionId: string
   private childProcess: ChildProcess | null = null
   private nextId = 1
@@ -57,6 +58,10 @@ export class AcpClient {
   private buffer = ''
   private mainWindow: BrowserWindow | null = null
   private permissionResolvers = new Map<string, PermissionResolver>()
+
+  // Session mapping: remoteId <-> internalId
+  private remoteToInternal = new Map<string, string>()
+  private internalToRemote = new Map<string, string>()
 
   // Public state
   capabilities: AgentCapabilities | null = null
@@ -69,8 +74,10 @@ export class AcpClient {
     private spawnCommand: string,
     private spawnArgs: string[],
     private spawnEnv: Record<string, string>,
-    private cwd: string
+    private cwd: string,
+    private useWsl: boolean = false
   ) {
+    super()
     this.connectionId = uuid()
   }
 
@@ -86,7 +93,9 @@ export class AcpClient {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: this.cwd,
       env: { ...process.env, ...this.spawnEnv },
-      shell: process.platform === 'win32'
+      // WSL: don't use shell wrapping — wsl.exe handles it via bash -ic
+      // Native Windows: use shell so .cmd files resolve correctly
+      shell: process.platform === 'win32' && !this.useWsl
     })
 
     // Handle stdout (JSON-RPC messages from agent)
@@ -94,14 +103,23 @@ export class AcpClient {
       this.handleData(data.toString())
     })
 
-    // Log stderr
+    // Log stderr and collect for error reporting
+    const stderrChunks: string[] = []
     this.childProcess.stderr!.on('data', (data: Buffer) => {
-      logger.debug(`[${this.agentId}:stderr] ${data.toString().trim()}`)
+      const text = data.toString().trim()
+      if (text) {
+        stderrChunks.push(text)
+        logger.warn(`[${this.agentId}:stderr] ${text}`)
+      }
     })
 
     this.childProcess.on('exit', (code, signal) => {
       logger.info(`Agent ${this.agentId} exited: code=${code}, signal=${signal}`)
-      this.rejectAllPending(new Error(`Agent process exited: code=${code}`))
+      const stderr = stderrChunks.join('\n')
+      const msg = stderr
+        ? `Agent process exited: code=${code}\n${stderr}`
+        : `Agent process exited: code=${code}`
+      this.rejectAllPending(new Error(msg))
     })
 
     this.childProcess.on('error', (err) => {
@@ -161,18 +179,27 @@ export class AcpClient {
   }
 
   /** Create a new session */
-  async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
+  async newSession(cwd: string, mcpServers: unknown[] = [], internalSessionId?: string): Promise<string> {
     const result = (await this.sendRequest('session/new', {
       cwd,
       mcpServers
     })) as { sessionId: string }
-    return result.sessionId
+    const remoteId = result.sessionId
+
+    if (internalSessionId) {
+      this.remoteToInternal.set(remoteId, internalSessionId)
+      this.internalToRemote.set(internalSessionId, remoteId)
+      return internalSessionId
+    }
+
+    return remoteId
   }
 
   /** Send a prompt to a session */
   async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
     const params: Record<string, unknown> = {
-      sessionId,
+      sessionId: remoteId,
       prompt: [
         {
           type: 'text',
@@ -189,15 +216,19 @@ export class AcpClient {
 
   /** Cancel a running prompt */
   async cancel(sessionId: string): Promise<void> {
-    await this.sendRequest('session/cancel', { sessionId })
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    await this.sendRequest('session/cancel', { sessionId: remoteId })
   }
 
   /** Resolve a pending permission request */
   resolvePermission(response: PermissionResponse): void {
+    logger.info(`[${this.agentId}] resolvePermission: requestId=${response.requestId}, optionId=${response.optionId}, hasPending=${this.permissionResolvers.has(response.requestId)}`)
     const resolver = this.permissionResolvers.get(response.requestId)
     if (resolver) {
       resolver(response)
       this.permissionResolvers.delete(response.requestId)
+    } else {
+      logger.warn(`[${this.agentId}] No pending resolver for requestId=${response.requestId}`)
     }
   }
 
@@ -248,7 +279,7 @@ export class AcpClient {
     })
   }
 
-  private sendResponse(id: number, result: unknown): void {
+  private sendResponse(id: any, result: unknown): void {
     if (!this.childProcess || !this.childProcess.stdin) return
 
     const response = {
@@ -257,7 +288,9 @@ export class AcpClient {
       result
     }
 
-    this.childProcess.stdin.write(JSON.stringify(response) + '\n')
+    const json = JSON.stringify(response) + '\n'
+    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    this.childProcess.stdin.write(json)
   }
 
   private sendError(id: number, code: number, message: string): void {
@@ -289,15 +322,15 @@ export class AcpClient {
     }
   }
 
-  private handleMessage(msg: JsonRpcResponse): void {
+  private handleMessage(msg: any): void {
     // Log all incoming messages
     logger.info(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
 
     // Response to our request
-    if (msg.id !== undefined && !msg.method) {
-      const pending = this.pendingRequests.get(msg.id)
+    if (msg.id !== undefined && msg.method === undefined) {
+      const pending = this.pendingRequests.get(Number(msg.id))
       if (pending) {
-        this.pendingRequests.delete(msg.id)
+        this.pendingRequests.delete(Number(msg.id))
         if (msg.error) {
           pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}${msg.error.data ? ' | data: ' + JSON.stringify(msg.error.data) : ''}`))
         } else {
@@ -352,7 +385,9 @@ export class AcpClient {
   // ============================
 
   private handleSessionUpdate(params: Record<string, unknown>): void {
-    const sessionId = params.sessionId as string
+    const remoteId = params.sessionId as string
+    const internalId = this.remoteToInternal.get(remoteId) || remoteId
+
     // ACP session/update notification structure:
     // { sessionId, update: { sessionUpdate: "agent_message_chunk", content: {...}, ... } }
     const update = params.update as Record<string, unknown> | undefined
@@ -364,10 +399,14 @@ export class AcpClient {
 
     try {
       // Transform to our SessionUpdate format
+      const sessionUpdate = this.transformSessionUpdate(update)
       const event: SessionUpdateEvent = {
-        sessionId,
-        update: this.transformSessionUpdate(update)
+        sessionId: internalId,
+        update: sessionUpdate
       }
+
+      // Emit for SessionManagerService
+      this.emit('session-update', event)
 
       // Forward to renderer
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -470,11 +509,12 @@ export class AcpClient {
       }
 
       case 'tool_call_update': {
+        const rawOutput = raw.rawOutput || raw.output
         return {
           type: 'tool_call_update',
           toolCallId: (raw.toolCallId as string) || '',
           status: (raw.status as 'completed' | 'failed') || 'completed',
-          output: raw.output as string
+          output: typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput)
         }
       }
 
@@ -490,68 +530,98 @@ export class AcpClient {
   }
 
   private async handlePermissionRequest(
-    id: number | undefined,
+    id: any,
     params: Record<string, unknown>
   ): Promise<void> {
     const requestId = uuid()
+    // Dump full params for debugging
+    logger.info(`[${this.agentId}] handlePermissionRequest params: ${JSON.stringify(params)}`)
 
-    // Extract toolCall from ACP schema
-    const toolCallRaw = (params.toolCall || {}) as Record<string, unknown>
-    const toolCall = {
-      toolCallId: (toolCallRaw.toolCallId as string) || '',
-      title: toolCallRaw.title as string | undefined,
-      kind: toolCallRaw.kind as string | undefined,
-      rawInput: toolCallRaw.rawInput
-    }
+    // Try multiple possible paths for sessionId
+    const remoteSessionId = (params.sessionId || (params._meta as any)?.sessionId || params.sid) as string
+    const internalSessionId = this.remoteToInternal.get(remoteSessionId) || remoteSessionId
+    
+    logger.info(`[${this.agentId}] handlePermissionRequest: rpcId=${id}, requestId=${requestId}, sessionId=${remoteSessionId} (internal=${internalSessionId})`)
 
-    // Extract options from ACP schema
-    const optionsRaw = (params.options || []) as Array<Record<string, unknown>>
-    const options: PermissionOption[] = optionsRaw.map((opt) => ({
-      optionId: (opt.optionId as string) || '',
-      name: (opt.name as string) || '',
-      kind: ((opt.kind as string) || 'allow_once') as PermissionOption['kind']
-    }))
+    try {
+      // Extract toolCall from ACP schema
+      const toolCallRaw = (params.toolCall || {}) as Record<string, unknown>
+      const toolCallId = (toolCallRaw.toolCallId || params.toolCallId) as string
+      const toolCall = {
+        toolCallId: toolCallId || '',
+        title: (toolCallRaw.title || params.title) as string | undefined,
+        kind: (toolCallRaw.kind || params.kind) as string | undefined,
+        rawInput: toolCallRaw.rawInput || toolCallRaw.input || params.input
+      }
 
-    // Fallback: if no options provided, create default allow/deny
-    if (options.length === 0) {
-      options.push(
-        { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
-        { optionId: 'allow', name: 'Allow', kind: 'allow_once' }
-      )
-    }
+      // Extract options from ACP schema
+      const optionsRaw = (params.options || []) as Array<Record<string, unknown>>
+      const options: PermissionOption[] = optionsRaw.map((opt) => ({
+        optionId: (opt.optionId as string) || '',
+        name: (opt.name as string) || '',
+        kind: ((opt.kind as string) || 'allow_once') as PermissionOption['kind']
+      }))
 
-    const event: PermissionRequestEvent = {
-      sessionId: (params.sessionId as string) || '',
-      requestId,
-      toolCall,
-      options
-    }
+      // Fallback: if no options provided, create default allow/deny
+      if (options.length === 0) {
+        options.push(
+          { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+          { optionId: 'allow', name: 'Allow', kind: 'allow_once' }
+        )
+      }
 
-    // Forward to renderer
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('session:permission-request', event)
-    }
+      const event: PermissionRequestEvent = {
+        sessionId: internalSessionId,
+        requestId,
+        toolCall,
+        options
+      }
 
-    // Wait for user response
-    const response = await new Promise<PermissionResponse>((resolve) => {
-      this.permissionResolvers.set(requestId, resolve)
+      // Setup resolver BEFORE sending to renderer to avoid race conditions
+      const responsePromise = new Promise<PermissionResponse>((resolve) => {
+        this.permissionResolvers.set(requestId, resolve)
 
-      // Timeout after 5 minutes - deny by default
-      setTimeout(() => {
-        if (this.permissionResolvers.has(requestId)) {
-          this.permissionResolvers.delete(requestId)
-          const rejectOption = options.find((o) => o.kind.startsWith('reject')) || options[0]
-          resolve({ requestId, optionId: rejectOption.optionId })
-        }
-      }, 5 * 60 * 1000)
-    })
-
-    // Send response back to agent — the result IS the outcome object (not nested)
-    if (id !== undefined) {
-      this.sendResponse(id, {
-        outcome: 'selected',
-        optionId: response.optionId
+        // Timeout after 5 minutes - cancel by default
+        setTimeout(() => {
+          if (this.permissionResolvers.has(requestId)) {
+            logger.warn(`[${this.agentId}] Permission request ${requestId} timed out.`)
+            this.permissionResolvers.delete(requestId)
+            resolve({ requestId, optionId: '__cancelled__' })
+          }
+        }, 5 * 60 * 1000)
       })
+
+      // Forward to renderer
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:permission-request', event)
+      } else {
+        logger.warn(`[${this.agentId}] Cannot send permission request: mainWindow not available`)
+      }
+
+      // Wait for user response
+      const response = await responsePromise
+
+      // Send response back to agent
+      if (id !== undefined) {
+        logger.info(`[${this.agentId}] Sending permission response for ${requestId}: ${response.optionId}`)
+
+        // ACP spec: RequestPermissionResponse = { outcome: RequestPermissionOutcome }
+        // RequestPermissionOutcome = { outcome: "cancelled" } | { outcome: "selected", optionId: string }
+        // "cancelled" = prompt turn cancelled before user responded (timeout/disconnect)
+        // "selected" = user made a choice (allow OR reject — both are selections)
+        const responseResult: Record<string, any> = {
+          outcome: response.optionId === '__cancelled__'
+            ? { outcome: 'cancelled' }
+            : { outcome: 'selected', optionId: response.optionId }
+        }
+
+        this.sendResponse(id, responseResult)
+      }
+    } catch (err) {
+      logger.error(`[${this.agentId}] Error handling permission request:`, err)
+      if (id !== undefined) {
+        this.sendError(id, -32603, `Internal error handling permission: ${(err as Error).message}`)
+      }
     }
   }
 

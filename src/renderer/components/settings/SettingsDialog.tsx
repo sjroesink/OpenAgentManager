@@ -10,10 +10,15 @@ export function SettingsDialog() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [saving, setSaving] = useState(false)
   const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents'>('general')
+  const [wslInfo, setWslInfo] = useState<{ available: boolean; distributions: string[] }>({
+    available: false,
+    distributions: []
+  })
 
   useEffect(() => {
     if (settingsOpen) {
       window.api.invoke('settings:get', undefined).then(setSettings)
+      window.api.invoke('system:wsl-info', undefined).then(setWslInfo).catch(() => {})
     }
   }, [settingsOpen])
 
@@ -192,6 +197,52 @@ export function SettingsDialog() {
                         className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
                       />
                     </SettingsField>
+                    {wslInfo.available && (
+                      <>
+                        <SettingsField label="Run in WSL" description="Run this agent inside Windows Subsystem for Linux">
+                          <input
+                            type="checkbox"
+                            checked={agentSettings.runInWsl || false}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                agents: {
+                                  ...settings.agents,
+                                  [agentId]: { ...agentSettings, runInWsl: e.target.checked }
+                                }
+                              })
+                            }
+                          />
+                        </SettingsField>
+                        {agentSettings.runInWsl && wslInfo.distributions.length > 0 && (
+                          <SettingsField label="WSL Distribution" description="Leave on default to use your default WSL distro">
+                            <select
+                              value={agentSettings.wslDistribution || ''}
+                              onChange={(e) =>
+                                setSettings({
+                                  ...settings,
+                                  agents: {
+                                    ...settings.agents,
+                                    [agentId]: {
+                                      ...agentSettings,
+                                      wslDistribution: e.target.value || undefined
+                                    }
+                                  }
+                                })
+                              }
+                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                            >
+                              <option value="">Default</option>
+                              {wslInfo.distributions.map((distro) => (
+                                <option key={distro} value={distro}>
+                                  {distro}
+                                </option>
+                              ))}
+                            </select>
+                          </SettingsField>
+                        )}
+                      </>
+                    )}
                   </div>
                 ))}
                 {Object.keys(settings.agents).length === 0 && (

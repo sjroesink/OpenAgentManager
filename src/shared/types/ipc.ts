@@ -12,8 +12,10 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
-  InteractionMode
+  InteractionMode,
+  WorktreeHookProgressEvent
 } from './session'
+import type { AgentProjectConfig } from './thread-format'
 import type { ProjectInfo, FileTreeNode, FileChange, DiffResult } from './project'
 import type { GitStatus, WorktreeInfo, CommitResult } from './git'
 import type { AppSettings } from './settings'
@@ -47,6 +49,7 @@ export interface IpcChannels {
   'session:list-persisted': { request: void; response: PersistedThread[] }
   'session:remove': { request: { sessionId: string; cleanupWorktree: boolean }; response: void }
   'session:permission-response': { request: PermissionResponse; response: void }
+  'session:rebuild-cache': { request: void; response: { threadCount: number } }
 
   // --- Files ---
   'file:read-tree': { request: { dirPath: string; depth?: number }; response: FileTreeNode[] }
@@ -87,11 +90,22 @@ export interface IpcChannels {
   }
   'workspace:select-directory': { request: void; response: string | null }
   'workspace:open-in-vscode': { request: { path: string }; response: void }
+  'workspace:get-config': { request: { workspacePath: string }; response: AgentProjectConfig | null }
+  'workspace:set-config': {
+    request: { workspacePath: string; config: AgentProjectConfig }
+    response: void
+  }
 
   // --- Settings ---
   'settings:get': { request: void; response: AppSettings }
   'settings:set': { request: Partial<AppSettings>; response: void }
   'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
+
+  // --- System ---
+  'system:wsl-info': {
+    request: void
+    response: { available: boolean; distributions: string[] }
+  }
 
   // --- Window ---
   'window:reload': { request: void; response: void }
@@ -111,6 +125,7 @@ export interface IpcChannels {
 export interface IpcEvents {
   'session:update': SessionUpdateEvent
   'session:permission-request': PermissionRequestEvent
+  'session:hook-progress': WorktreeHookProgressEvent
   'terminal:data': { terminalId: string; data: string }
   'agent:status-change': { connectionId: string; status: AgentConnection['status']; error?: string }
 }

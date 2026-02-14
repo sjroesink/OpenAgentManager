@@ -7,6 +7,8 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
+  WorktreeHookProgressEvent,
+  HookStep,
   Message,
   ContentBlock,
   ToolCallInfo,
@@ -29,6 +31,8 @@ interface SessionState {
   sessions: SessionInfo[]
   activeSessionId: string | null
   pendingPermissions: PermissionRequestEvent[]
+  hookProgress: Record<string, WorktreeHookProgressEvent>
+  deletingSessionIds: Set<string>
 
   // Draft thread (inline "new thread" in sidebar)
   draftThread: DraftThread | null
@@ -40,13 +44,15 @@ interface SessionState {
     workingDir: string,
     useWorktree: boolean,
     workspaceId: string,
-    title?: string
+    title?: string,
+    pendingPrompt?: string
   ) => Promise<SessionInfo>
   setActiveSession: (sessionId: string | null) => void
   sendPrompt: (text: string, mode?: InteractionMode) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
   handlePermissionRequest: (event: PermissionRequestEvent) => void
+  handleHookProgress: (event: WorktreeHookProgressEvent) => void
   respondToPermission: (requestId: string, optionId: string) => void
 
   // Persistence actions
@@ -58,6 +64,7 @@ interface SessionState {
   updateDraftThread: (updates: Partial<Pick<DraftThread, 'agentId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>) => void
   discardDraftThread: () => void
   commitDraftThread: (prompt: string) => Promise<void>
+  retryInitialization: (sessionId: string) => void
 
   // Helpers
   getActiveSession: () => SessionInfo | undefined
@@ -68,6 +75,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   pendingPermissions: [],
+  hookProgress: {},
+  deletingSessionIds: new Set<string>(),
   draftThread: null,
   activeDraftId: null,
 
@@ -104,18 +113,31 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   deleteSession: async (sessionId, cleanupWorktree) => {
+    set((state) => ({
+      deletingSessionIds: new Set([...state.deletingSessionIds, sessionId])
+    }))
     try {
       await window.api.invoke('session:remove', { sessionId, cleanupWorktree })
-      set((state) => ({
-        sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
-        activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId
-      }))
+      set((state) => {
+        const next = new Set(state.deletingSessionIds)
+        next.delete(sessionId)
+        return {
+          sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+          activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+          deletingSessionIds: next
+        }
+      })
     } catch (error) {
       console.error('Failed to delete session:', error)
+      set((state) => {
+        const next = new Set(state.deletingSessionIds)
+        next.delete(sessionId)
+        return { deletingSessionIds: next }
+      })
     }
   },
 
-  createSession: async (connectionId, workingDir, useWorktree, workspaceId, title) => {
+  createSession: async (connectionId, workingDir, useWorktree, workspaceId, title, pendingPrompt?) => {
     // Add a placeholder session immediately so the UI feels responsive
     const placeholderId = `creating-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -129,7 +151,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       status: 'creating',
       messages: [],
       useWorktree,
-      workspaceId
+      workspaceId,
+      pendingPrompt
     }
     set((state) => ({
       sessions: [...state.sessions, placeholder],
@@ -260,6 +283,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  handleHookProgress: (event) => {
+    try {
+      if (!event || !event.sessionId) return
+      set((state) => ({
+        hookProgress: { ...state.hookProgress, [event.sessionId]: event }
+      }))
+    } catch (err) {
+      console.error('[session-store] Error handling hook progress:', err)
+    }
+  },
+
   respondToPermission: (requestId, optionId) => {
     const response: PermissionResponse = { requestId, optionId }
     window.api.invoke('session:permission-response', response)
@@ -298,34 +332,99 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!draftThread || !draftThread.agentId) return
 
     const agentStore = useAgentStore.getState()
+    const agentId = draftThread.agentId
 
-    try {
-      // Find or launch agent connection
-      let connection = agentStore.connections.find(
-        (c: { agentId: string; status: string }) =>
-          c.agentId === draftThread.agentId && c.status === 'connected'
-      )
-      if (!connection) {
-        connection = await agentStore.launchAgent(draftThread.agentId, draftThread.workspacePath)
-      }
+    // Check if agent is already connected
+    const existingConnection = agentStore.connections.find(
+      (c: { agentId: string; status: string }) =>
+        c.agentId === agentId && c.status === 'connected'
+    )
 
-      // Clear draft only after connection is established
-      set({ draftThread: null, activeDraftId: null })
+    // Build init progress steps
+    const initSteps: HookStep[] = existingConnection
+      ? [{ label: 'Creating session', status: 'pending' as const }]
+      : [
+          { label: 'Launching agent', status: 'pending' as const },
+          { label: 'Connecting', status: 'pending' as const },
+          { label: 'Creating session', status: 'pending' as const }
+        ]
 
-      // Create session (with placeholder)
-      const session = await get().createSession(
-        connection.connectionId,
-        draftThread.workspacePath,
-        draftThread.useWorktree,
-        draftThread.workspaceId
-      )
+    // Resolve agent display name
+    const agentInfo = agentStore.installed.find(
+      (a: { registryId: string }) => a.registryId === agentId
+    )
 
-      // Send the first prompt
-      await get().sendPrompt(prompt)
-    } catch (error) {
-      console.error('Failed to create thread from draft:', error)
-      throw error
+    // Create placeholder immediately so the chat shows right away
+    const placeholderId = `init-${uuid().slice(0, 8)}`
+    const placeholder: SessionInfo = {
+      sessionId: placeholderId,
+      connectionId: '',
+      agentId,
+      agentName: agentInfo?.name || 'Agent',
+      title: 'New Thread',
+      createdAt: new Date().toISOString(),
+      workingDir: draftThread.workspacePath,
+      status: 'initializing',
+      messages: [],
+      useWorktree: draftThread.useWorktree,
+      workspaceId: draftThread.workspaceId,
+      pendingPrompt: prompt,
+      initProgress: initSteps
     }
+
+    // Clear draft and show placeholder — user sees the thread immediately
+    set({
+      draftThread: null,
+      activeDraftId: null,
+      sessions: [...get().sessions, placeholder],
+      activeSessionId: placeholderId
+    })
+
+    // Run the initialization pipeline in the background
+    runInitPipeline(set, get, placeholderId, {
+      agentId,
+      workspacePath: draftThread.workspacePath,
+      useWorktree: draftThread.useWorktree,
+      workspaceId: draftThread.workspaceId,
+      prompt,
+      existingConnection: existingConnection || null
+    })
+  },
+
+  retryInitialization: (sessionId: string) => {
+    const session = get().sessions.find((s) => s.sessionId === sessionId)
+    if (!session || !session.pendingPrompt) return
+
+    const agentStore = useAgentStore.getState()
+    const existingConnection = agentStore.connections.find(
+      (c: { agentId: string; status: string }) =>
+        c.agentId === session.agentId && c.status === 'connected'
+    )
+
+    const initSteps: HookStep[] = existingConnection
+      ? [{ label: 'Creating session', status: 'pending' as const }]
+      : [
+          { label: 'Launching agent', status: 'pending' as const },
+          { label: 'Connecting', status: 'pending' as const },
+          { label: 'Creating session', status: 'pending' as const }
+        ]
+
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, status: 'initializing' as const, initProgress: initSteps, initError: undefined }
+          : s
+      )
+    }))
+
+    runInitPipeline(set, get, sessionId, {
+      agentId: session.agentId,
+      workspacePath: session.workingDir,
+      useWorktree: session.useWorktree,
+      workspaceId: session.workspaceId,
+      prompt: session.pendingPrompt,
+      existingConnection: existingConnection || null
+    })
   },
 
   // ---- Helpers ----
@@ -339,6 +438,105 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return get().sessions.filter((s) => s.workspaceId === workspaceId)
   }
 }))
+
+// ---- Initialization pipeline (runs in background after commitDraftThread) ----
+
+interface InitPipelineParams {
+  agentId: string
+  workspacePath: string
+  useWorktree: boolean
+  workspaceId: string
+  prompt: string
+  existingConnection: { connectionId: string } | null
+}
+
+type SetFn = (fn: SessionState | Partial<SessionState> | ((state: SessionState) => Partial<SessionState>)) => void
+type GetFn = () => SessionState
+
+function updateInitStep(
+  set: SetFn,
+  sessionId: string,
+  stepLabel: string,
+  newStatus: HookStep['status'],
+  detail?: string
+) {
+  set((state) => ({
+    sessions: state.sessions.map((s) => {
+      if (s.sessionId !== sessionId || !s.initProgress) return s
+      return {
+        ...s,
+        initProgress: s.initProgress.map((step) =>
+          step.label === stepLabel ? { ...step, status: newStatus, detail } : step
+        )
+      }
+    })
+  }))
+}
+
+async function runInitPipeline(
+  set: SetFn,
+  get: GetFn,
+  placeholderId: string,
+  params: InitPipelineParams
+) {
+  const { agentId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
+  const agentStore = useAgentStore.getState()
+
+  try {
+    let connection = existingConnection
+
+    if (!connection) {
+      // Step: Launching agent
+      updateInitStep(set, placeholderId, 'Launching agent', 'running')
+      const launched = await agentStore.launchAgent(agentId, workspacePath)
+      updateInitStep(set, placeholderId, 'Launching agent', 'completed')
+
+      // Step: Connecting (handshake is part of launchAgent)
+      updateInitStep(set, placeholderId, 'Connecting', 'completed')
+      connection = launched
+    }
+
+    // Step: Creating session
+    updateInitStep(set, placeholderId, 'Creating session', 'running')
+    const session = await window.api.invoke('session:create', {
+      connectionId: connection.connectionId,
+      workingDir: workspacePath,
+      useWorktree,
+      workspaceId
+    })
+    updateInitStep(set, placeholderId, 'Creating session', 'completed')
+
+    // Replace placeholder with real session
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === placeholderId ? { ...session, pendingPrompt: prompt } : s
+      ),
+      activeSessionId:
+        state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
+    }))
+
+    // Send the first prompt
+    await get().sendPrompt(prompt)
+  } catch (error) {
+    // Mark the running step as failed and set error status
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.sessionId !== placeholderId) return s
+        const updatedSteps = (s.initProgress || []).map((step) =>
+          step.status === 'running'
+            ? { ...step, status: 'failed' as const, detail: (error as Error).message }
+            : step
+        )
+        return {
+          ...s,
+          status: 'error' as const,
+          initProgress: updatedSteps,
+          initError: (error as Error).message
+        }
+      })
+    }))
+  }
+}
 
 /**
  * Apply a streaming update to a session — fully immutable.

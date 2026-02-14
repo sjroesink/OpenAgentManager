@@ -16,9 +16,15 @@ export interface SessionInfo {
   messages: Message[]
   useWorktree: boolean
   workspaceId: string
+  /** The first prompt to be sent once session creation completes. UI-only field. */
+  pendingPrompt?: string
+  /** Tracks agent initialization progress (launching, connecting, creating session). UI-only field. */
+  initProgress?: HookStep[]
+  /** Error message from failed initialization. UI-only field. */
+  initError?: string
 }
 
-export type SessionStatus = 'creating' | 'active' | 'prompting' | 'idle' | 'cancelled' | 'error'
+export type SessionStatus = 'initializing' | 'creating' | 'active' | 'prompting' | 'idle' | 'cancelled' | 'error'
 
 export type InteractionMode = 'ask' | 'code' | 'plan' | 'act'
 
@@ -35,6 +41,7 @@ export type ContentBlock =
   | TextContent
   | ImageContent
   | ThinkingContent
+  | ToolCallRefContent
 
 export interface TextContent {
   type: 'text'
@@ -50,6 +57,11 @@ export interface ImageContent {
 export interface ThinkingContent {
   type: 'thinking'
   text: string
+}
+
+export interface ToolCallRefContent {
+  type: 'tool_call_ref'
+  toolCallId: string
 }
 
 export interface ToolCallInfo {
@@ -121,6 +133,17 @@ export interface CreateSessionRequest {
   useWorktree: boolean
   workspaceId: string
   title?: string
+}
+
+export interface HookStep {
+  label: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  detail?: string
+}
+
+export interface WorktreeHookProgressEvent {
+  sessionId: string
+  steps: HookStep[]
 }
 
 /**

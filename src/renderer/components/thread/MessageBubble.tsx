@@ -17,6 +17,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   // Don't render empty agent bubbles (e.g. from empty session update chunks)
   if (!isUser && !hasVisibleContent) return null
 
+  // Build a lookup map for tool calls by ID
+  const toolCallMap = new Map(
+    (message.toolCalls || []).map((tc) => [tc.toolCallId, tc])
+  )
+
+  // Check if content has tool_call_ref blocks (new ordered format)
+  const hasToolCallRefs = message.content.some((b) => b.type === 'tool_call_ref')
+
+  // Collect tool calls that don't have a ref in content (legacy messages)
+  const unreferencedToolCalls = hasToolCallRefs
+    ? (message.toolCalls || []).filter(
+        (tc) => !message.content.some((b) => b.type === 'tool_call_ref' && b.toolCallId === tc.toolCallId)
+      )
+    : message.toolCalls || []
+
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}
@@ -31,7 +46,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
       {/* Content */}
       <div className={`flex-1 min-w-0 ${isUser ? 'flex flex-col items-end' : ''}`}>
-        {/* Text content */}
+        {/* Interleaved content: text, thinking, and tool calls in order */}
         {message.content.map((block, i) => {
           if (block.type === 'text' && block.text) {
             return (
@@ -70,13 +85,24 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             )
           }
 
+          if (block.type === 'tool_call_ref') {
+            const tc = toolCallMap.get(block.toolCallId)
+            if (tc) {
+              return (
+                <div key={i} className="my-1.5">
+                  <ToolCallCard toolCall={tc} />
+                </div>
+              )
+            }
+          }
+
           return null
         })}
 
-        {/* Tool calls */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
+        {/* Fallback: render unreferenced tool calls at the end (legacy messages without refs) */}
+        {unreferencedToolCalls.length > 0 && (
           <div className="mt-2 space-y-1.5">
-            {message.toolCalls.map((tc) => (
+            {unreferencedToolCalls.map((tc) => (
               <ToolCallCard key={tc.toolCallId} toolCall={tc} />
             ))}
           </div>
