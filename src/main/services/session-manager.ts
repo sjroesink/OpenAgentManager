@@ -1,7 +1,8 @@
 import { v4 as uuid } from 'uuid'
-import type { SessionInfo, CreateSessionRequest, PermissionResponse } from '@shared/types/session'
+import type { SessionInfo, CreateSessionRequest, PermissionResponse, InteractionMode } from '@shared/types/session'
 import { agentManager } from './agent-manager'
 import { gitService } from './git-service'
+import { threadStore } from './thread-store'
 import { logger } from '../util/logger'
 
 /**
@@ -53,16 +54,18 @@ export class SessionManagerService {
       workingDir,
       status: 'active',
       messages: [],
-      useWorktree: request.useWorktree
+      useWorktree: request.useWorktree,
+      workspaceId: request.workspaceId
     }
 
     this.sessions.set(acpSessionId, session)
+    threadStore.save(session)
     logger.info(`Session created: ${acpSessionId} on agent ${client.agentName}`)
 
     return session
   }
 
-  async prompt(sessionId: string, text: string): Promise<{ stopReason: string }> {
+  async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
 
@@ -81,12 +84,16 @@ export class SessionManagerService {
     })
 
     try {
-      const result = await client.prompt(sessionId, text)
+      const result = await client.prompt(sessionId, text, mode)
 
       session.status = 'active'
+      // Persist messages after prompt completes
+      threadStore.updateMessages(sessionId, session.messages)
       return { stopReason: result.stopReason }
     } catch (error) {
       session.status = 'error'
+      // Still persist messages on error so conversation history is saved
+      threadStore.updateMessages(sessionId, session.messages)
       throw error
     }
   }
@@ -121,24 +128,31 @@ export class SessionManagerService {
     return Array.from(this.sessions.values())
   }
 
-  async removeSession(sessionId: string): Promise<void> {
+  async removeSession(sessionId: string, cleanupWorktree = false): Promise<void> {
     const session = this.sessions.get(sessionId)
-    if (!session) return
+    // Also check persisted threads if not in memory
+    const persisted = !session ? threadStore.loadAll().find((t) => t.sessionId === sessionId) : null
+    const thread = session || persisted
 
-    // Clean up worktree if applicable
-    if (session.worktreePath && session.useWorktree) {
+    if (!thread) return
+
+    // Clean up worktree if requested
+    if (cleanupWorktree && thread.worktreePath && thread.useWorktree) {
       try {
-        const basePath = session.workingDir === session.worktreePath
-          ? session.worktreePath // Will need the original project path
-          : session.workingDir
-        // Note: worktree cleanup could be deferred based on settings
-        logger.info(`Worktree preserved at: ${session.worktreePath}`)
+        // For worktree removal we need the original project path (workspace path, not the worktree itself)
+        const workspaces = (await import('./workspace-service')).workspaceService.list()
+        const workspace = workspaces.find((w) => w.id === thread.workspaceId)
+        if (workspace) {
+          await gitService.removeWorktree(workspace.path, thread.worktreePath)
+          logger.info(`Worktree removed: ${thread.worktreePath}`)
+        }
       } catch (error) {
         logger.warn('Failed to clean up worktree:', error)
       }
     }
 
     this.sessions.delete(sessionId)
+    threadStore.remove(sessionId)
   }
 }
 

@@ -15,9 +15,12 @@ export interface SessionInfo {
   status: SessionStatus
   messages: Message[]
   useWorktree: boolean
+  workspaceId: string
 }
 
 export type SessionStatus = 'creating' | 'active' | 'prompting' | 'idle' | 'cancelled' | 'error'
+
+export type InteractionMode = 'ask' | 'code' | 'plan' | 'act'
 
 export interface Message {
   id: string
@@ -87,23 +90,53 @@ export type SessionUpdate =
   | { type: 'status_change'; status: SessionStatus }
   | { type: 'error'; error: string }
 
+export interface PermissionOption {
+  optionId: string
+  name: string
+  kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always'
+}
+
+export interface PermissionToolCall {
+  toolCallId: string
+  title?: string
+  kind?: string
+  rawInput?: unknown
+}
+
 export interface PermissionRequestEvent {
   sessionId: string
   requestId: string
-  title: string
-  description: string
-  allowAlways?: boolean
+  toolCall: PermissionToolCall
+  options: PermissionOption[]
 }
 
 export interface PermissionResponse {
   requestId: string
-  approved: boolean
-  remember?: boolean
+  optionId: string
 }
 
 export interface CreateSessionRequest {
   connectionId: string
   workingDir: string
   useWorktree: boolean
+  workspaceId: string
   title?: string
+}
+
+/**
+ * Subset of SessionInfo that gets persisted to disk.
+ * Excludes volatile runtime state (connectionId, isStreaming).
+ */
+export interface PersistedThread {
+  sessionId: string
+  agentId: string
+  agentName: string
+  title: string
+  createdAt: string
+  worktreePath?: string
+  worktreeBranch?: string
+  workingDir: string
+  messages: Message[]
+  useWorktree: boolean
+  workspaceId: string
 }

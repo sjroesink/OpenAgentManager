@@ -1,52 +1,218 @@
-import React from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useUiStore } from '../../stores/ui-store'
-import { useProjectStore } from '../../stores/project-store'
+import { useSessionStore } from '../../stores/session-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Button } from '../common/Button'
+
+interface MenuItem {
+  label: string
+  shortcut?: string
+  action?: () => void
+  separator?: boolean
+}
+
+interface MenuGroup {
+  label: string
+  items: MenuItem[]
+}
+
+function useAppMenu(): MenuGroup[] {
+  const {
+    toggleSidebar,
+    toggleReviewPanel,
+    toggleTerminal,
+    setSettingsOpen,
+    setRegistryBrowserOpen
+  } = useUiStore()
+
+  return [
+    {
+      label: 'File',
+      items: [
+        { label: 'Settings', shortcut: 'Ctrl+,', action: () => setSettingsOpen(true) },
+        { label: '', separator: true },
+        { label: 'Close Window', shortcut: 'Ctrl+W', action: () => window.api.invoke('window:close', undefined) },
+        { label: 'Quit', shortcut: 'Ctrl+Q', action: () => window.api.invoke('window:quit', undefined) }
+      ]
+    },
+    {
+      label: 'Edit',
+      items: [
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => document.execCommand('undo') },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => document.execCommand('redo') },
+        { label: '', separator: true },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') }
+      ]
+    },
+    {
+      label: 'View',
+      items: [
+        { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: toggleSidebar },
+        { label: 'Toggle Review Panel', action: toggleReviewPanel },
+        { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
+        { label: 'Agent Registry', action: () => setRegistryBrowserOpen(true) },
+        { label: '', separator: true },
+        { label: 'Zoom In', shortcut: 'Ctrl+=', action: () => window.api.invoke('window:zoom-in', undefined) },
+        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => window.api.invoke('window:zoom-out', undefined) },
+        { label: 'Reset Zoom', shortcut: 'Ctrl+0', action: () => window.api.invoke('window:reset-zoom', undefined) },
+        { label: '', separator: true },
+        { label: 'Toggle Fullscreen', shortcut: 'F11', action: () => window.api.invoke('window:toggle-fullscreen', undefined) }
+      ]
+    },
+    {
+      label: 'Window',
+      items: [
+        { label: 'Minimize', action: () => window.api.invoke('window:minimize', undefined) },
+        { label: 'Reload', shortcut: 'Ctrl+Shift+R', action: () => window.api.invoke('window:reload', undefined) },
+        { label: 'Toggle Developer Tools', shortcut: 'F12', action: () => window.api.invoke('window:toggle-devtools', undefined) }
+      ]
+    },
+    {
+      label: 'Help',
+      items: [
+        { label: 'About AgentManager' }
+      ]
+    }
+  ]
+}
+
+function MenuBar({ onClose }: { onClose: () => void }) {
+  const menuGroups = useAppMenu()
+  const [activeGroup, setActiveGroup] = useState<number>(0)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose])
+
+  const activeItems = menuGroups[activeGroup]?.items ?? []
+
+  return (
+    <div ref={menuRef} className="absolute top-10 left-0 z-50 flex shadow-xl">
+      {/* Menu group tabs */}
+      <div className="flex flex-col bg-surface-2 border border-border rounded-l-lg min-w-[120px]">
+        {menuGroups.map((group, i) => (
+          <button
+            key={group.label}
+            className={`text-left px-4 py-2 text-sm transition-colors ${
+              i === activeGroup
+                ? 'bg-accent/20 text-accent'
+                : 'text-text-secondary hover:bg-surface-3 hover:text-text-primary'
+            }`}
+            onMouseEnter={() => setActiveGroup(i)}
+            onClick={() => setActiveGroup(i)}
+          >
+            {group.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Active group items */}
+      <div className="bg-surface-2 border border-l-0 border-border rounded-r-lg min-w-[220px] py-1">
+        {activeItems.map((item, i) =>
+          item.separator ? (
+            <div key={`sep-${i}`} className="border-t border-border my-1" />
+          ) : (
+            <button
+              key={item.label}
+              className="flex items-center justify-between w-full px-4 py-1.5 text-sm text-text-secondary hover:bg-surface-3 hover:text-text-primary transition-colors"
+              onClick={() => {
+                item.action?.()
+                onClose()
+              }}
+            >
+              <span>{item.label}</span>
+              {item.shortcut && (
+                <span className="text-xs text-text-muted ml-6">{item.shortcut}</span>
+              )}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function Toolbar() {
   const {
-    sidebarVisible,
     toggleSidebar,
     toggleReviewPanel,
     toggleTerminal,
     setRegistryBrowserOpen,
     setSettingsOpen
   } = useUiStore()
-  const { project, selectDirectory } = useProjectStore()
+
+  const activeSession = useSessionStore((s) => s.getActiveSession())
+  const workspaces = useWorkspaceStore((s) => s.workspaces)
+  const activeWorkspace = activeSession
+    ? workspaces.find((w) => w.id === activeSession.workspaceId)
+    : null
+
+  const isMac = navigator.platform.toLowerCase().includes('mac')
+
+  const [menuOpen, setMenuOpen] = useState(false)
 
   return (
-    <div className="titlebar-drag flex items-center h-10 px-3 bg-surface-1 border-b border-border gap-2 shrink-0">
+    <div className="titlebar-drag flex items-center h-10 px-3 bg-surface-1 border-b border-border gap-2 shrink-0 relative">
       {/* macOS traffic light spacer */}
-      <div className="w-16 shrink-0" />
+      {isMac && <div className="w-16 shrink-0" />}
 
-      {/* Sidebar toggle */}
+      {/* Hamburger menu button */}
       <button
-        onClick={toggleSidebar}
+        onClick={() => setMenuOpen((v) => !v)}
         className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
-        title="Toggle sidebar"
+        title="Menu"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
 
-      {/* Project name / Open project */}
+      {/* Sidebar toggle button */}
       <button
-        onClick={selectDirectory}
-        className="titlebar-no-drag flex items-center gap-1.5 px-2 py-1 rounded hover:bg-surface-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        onClick={toggleSidebar}
+        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
+        title="Toggle sidebar (Ctrl+B)"
       >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-          />
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4V4z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4v16" />
         </svg>
-        <span className="max-w-[200px] truncate">
-          {project ? project.name : 'Open Project'}
-        </span>
       </button>
+
+      {/* Dropdown menu */}
+      {menuOpen && <MenuBar onClose={() => setMenuOpen(false)} />}
+
+      {/* Active workspace name */}
+      {activeWorkspace && (
+        <div className="titlebar-no-drag flex items-center gap-1.5 px-2 py-1 text-sm text-text-secondary">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            />
+          </svg>
+          <span className="max-w-[200px] truncate">{activeWorkspace.name}</span>
+        </div>
+      )}
 
       {/* Spacer */}
       <div className="flex-1" />

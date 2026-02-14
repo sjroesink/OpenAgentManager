@@ -12,7 +12,9 @@ import type {
 import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
-  PermissionResponse
+  PermissionResponse,
+  PermissionOption,
+  InteractionMode
 } from '@shared/types/session'
 import { logger } from '../util/logger'
 
@@ -168,8 +170,8 @@ export class AcpClient {
   }
 
   /** Send a prompt to a session */
-  async prompt(sessionId: string, text: string): Promise<{ stopReason: string }> {
-    const result = (await this.sendRequest('session/prompt', {
+  async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
+    const params: Record<string, unknown> = {
       sessionId,
       prompt: [
         {
@@ -177,7 +179,11 @@ export class AcpClient {
           text
         }
       ]
-    })) as { stopReason: string }
+    }
+    if (mode) {
+      params.interactionMode = mode
+    }
+    const result = (await this.sendRequest('session/prompt', params)) as { stopReason: string }
     return result
   }
 
@@ -356,16 +362,35 @@ export class AcpClient {
       return
     }
 
-    // Transform to our SessionUpdate format
-    const event: SessionUpdateEvent = {
-      sessionId,
-      update: this.transformSessionUpdate(update)
-    }
+    try {
+      // Transform to our SessionUpdate format
+      const event: SessionUpdateEvent = {
+        sessionId,
+        update: this.transformSessionUpdate(update)
+      }
 
-    // Forward to renderer
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('session:update', event)
+      // Forward to renderer
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:update', event)
+      }
+    } catch (err) {
+      logger.error(`Error transforming session update:`, err)
     }
+  }
+
+  private extractText(raw: Record<string, unknown>): string {
+    // ACP agents send text content in various shapes; try common patterns
+    const content = raw.content as Record<string, unknown> | string | undefined
+    if (typeof content === 'string') return content
+    if (content && typeof content === 'object') {
+      if (typeof content.text === 'string') return content.text
+      if (typeof content.data === 'string') return content.data
+      if (typeof content.value === 'string') return content.value
+    }
+    // Fallback: check top-level text/data fields
+    if (typeof raw.text === 'string') return raw.text
+    if (typeof raw.data === 'string') return raw.data
+    return ''
   }
 
   private transformSessionUpdate(raw: Record<string, unknown>): SessionUpdateEvent['update'] {
@@ -373,34 +398,73 @@ export class AcpClient {
     const updateType = raw.sessionUpdate as string
 
     switch (updateType) {
+      case 'agent_message_start': {
+        return {
+          type: 'message_start',
+          messageId: (raw.messageId as string) || 'current'
+        }
+      }
+
       case 'agent_message_chunk': {
-        const content = raw.content as Record<string, unknown> | undefined
+        const text = this.extractText(raw)
+        // Skip empty chunks to avoid creating empty bubbles
+        if (!text) {
+          return { type: 'text_chunk', messageId: (raw.messageId as string) || 'current', text: '' }
+        }
         return {
           type: 'text_chunk',
           messageId: (raw.messageId as string) || 'current',
-          text: (content?.text as string) || ''
+          text
         }
       }
 
       case 'agent_thought_chunk': {
-        const content = raw.content as Record<string, unknown> | undefined
         return {
           type: 'thinking_chunk',
           messageId: (raw.messageId as string) || 'current',
-          text: (content?.text as string) || ''
+          text: this.extractText(raw)
+        }
+      }
+
+      case 'agent_message_complete':
+      case 'message_complete': {
+        return {
+          type: 'message_complete',
+          messageId: (raw.messageId as string) || 'current',
+          stopReason: (raw.stopReason as 'end_turn' | 'max_tokens' | 'cancelled' | 'error') || 'end_turn'
         }
       }
 
       case 'tool_call': {
+        const toolCallId = (raw.toolCallId as string) || uuid()
+        const rawInput = raw.rawInput || raw.input
+        const contentArr = raw.content as Array<Record<string, unknown>> | undefined
+        // Extract diff from content array if present
+        let diff: { path: string; oldText: string; newText: string } | undefined
+        if (Array.isArray(contentArr)) {
+          const diffBlock = contentArr.find((c) => c.type === 'diff')
+          if (diffBlock) {
+            diff = {
+              path: (diffBlock.path as string) || '',
+              oldText: (diffBlock.oldText as string) || '',
+              newText: (diffBlock.newText as string) || ''
+            }
+          }
+        }
+        // Extract tool name from _meta if available
+        const meta = raw._meta as Record<string, Record<string, string>> | undefined
+        const toolName = meta?.claudeCode?.toolName || (raw.title as string) || 'unknown'
+
         return {
           type: 'tool_call_start',
           messageId: (raw.messageId as string) || 'current',
           toolCall: {
-            toolCallId: (raw.toolCallId as string) || uuid(),
+            toolCallId,
             title: (raw.title as string) || 'Tool Call',
-            name: (raw.title as string) || 'unknown',
-            status: (raw.status as string) || 'running',
-            input: raw.input ? JSON.stringify(raw.input) : undefined
+            name: toolName,
+            status: (raw.status as 'pending' | 'running' | 'completed' | 'failed') || 'running',
+            input: rawInput ? JSON.stringify(rawInput) : undefined,
+            ...(diff ? { diff } : {})
           }
         }
       }
@@ -416,20 +480,12 @@ export class AcpClient {
 
       case 'plan':
       case 'user_message_chunk':
-        // These are informational updates, pass as text chunks
-        return {
-          type: 'text_chunk',
-          messageId: 'current',
-          text: ''
-        }
+        // Informational updates — ignore silently
+        return { type: 'text_chunk', messageId: 'current', text: '' }
 
       default:
         logger.debug(`Unhandled session update type: ${updateType}`)
-        return {
-          type: 'text_chunk',
-          messageId: 'current',
-          text: ''
-        }
+        return { type: 'text_chunk', messageId: 'current', text: '' }
     }
   }
 
@@ -439,12 +495,36 @@ export class AcpClient {
   ): Promise<void> {
     const requestId = uuid()
 
+    // Extract toolCall from ACP schema
+    const toolCallRaw = (params.toolCall || {}) as Record<string, unknown>
+    const toolCall = {
+      toolCallId: (toolCallRaw.toolCallId as string) || '',
+      title: toolCallRaw.title as string | undefined,
+      kind: toolCallRaw.kind as string | undefined,
+      rawInput: toolCallRaw.rawInput
+    }
+
+    // Extract options from ACP schema
+    const optionsRaw = (params.options || []) as Array<Record<string, unknown>>
+    const options: PermissionOption[] = optionsRaw.map((opt) => ({
+      optionId: (opt.optionId as string) || '',
+      name: (opt.name as string) || '',
+      kind: ((opt.kind as string) || 'allow_once') as PermissionOption['kind']
+    }))
+
+    // Fallback: if no options provided, create default allow/deny
+    if (options.length === 0) {
+      options.push(
+        { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
+        { optionId: 'allow', name: 'Allow', kind: 'allow_once' }
+      )
+    }
+
     const event: PermissionRequestEvent = {
-      sessionId: params.sessionId as string || '',
+      sessionId: (params.sessionId as string) || '',
       requestId,
-      title: (params.title as string) || 'Permission Required',
-      description: (params.description as string) || '',
-      allowAlways: params.allowAlways as boolean
+      toolCall,
+      options
     }
 
     // Forward to renderer
@@ -460,14 +540,20 @@ export class AcpClient {
       setTimeout(() => {
         if (this.permissionResolvers.has(requestId)) {
           this.permissionResolvers.delete(requestId)
-          resolve({ requestId, approved: false })
+          const rejectOption = options.find((o) => o.kind.startsWith('reject')) || options[0]
+          resolve({ requestId, optionId: rejectOption.optionId })
         }
       }, 5 * 60 * 1000)
     })
 
-    // Send response back to agent
+    // Send response back to agent using ACP outcome format
     if (id !== undefined) {
-      this.sendResponse(id, { approved: response.approved })
+      this.sendResponse(id, {
+        outcome: {
+          outcome: 'selected',
+          optionId: response.optionId
+        }
+      })
     }
   }
 

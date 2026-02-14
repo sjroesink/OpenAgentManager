@@ -6,15 +6,18 @@
 import type { AcpRegistry, InstalledAgent, AgentConnection } from './agent'
 import type {
   SessionInfo,
+  PersistedThread,
   CreateSessionRequest,
   PromptResult,
   SessionUpdateEvent,
   PermissionRequestEvent,
-  PermissionResponse
+  PermissionResponse,
+  InteractionMode
 } from './session'
 import type { ProjectInfo, FileTreeNode, FileChange, DiffResult } from './project'
 import type { GitStatus, WorktreeInfo, CommitResult } from './git'
 import type { AppSettings } from './settings'
+import type { WorkspaceInfo } from './workspace'
 
 // ============================================================
 // Request/Response channels (ipcMain.handle / ipcRenderer.invoke)
@@ -38,9 +41,11 @@ export interface IpcChannels {
 
   // --- Sessions ---
   'session:create': { request: CreateSessionRequest; response: SessionInfo }
-  'session:prompt': { request: { sessionId: string; text: string }; response: PromptResult }
+  'session:prompt': { request: { sessionId: string; text: string; mode?: InteractionMode }; response: PromptResult }
   'session:cancel': { request: { sessionId: string }; response: void }
   'session:list': { request: void; response: SessionInfo[] }
+  'session:list-persisted': { request: void; response: PersistedThread[] }
+  'session:remove': { request: { sessionId: string; cleanupWorktree: boolean }; response: void }
   'session:permission-response': { request: PermissionResponse; response: void }
 
   // --- Files ---
@@ -72,10 +77,32 @@ export interface IpcChannels {
   'terminal:resize': { request: { terminalId: string; cols: number; rows: number }; response: void }
   'terminal:kill': { request: { terminalId: string }; response: void }
 
+  // --- Workspaces ---
+  'workspace:list': { request: void; response: WorkspaceInfo[] }
+  'workspace:create': { request: { path: string; name?: string }; response: WorkspaceInfo }
+  'workspace:remove': { request: { id: string }; response: void }
+  'workspace:update': {
+    request: { id: string; updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt'>> }
+    response: WorkspaceInfo
+  }
+  'workspace:select-directory': { request: void; response: string | null }
+  'workspace:open-in-vscode': { request: { path: string }; response: void }
+
   // --- Settings ---
   'settings:get': { request: void; response: AppSettings }
   'settings:set': { request: Partial<AppSettings>; response: void }
   'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
+
+  // --- Window ---
+  'window:reload': { request: void; response: void }
+  'window:toggle-devtools': { request: void; response: void }
+  'window:reset-zoom': { request: void; response: void }
+  'window:zoom-in': { request: void; response: void }
+  'window:zoom-out': { request: void; response: void }
+  'window:toggle-fullscreen': { request: void; response: void }
+  'window:minimize': { request: void; response: void }
+  'window:close': { request: void; response: void }
+  'window:quit': { request: void; response: void }
 }
 
 // ============================================================

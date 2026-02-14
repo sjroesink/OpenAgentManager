@@ -9,6 +9,14 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
 
+  const hasVisibleContent =
+    message.content.some((b) => (b.type === 'text' || b.type === 'thinking') && b.text) ||
+    (message.toolCalls && message.toolCalls.length > 0) ||
+    message.isStreaming
+
+  // Don't render empty agent bubbles (e.g. from empty session update chunks)
+  if (!isUser && !hasVisibleContent) return null
+
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}

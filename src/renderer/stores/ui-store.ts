@@ -1,6 +1,6 @@
 import { create } from 'zustand'
+import type { InteractionMode } from '@shared/types/session'
 
-type SidebarTab = 'threads' | 'files'
 type ReviewTab = 'changes' | 'diff'
 
 interface UiState {
@@ -15,15 +15,18 @@ interface UiState {
   terminalHeight: number
 
   // Active tabs
-  sidebarTab: SidebarTab
   reviewTab: ReviewTab
 
   // Modals
   registryBrowserOpen: boolean
   settingsOpen: boolean
+  newThreadDialogOpen: boolean
 
   // Selected file for diff viewer
   selectedDiffFile: string | null
+
+  // Interaction mode
+  interactionMode: InteractionMode
 
   // Actions
   toggleSidebar: () => void
@@ -32,11 +35,12 @@ interface UiState {
   setSidebarWidth: (width: number) => void
   setReviewPanelWidth: (width: number) => void
   setTerminalHeight: (height: number) => void
-  setSidebarTab: (tab: SidebarTab) => void
   setReviewTab: (tab: ReviewTab) => void
   setRegistryBrowserOpen: (open: boolean) => void
   setSettingsOpen: (open: boolean) => void
+  setNewThreadDialogOpen: (open: boolean) => void
   setSelectedDiffFile: (path: string | null) => void
+  setInteractionMode: (mode: InteractionMode) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -48,13 +52,15 @@ export const useUiStore = create<UiState>((set) => ({
   reviewPanelWidth: 400,
   terminalHeight: 250,
 
-  sidebarTab: 'threads',
   reviewTab: 'changes',
 
   registryBrowserOpen: false,
   settingsOpen: false,
+  newThreadDialogOpen: false,
 
   selectedDiffFile: null,
+
+  interactionMode: 'ask',
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
@@ -62,9 +68,10 @@ export const useUiStore = create<UiState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: Math.max(200, Math.min(500, width)) }),
   setReviewPanelWidth: (width) => set({ reviewPanelWidth: Math.max(250, Math.min(700, width)) }),
   setTerminalHeight: (height) => set({ terminalHeight: Math.max(100, Math.min(600, height)) }),
-  setSidebarTab: (tab) => set({ sidebarTab: tab }),
   setReviewTab: (tab) => set({ reviewTab: tab }),
   setRegistryBrowserOpen: (open) => set({ registryBrowserOpen: open }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
-  setSelectedDiffFile: (path) => set({ selectedDiffFile: path })
+  setNewThreadDialogOpen: (open) => set({ newThreadDialogOpen: open }),
+  setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
+  setInteractionMode: (mode) => set({ interactionMode: mode })
 }))

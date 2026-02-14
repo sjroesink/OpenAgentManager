@@ -2,19 +2,37 @@ import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
 import type {
   SessionInfo,
+  PersistedThread,
   SessionUpdate,
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
   Message,
   ContentBlock,
-  ToolCallInfo
+  ToolCallInfo,
+  InteractionMode
 } from '@shared/types/session'
+import { useWorkspaceStore } from './workspace-store'
+import { useProjectStore } from './project-store'
+import { useAgentStore } from './agent-store'
+
+/** A draft thread that hasn't been created yet — lives only in UI state. */
+export interface DraftThread {
+  id: string
+  workspaceId: string
+  workspacePath: string
+  agentId: string | null
+  useWorktree: boolean
+}
 
 interface SessionState {
   sessions: SessionInfo[]
   activeSessionId: string | null
   pendingPermissions: PermissionRequestEvent[]
+
+  // Draft thread (inline "new thread" in sidebar)
+  draftThread: DraftThread | null
+  activeDraftId: string | null
 
   // Actions
   createSession: (
@@ -25,11 +43,21 @@ interface SessionState {
     title?: string
   ) => Promise<SessionInfo>
   setActiveSession: (sessionId: string | null) => void
-  sendPrompt: (text: string) => Promise<void>
+  sendPrompt: (text: string, mode?: InteractionMode) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
   handlePermissionRequest: (event: PermissionRequestEvent) => void
-  respondToPermission: (requestId: string, approved: boolean, remember?: boolean) => void
+  respondToPermission: (requestId: string, optionId: string) => void
+
+  // Persistence actions
+  loadPersistedSessions: () => Promise<void>
+  deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
+
+  // Draft thread actions
+  startDraftThread: (workspaceId: string, workspacePath: string) => void
+  updateDraftThread: (updates: Partial<Pick<DraftThread, 'agentId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>) => void
+  discardDraftThread: () => void
+  commitDraftThread: (prompt: string) => Promise<void>
 
   // Helpers
   getActiveSession: () => SessionInfo | undefined
@@ -40,31 +68,107 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   pendingPermissions: [],
+  draftThread: null,
+  activeDraftId: null,
+
+  loadPersistedSessions: async () => {
+    try {
+      const threads: PersistedThread[] = await window.api.invoke('session:list-persisted', undefined)
+      if (threads.length === 0) return
+
+      const restoredSessions: SessionInfo[] = threads.map((t) => ({
+        sessionId: t.sessionId,
+        connectionId: '', // No active connection
+        agentId: t.agentId,
+        agentName: t.agentName,
+        title: t.title,
+        createdAt: t.createdAt,
+        worktreePath: t.worktreePath,
+        worktreeBranch: t.worktreeBranch,
+        workingDir: t.workingDir,
+        status: 'idle' as const,
+        messages: t.messages,
+        useWorktree: t.useWorktree,
+        workspaceId: t.workspaceId
+      }))
+
+      set((state) => {
+        // Merge: don't duplicate sessions already in memory
+        const existingIds = new Set(state.sessions.map((s) => s.sessionId))
+        const newSessions = restoredSessions.filter((s) => !existingIds.has(s.sessionId))
+        return { sessions: [...state.sessions, ...newSessions] }
+      })
+    } catch (error) {
+      console.error('Failed to load persisted sessions:', error)
+    }
+  },
+
+  deleteSession: async (sessionId, cleanupWorktree) => {
+    try {
+      await window.api.invoke('session:remove', { sessionId, cleanupWorktree })
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+        activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId
+      }))
+    } catch (error) {
+      console.error('Failed to delete session:', error)
+    }
+  },
 
   createSession: async (connectionId, workingDir, useWorktree, workspaceId, title) => {
-    const session = await window.api.invoke('session:create', {
+    // Add a placeholder session immediately so the UI feels responsive
+    const placeholderId = `creating-${uuid().slice(0, 8)}`
+    const placeholder: SessionInfo = {
+      sessionId: placeholderId,
       connectionId,
+      agentId: '',
+      agentName: 'Connecting...',
+      title: title || 'New Thread',
+      createdAt: new Date().toISOString(),
       workingDir,
+      status: 'creating',
+      messages: [],
       useWorktree,
-      workspaceId,
-      title
-    })
+      workspaceId
+    }
     set((state) => ({
-      sessions: [...state.sessions, session],
-      activeSessionId: session.sessionId
+      sessions: [...state.sessions, placeholder],
+      activeSessionId: placeholderId
     }))
-    return session
+
+    try {
+      const session = await window.api.invoke('session:create', {
+        connectionId,
+        workingDir,
+        useWorktree,
+        workspaceId,
+        title
+      })
+      // Replace placeholder with actual session
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === placeholderId ? session : s
+        ),
+        activeSessionId: session.sessionId
+      }))
+      return session
+    } catch (error) {
+      // Remove placeholder on failure
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.sessionId !== placeholderId),
+        activeSessionId: state.activeSessionId === placeholderId ? null : state.activeSessionId
+      }))
+      throw error
+    }
   },
 
   setActiveSession: (sessionId) => {
-    set({ activeSessionId: sessionId })
+    set({ activeSessionId: sessionId, activeDraftId: null })
 
     // Bridge: sync project-store with the active session's workspace
     if (sessionId) {
       const session = get().sessions.find((s) => s.sessionId === sessionId)
       if (session) {
-        const { useWorkspaceStore } = require('./workspace-store')
-        const { useProjectStore } = require('./project-store')
         const workspace = useWorkspaceStore.getState().workspaces.find(
           (w: { id: string }) => w.id === session.workspaceId
         )
@@ -76,7 +180,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  sendPrompt: async (text) => {
+  sendPrompt: async (text, mode) => {
     const { activeSessionId } = get()
     if (!activeSessionId) return
 
@@ -97,7 +201,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }))
 
     try {
-      await window.api.invoke('session:prompt', { sessionId: activeSessionId, text })
+      await window.api.invoke('session:prompt', { sessionId: activeSessionId, text, mode })
 
       // Prompt completed successfully — mark session as active and finalize streaming message
       set((state) => ({
@@ -125,30 +229,106 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   handleSessionUpdate: (event: SessionUpdateEvent) => {
-    const { sessionId, update } = event
+    try {
+      const { sessionId, update } = event
+      if (!sessionId || !update || !update.type) return
 
-    set((state) => ({
-      sessions: state.sessions.map((session) => {
-        if (session.sessionId !== sessionId) return session
-        return applyUpdate(session, update)
-      })
-    }))
+      set((state) => ({
+        sessions: state.sessions.map((session) => {
+          if (session.sessionId !== sessionId) return session
+          try {
+            return applyUpdate(session, update)
+          } catch (err) {
+            console.error('[session-store] Error applying update:', err, update)
+            return session
+          }
+        })
+      }))
+    } catch (err) {
+      console.error('[session-store] Error handling session update:', err)
+    }
   },
 
   handlePermissionRequest: (event) => {
-    set((state) => ({
-      pendingPermissions: [...state.pendingPermissions, event]
-    }))
+    try {
+      if (!event || !event.requestId) return
+      set((state) => ({
+        pendingPermissions: [...state.pendingPermissions, event]
+      }))
+    } catch (err) {
+      console.error('[session-store] Error handling permission request:', err)
+    }
   },
 
-  respondToPermission: (requestId, approved, remember) => {
-    const response: PermissionResponse = { requestId, approved, remember }
+  respondToPermission: (requestId, optionId) => {
+    const response: PermissionResponse = { requestId, optionId }
     window.api.invoke('session:permission-response', response)
 
     set((state) => ({
       pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== requestId)
     }))
   },
+
+  // ---- Draft thread actions ----
+
+  startDraftThread: (workspaceId, workspacePath) => {
+    const draft: DraftThread = {
+      id: `draft-${uuid().slice(0, 8)}`,
+      workspaceId,
+      workspacePath,
+      agentId: null,
+      useWorktree: false
+    }
+    set({ draftThread: draft, activeDraftId: draft.id, activeSessionId: null })
+  },
+
+  updateDraftThread: (updates) => {
+    set((state) => {
+      if (!state.draftThread) return state
+      return { draftThread: { ...state.draftThread, ...updates } }
+    })
+  },
+
+  discardDraftThread: () => {
+    set({ draftThread: null, activeDraftId: null })
+  },
+
+  commitDraftThread: async (prompt: string) => {
+    const { draftThread } = get()
+    if (!draftThread || !draftThread.agentId) return
+
+    const agentStore = useAgentStore.getState()
+
+    try {
+      // Find or launch agent connection
+      let connection = agentStore.connections.find(
+        (c: { agentId: string; status: string }) =>
+          c.agentId === draftThread.agentId && c.status === 'connected'
+      )
+      if (!connection) {
+        connection = await agentStore.launchAgent(draftThread.agentId, draftThread.workspacePath)
+      }
+
+      // Clear draft only after connection is established
+      set({ draftThread: null, activeDraftId: null })
+
+      // Create session (with placeholder)
+      const session = await get().createSession(
+        connection.connectionId,
+        draftThread.workspacePath,
+        draftThread.useWorktree,
+        draftThread.workspaceId
+      )
+
+      // Send the first prompt
+      await get().sendPrompt(prompt)
+    } catch (error) {
+      console.error('Failed to create thread from draft:', error)
+      throw error
+    }
+  },
+
+  // ---- Helpers ----
 
   getActiveSession: () => {
     const { sessions, activeSessionId } = get()
@@ -160,70 +340,88 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   }
 }))
 
-/** Apply a streaming update to a session */
+/**
+ * Apply a streaming update to a session — fully immutable.
+ *
+ * Every path that modifies a message produces a *new* Message object so
+ * that React (via Zustand shallow-compare) sees the change and re-renders.
+ */
 function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
-  const messages = [...session.messages]
-
   switch (update.type) {
     case 'message_start': {
-      messages.push({
+      const newMsg: Message = {
         id: update.messageId,
         role: 'agent',
         content: [],
         timestamp: new Date().toISOString(),
         isStreaming: true
+      }
+      return { ...session, messages: [...session.messages, newMsg] }
+    }
+
+    case 'text_chunk': {
+      if (!update.text) return session
+      return replaceAgentMessage(session, update.messageId, (msg) => {
+        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'text')
+        if (lastIdx >= 0) {
+          const block = msg.content[lastIdx] as { type: 'text'; text: string }
+          const newContent = [...msg.content]
+          newContent[lastIdx] = { type: 'text', text: block.text + update.text }
+          return { ...msg, content: newContent }
+        }
+        return { ...msg, content: [...msg.content, { type: 'text', text: update.text }] }
+      })
+    }
+
+    case 'thinking_chunk': {
+      if (!update.text) return session
+      return replaceAgentMessage(session, update.messageId, (msg) => {
+        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'thinking')
+        if (lastIdx >= 0) {
+          const block = msg.content[lastIdx] as { type: 'thinking'; text: string }
+          const newContent = [...msg.content]
+          newContent[lastIdx] = { type: 'thinking', text: block.text + update.text }
+          return { ...msg, content: newContent }
+        }
+        return { ...msg, content: [...msg.content, { type: 'thinking', text: update.text }] }
+      })
+    }
+
+    case 'tool_call_start': {
+      return replaceAgentMessage(session, update.messageId, (msg) => {
+        const existing = (msg.toolCalls || []).findIndex(
+          (t) => t.toolCallId === update.toolCall.toolCallId
+        )
+        if (existing >= 0) {
+          // Update existing tool call instead of duplicating
+          const newToolCalls = [...msg.toolCalls!]
+          newToolCalls[existing] = { ...newToolCalls[existing], ...update.toolCall }
+          return { ...msg, toolCalls: newToolCalls }
+        }
+        return { ...msg, toolCalls: [...(msg.toolCalls || []), update.toolCall] }
+      })
+    }
+
+    case 'tool_call_update': {
+      const messages = session.messages.map((msg) => {
+        if (!msg.toolCalls) return msg
+        const tcIdx = msg.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId)
+        if (tcIdx < 0) return msg
+        const newToolCalls = [...msg.toolCalls]
+        newToolCalls[tcIdx] = {
+          ...newToolCalls[tcIdx],
+          status: update.status,
+          ...(update.output != null ? { output: update.output } : {})
+        }
+        return { ...msg, toolCalls: newToolCalls }
       })
       return { ...session, messages }
     }
 
-    case 'text_chunk': {
-      const lastMsg = findOrCreateAgentMessage(messages, update.messageId)
-      const lastTextBlock = lastMsg.content.findLast((b): b is { type: 'text'; text: string } => b.type === 'text')
-      if (lastTextBlock) {
-        lastTextBlock.text += update.text
-      } else {
-        lastMsg.content.push({ type: 'text', text: update.text })
-      }
-      return { ...session, messages }
-    }
-
-    case 'thinking_chunk': {
-      const lastMsg = findOrCreateAgentMessage(messages, update.messageId)
-      const lastThinking = lastMsg.content.findLast((b): b is { type: 'thinking'; text: string } => b.type === 'thinking')
-      if (lastThinking) {
-        lastThinking.text += update.text
-      } else {
-        lastMsg.content.push({ type: 'thinking', text: update.text })
-      }
-      return { ...session, messages }
-    }
-
-    case 'tool_call_start': {
-      const lastMsg = findOrCreateAgentMessage(messages, update.messageId)
-      if (!lastMsg.toolCalls) lastMsg.toolCalls = []
-      lastMsg.toolCalls.push(update.toolCall)
-      return { ...session, messages }
-    }
-
-    case 'tool_call_update': {
-      for (const msg of messages) {
-        if (msg.toolCalls) {
-          const tc = msg.toolCalls.find((t) => t.toolCallId === update.toolCallId)
-          if (tc) {
-            tc.status = update.status
-            if (update.output) tc.output = update.output
-            break
-          }
-        }
-      }
-      return { ...session, messages }
-    }
-
     case 'message_complete': {
-      const msg = messages.find((m) => m.id === update.messageId || m.isStreaming)
-      if (msg) {
-        msg.isStreaming = false
-      }
+      const messages = session.messages.map((m) =>
+        (m.id === update.messageId || m.isStreaming) ? { ...m, isStreaming: false } : m
+      )
       return { ...session, messages, status: 'active' }
     }
 
@@ -238,21 +436,42 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   }
 }
 
-function findOrCreateAgentMessage(messages: Message[], messageId: string): Message {
-  let msg = messages.find((m) => m.id === messageId)
-  if (!msg) {
-    // Find the last streaming agent message or create one
-    msg = messages.findLast((m) => m.role === 'agent' && m.isStreaming)
-    if (!msg) {
-      msg = {
-        id: messageId || uuid(),
-        role: 'agent',
-        content: [],
-        timestamp: new Date().toISOString(),
-        isStreaming: true
-      }
-      messages.push(msg)
-    }
+/** Find the last index in an array matching a predicate. */
+function findLastIndex<T>(arr: T[], pred: (item: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (pred(arr[i])) return i
   }
-  return msg
+  return -1
+}
+
+/**
+ * Immutably replace (or auto-create) the target agent message in session.messages.
+ * `transform` receives the existing message and must return a *new* object.
+ */
+function replaceAgentMessage(
+  session: SessionInfo,
+  messageId: string,
+  transform: (msg: Message) => Message
+): SessionInfo {
+  // Try to find by id first, then fall back to last streaming agent message
+  let targetIdx = session.messages.findIndex((m) => m.id === messageId)
+  if (targetIdx < 0) {
+    targetIdx = findLastIndex(session.messages, (m) => m.role === 'agent' && !!m.isStreaming)
+  }
+
+  if (targetIdx >= 0) {
+    const messages = [...session.messages]
+    messages[targetIdx] = transform(messages[targetIdx])
+    return { ...session, messages }
+  }
+
+  // No matching message — create one, then apply transform
+  const newMsg: Message = {
+    id: messageId || uuid(),
+    role: 'agent',
+    content: [],
+    timestamp: new Date().toISOString(),
+    isStreaming: true
+  }
+  return { ...session, messages: [...session.messages, transform(newMsg)] }
 }

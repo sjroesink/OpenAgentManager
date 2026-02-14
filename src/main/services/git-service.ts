@@ -5,6 +5,7 @@ import type { GitStatus, WorktreeInfo, CommitResult } from '@shared/types/git'
 import type { DiffResult, FileDiff } from '@shared/types/project'
 import { DEFAULT_WORKTREE_PREFIX } from '@shared/constants'
 import { settingsService } from './settings-service'
+import { getWorktreesDir } from '../util/paths'
 import { logger } from '../util/logger'
 
 export class GitService {
@@ -167,10 +168,10 @@ export class GitService {
 
   private getWorktreeBase(projectPath: string): string {
     const settings = settingsService.get()
-    return (
-      settings.git.worktreeBaseDir ||
-      path.join(path.dirname(projectPath), `${path.basename(projectPath)}-worktrees`)
-    )
+    if (settings.git.worktreeBaseDir) {
+      return settings.git.worktreeBaseDir
+    }
+    return path.join(getWorktreesDir(), path.basename(projectPath))
   }
 
   private async getHead(workingDir: string): Promise<string> {

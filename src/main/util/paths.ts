@@ -42,6 +42,13 @@ export function getSessionsDir(): string {
   return dir
 }
 
+/** Directory for git worktrees */
+export function getWorktreesDir(): string {
+  const dir = path.join(getAppDataDir(), 'worktrees')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 /** Temp directory for downloads */
 export function getDownloadsDir(): string {
   const dir = path.join(getAppDataDir(), 'downloads')

@@ -1,9 +1,12 @@
-import { BrowserWindow, shell, app } from 'electron'
+import { BrowserWindow, shell, app, Menu } from 'electron'
 import { join } from 'path'
 
 let mainWindow: BrowserWindow | null = null
 
 export function createMainWindow(): BrowserWindow {
+  // Remove the native application menu on all platforms
+  Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -12,6 +15,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     title: 'AgentManager',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    autoHideMenuBar: true,
     backgroundColor: '#0f0f0f',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

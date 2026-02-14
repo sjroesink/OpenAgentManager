@@ -1,16 +1,21 @@
 import React from 'react'
 import { useSessionStore } from '../../stores/session-store'
-import { useProjectStore } from '../../stores/project-store'
+import { useUiStore } from '../../stores/ui-store'
 import { ThreadView } from '../thread/ThreadView'
 import { PromptInput } from '../thread/PromptInput'
+import { DraftThreadView } from '../thread/DraftThreadView'
+import { Spinner } from '../common/Spinner'
 import { Button } from '../common/Button'
-import { useUiStore } from '../../stores/ui-store'
 
 export function MainPanel() {
-  const { activeSessionId, getActiveSession } = useSessionStore()
-  const project = useProjectStore((s) => s.project)
-  const setRegistryBrowserOpen = useUiStore((s) => s.setRegistryBrowserOpen)
+  const { getActiveSession, activeDraftId, draftThread } = useSessionStore()
+  const setNewThreadDialogOpen = useUiStore((s) => s.setNewThreadDialogOpen)
   const activeSession = getActiveSession()
+
+  // Draft thread view — agent selector + worktree toggle + message input
+  if (activeDraftId && draftThread) {
+    return <DraftThreadView draft={draftThread} />
+  }
 
   if (!activeSession) {
     return (
@@ -24,33 +29,34 @@ export function MainPanel() {
           />
         </svg>
         <div className="text-center">
-          <p className="text-lg font-medium text-text-secondary mb-1">No active session</p>
-          <p className="text-sm">
-            {project
-              ? 'Create a new thread to start working with an agent'
-              : 'Open a project to get started'}
-          </p>
+          <p className="text-lg font-medium text-text-secondary mb-1">Let's build</p>
+          <p className="text-sm">Create a new thread to start working with an agent</p>
         </div>
-        {!project && (
-          <Button variant="primary" onClick={() => useProjectStore.getState().selectDirectory()}>
-            Open Project
-          </Button>
-        )}
-        {project && (
-          <Button variant="primary" onClick={() => setRegistryBrowserOpen(true)}>
-            Install an Agent
-          </Button>
-        )}
+        <Button variant="primary" onClick={() => setNewThreadDialogOpen(true)}>
+          New Thread
+        </Button>
       </div>
     )
   }
+
+  // Show a loading state while the session is being created
+  if (activeSession.status === 'creating') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-text-muted gap-3">
+        <Spinner size="lg" />
+        <p className="text-sm">Starting agent session...</p>
+      </div>
+    )
+  }
+
+  const statusColor = activeSession.status === 'error' ? 'bg-error' : 'bg-success'
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Session header */}
       <div className="flex items-center px-4 py-2 border-b border-border gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
           <span className="text-sm font-medium truncate">{activeSession.agentName}</span>
           <span className="text-xs text-text-muted truncate">{activeSession.title}</span>
         </div>
