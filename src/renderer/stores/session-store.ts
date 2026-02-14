@@ -447,16 +447,37 @@ function findLastIndex<T>(arr: T[], pred: (item: T) => boolean): number {
 /**
  * Immutably replace (or auto-create) the target agent message in session.messages.
  * `transform` receives the existing message and must return a *new* object.
+ *
+ * Only reuses an existing message if it appears AFTER the last user message,
+ * ensuring agent responses don't get inserted above subsequent user prompts.
  */
 function replaceAgentMessage(
   session: SessionInfo,
   messageId: string,
   transform: (msg: Message) => Message
 ): SessionInfo {
-  // Try to find by id first, then fall back to last streaming agent message
-  let targetIdx = session.messages.findIndex((m) => m.id === messageId)
+  const lastUserIdx = findLastIndex(session.messages, (m) => m.role === 'user')
+
+  // Try to find by id first, but only if it's after the last user message
+  let targetIdx = -1
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    if (session.messages[i].id === messageId) {
+      if (i > lastUserIdx) {
+        targetIdx = i
+      }
+      break
+    }
+  }
+
+  // Fall back to last streaming agent message (must be after last user message)
   if (targetIdx < 0) {
-    targetIdx = findLastIndex(session.messages, (m) => m.role === 'agent' && !!m.isStreaming)
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      if (i <= lastUserIdx) break
+      if (session.messages[i].role === 'agent' && session.messages[i].isStreaming) {
+        targetIdx = i
+        break
+      }
+    }
   }
 
   if (targetIdx >= 0) {
@@ -465,9 +486,9 @@ function replaceAgentMessage(
     return { ...session, messages }
   }
 
-  // No matching message — create one, then apply transform
+  // No matching message after last user — create a new one at the end
   const newMsg: Message = {
-    id: messageId || uuid(),
+    id: messageId === 'current' ? uuid() : (messageId || uuid()),
     role: 'agent',
     content: [],
     timestamp: new Date().toISOString(),

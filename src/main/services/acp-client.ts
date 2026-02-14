@@ -546,13 +546,11 @@ export class AcpClient {
       }, 5 * 60 * 1000)
     })
 
-    // Send response back to agent using ACP outcome format
+    // Send response back to agent — the result IS the outcome object (not nested)
     if (id !== undefined) {
       this.sendResponse(id, {
-        outcome: {
-          outcome: 'selected',
-          optionId: response.optionId
-        }
+        outcome: 'selected',
+        optionId: response.optionId
       })
     }
   }

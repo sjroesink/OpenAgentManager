@@ -2,6 +2,15 @@ import React, { useState } from 'react'
 import type { ToolCallInfo } from '@shared/types/session'
 import { Badge } from '../common/Badge'
 
+function formatInput(input: string): string {
+  try {
+    const parsed = JSON.parse(input)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return input
+  }
+}
+
 interface ToolCallCardProps {
   toolCall: ToolCallInfo
 }
@@ -63,21 +72,34 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
 
       {expanded && (
         <div className="border-t border-border px-3 py-2 space-y-2">
-          {toolCall.input && (
+          {toolCall.diff && (
+            <div>
+              <div className="text-[10px] text-text-muted uppercase font-medium mb-1">
+                {toolCall.diff.path}
+              </div>
+              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-60 whitespace-pre-wrap">
+                {toolCall.diff.newText}
+              </pre>
+            </div>
+          )}
+          {toolCall.input && toolCall.input !== '{}' && (
             <div>
               <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Input</div>
-              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-40">
-                {toolCall.input}
+              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-40 whitespace-pre-wrap">
+                {formatInput(toolCall.input)}
               </pre>
             </div>
           )}
           {toolCall.output && (
             <div>
               <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Output</div>
-              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-40">
+              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-40 whitespace-pre-wrap">
                 {toolCall.output}
               </pre>
             </div>
+          )}
+          {!toolCall.diff && !toolCall.input && !toolCall.output && (
+            <div className="text-xs text-text-muted py-1">No details available</div>
           )}
         </div>
       )}
