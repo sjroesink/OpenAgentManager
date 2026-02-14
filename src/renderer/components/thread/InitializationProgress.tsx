@@ -109,6 +109,9 @@ function StepRow({ step }: { step: HookStep }) {
         >
           {step.label}
         </span>
+        {step.status === 'running' && step.detail && (
+          <p className="text-[10px] text-text-muted mt-0.5">{step.detail}</p>
+        )}
         {step.status === 'failed' && step.detail && (
           <p className="text-[10px] text-error/70 truncate">{step.detail}</p>
         )}

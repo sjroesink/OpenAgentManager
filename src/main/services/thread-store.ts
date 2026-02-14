@@ -67,6 +67,24 @@ export class ThreadStore {
     store.set('threads', all)
   }
 
+  /** Rename a thread — updates title in BOTH folder and cache. */
+  rename(sessionId: string, title: string): void {
+    const all = this.loadAll()
+    const idx = all.findIndex((t) => t.sessionId === sessionId)
+    if (idx < 0) return
+
+    all[idx].title = title
+
+    // Update .agent/ folder manifest (primary)
+    this.writeToFolder(all[idx].workspaceId, (workspacePath) => {
+      folderThreadStore.updateManifestTitle(workspacePath, sessionId, title)
+    })
+
+    // Update electron-store cache (secondary)
+    store.set('threads', all)
+    logger.info(`Thread renamed: ${sessionId} → ${title}`)
+  }
+
   /** Load all persisted threads from cache. */
   loadAll(): PersistedThread[] {
     return store.get('threads', [])

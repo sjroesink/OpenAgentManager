@@ -22,6 +22,8 @@ export interface SessionInfo {
   initProgress?: HookStep[]
   /** Error message from failed initialization. UI-only field. */
   initError?: string
+  /** Error message from the most recent prompt failure. UI-only field. */
+  lastError?: string
 }
 
 export type SessionStatus = 'initializing' | 'creating' | 'active' | 'prompting' | 'idle' | 'cancelled' | 'error'

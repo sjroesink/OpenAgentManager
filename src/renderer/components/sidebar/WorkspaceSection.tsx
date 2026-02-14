@@ -113,10 +113,13 @@ function DeletePopover({
 }
 
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, deleteSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, deleteSession, renameSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
 
   const isExpanded = expandedWorkspaceIds.has(workspace.id)
@@ -127,6 +130,19 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     startDraftThread(workspace.id, workspace.path)
     // Ensure the workspace section is expanded
     if (!isExpanded) toggleExpanded(workspace.id)
+  }
+
+  const startRename = (session: SessionInfo) => {
+    setEditingId(session.sessionId)
+    setEditTitle(session.title)
+    setTimeout(() => editInputRef.current?.select(), 0)
+  }
+
+  const commitRename = () => {
+    if (editingId && editTitle.trim()) {
+      renameSession(editingId, editTitle.trim())
+    }
+    setEditingId(null)
   }
 
   return (
@@ -266,8 +282,29 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">{isDeleting ? 'Deleting...' : session.title}</div>
-                      <div className="text-[11px] text-text-muted truncate">{session.agentName}</div>
+                      {editingId === session.sessionId ? (
+                        <input
+                          ref={editInputRef}
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename()
+                            if (e.key === 'Escape') setEditingId(null)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-sm w-full bg-surface-2 border border-accent rounded px-1 py-0 outline-none text-text-primary"
+                          autoFocus
+                        />
+                      ) : (
+                        <div
+                          className="text-sm truncate"
+                          onDoubleClick={(e) => { e.stopPropagation(); if (!isDeleting) startRename(session) }}
+                        >
+                          {isDeleting ? 'Deleting...' : session.title}
+                        </div>
+                      )}
+                      <div className="text-[11px] text-text-muted truncate opacity-0 group-hover/thread:opacity-100 transition-opacity">{session.agentName}</div>
                       {session.worktreeBranch && !isDeleting && (
                         <Badge variant="default" className="mt-0.5">
                           {session.worktreeBranch}
@@ -278,6 +315,17 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                     {/* Thread action buttons */}
                     {!isDeleting && (
                       <div className="flex items-center gap-0.5 opacity-0 group-hover/thread:opacity-100 transition-opacity shrink-0 mt-0.5">
+                        {/* Rename thread */}
+                        <span
+                          role="button"
+                          onClick={(e) => { e.stopPropagation(); startRename(session) }}
+                          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+                          title="Rename thread"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </span>
                         {/* Open worktree in VS Code */}
                         {session.worktreePath && (
                           <span

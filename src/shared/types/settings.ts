@@ -14,6 +14,8 @@ export interface GeneralSettings {
   defaultProjectPath?: string
   fontSize: number
   showToolCallDetails: boolean
+  /** Agent used for auto-generating thread titles from conversation content */
+  summarizationAgentId?: string
 }
 
 export interface GitSettings {

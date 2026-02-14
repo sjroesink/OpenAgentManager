@@ -116,6 +116,20 @@ export class FolderThreadStore {
     this.updateManifestStats(threadDir, messages)
   }
 
+  updateManifestTitle(workspacePath: string, threadId: string, title: string): void {
+    const threadDir = this.getThreadDir(workspacePath, threadId)
+    const manifestPath = path.join(threadDir, THREAD_MANIFEST_FILE)
+    if (!fs.existsSync(manifestPath)) return
+
+    try {
+      const manifest: ThreadManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
+      manifest.title = title
+      this.writeJsonAtomic(manifestPath, manifest)
+    } catch (err) {
+      logger.warn(`Failed to update manifest title: ${manifestPath}`, err)
+    }
+  }
+
   removeThread(workspacePath: string, threadId: string): void {
     const threadDir = this.getThreadDir(workspacePath, threadId)
     if (fs.existsSync(threadDir)) {

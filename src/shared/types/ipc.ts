@@ -52,7 +52,9 @@ export interface IpcChannels {
   'session:permission-response': { request: PermissionResponse; response: void }
   'session:rebuild-cache': { request: void; response: { threadCount: number } }
   'session:set-mode': { request: { sessionId: string; modeId: string }; response: void }
+  'session:rename': { request: { sessionId: string; title: string }; response: void }
   'session:set-config-option': { request: { sessionId: string; configId: string; value: string }; response: ConfigOption[] }
+  'session:generate-title': { request: { sessionId: string }; response: string | null }
 
   // --- Files ---
   'file:read-tree': { request: { dirPath: string; depth?: number }; response: FileTreeNode[] }

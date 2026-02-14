@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useUiStore } from '../../stores/ui-store'
+import { useAgentStore } from '../../stores/agent-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
 import type { AppSettings } from '@shared/types/settings'
@@ -14,6 +15,7 @@ export function SettingsDialog() {
     available: false,
     distributions: []
   })
+  const installedAgents = useAgentStore((s) => s.installed)
 
   useEffect(() => {
     if (settingsOpen) {
@@ -110,6 +112,26 @@ export function SettingsDialog() {
                     })
                   }
                 />
+              </SettingsField>
+
+              <SettingsField label="Title Generation Agent" description="Agent used to auto-generate thread titles from conversation content">
+                <select
+                  value={settings.general.summarizationAgentId || ''}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      general: { ...settings.general, summarizationAgentId: e.target.value || undefined }
+                    })
+                  }
+                  className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                >
+                  <option value="">None (manual titles only)</option>
+                  {installedAgents.map((agent) => (
+                    <option key={agent.registryId} value={agent.registryId}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
               </SettingsField>
             </>
           )}

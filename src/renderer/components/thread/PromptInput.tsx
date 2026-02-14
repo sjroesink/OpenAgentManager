@@ -1,8 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useUiStore } from '../../stores/ui-store'
+import { useAcpFeaturesStore } from '../../stores/acp-features-store'
 import { Button } from '../common/Button'
-import type { InteractionMode } from '@shared/types/session'
+import type { InteractionMode, SlashCommand } from '@shared/types/session'
 
 const MODE_CONFIG: Record<InteractionMode, { icon: React.ReactNode; label: string; description: string }> = {
   ask: {
@@ -49,11 +50,16 @@ const MODES: InteractionMode[] = ['ask', 'code', 'plan', 'act']
 export function PromptInput() {
   const [text, setText] = useState('')
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false)
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
+  const [commandQuery, setCommandQuery] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const commandMenuRef = useRef<HTMLDivElement>(null)
   const { activeSessionId, sendPrompt, getActiveSession } = useSessionStore()
   const { interactionMode, setInteractionMode } = useUiStore()
+  const { getSessionState } = useAcpFeaturesStore()
 
   const session = getActiveSession()
   const isInitializing = session?.status === 'initializing'
@@ -62,7 +68,33 @@ export function PromptInput() {
   const isBusy = isPrompting || isCreating || isInitializing
   const currentMode = MODE_CONFIG[interactionMode]
 
-  // Close menu on outside click
+  // Slash commands from the agent
+  const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
+  const availableCommands = acpState?.commands || []
+
+  const filteredCommands = useMemo(() => {
+    if (!commandQuery) return availableCommands
+    const lowerQuery = commandQuery.toLowerCase()
+    return availableCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(lowerQuery))
+  }, [availableCommands, commandQuery])
+
+  const selectCommand = useCallback((command: SlashCommand) => {
+    const commandText = `/${command.name} `
+    setText(commandText)
+    setCommandMenuOpen(false)
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+      // Use requestAnimationFrame to set cursor after React re-renders with new text
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = commandText.length
+          textareaRef.current.selectionEnd = commandText.length
+        }
+      })
+    }
+  }, [])
+
+  // Close mode menu on outside click
   useEffect(() => {
     if (!modeMenuOpen) return
     const handleClick = (e: MouseEvent) => {
@@ -76,6 +108,21 @@ export function PromptInput() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [modeMenuOpen])
+
+  // Close command menu on outside click
+  useEffect(() => {
+    if (!commandMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (
+        commandMenuRef.current && !commandMenuRef.current.contains(e.target as Node) &&
+        textareaRef.current && !textareaRef.current.contains(e.target as Node)
+      ) {
+        setCommandMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [commandMenuOpen])
 
   const handleSubmit = useCallback(async () => {
     if (!text.trim() || !activeSessionId || isBusy) return
@@ -92,6 +139,28 @@ export function PromptInput() {
   }, [text, activeSessionId, isBusy, sendPrompt, interactionMode])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (commandMenuOpen && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedCommandIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedCommandIndex((prev) => Math.max(prev - 1, 0))
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        selectCommand(filteredCommands[selectedCommandIndex])
+        return
+      }
+    }
+    if (commandMenuOpen && e.key === 'Escape') {
+      e.preventDefault()
+      setCommandMenuOpen(false)
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit()
@@ -99,12 +168,23 @@ export function PromptInput() {
   }
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value)
+    const newText = e.target.value
+    setText(newText)
 
     // Auto-resize
     const textarea = e.target
     textarea.style.height = 'auto'
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+
+    // Slash command detection
+    const textBeforeCursor = newText.slice(0, textarea.selectionStart)
+    if (textBeforeCursor.startsWith('/') && !textBeforeCursor.includes(' ') && availableCommands.length > 0) {
+      setCommandQuery(textBeforeCursor.slice(1))
+      setCommandMenuOpen(true)
+      setSelectedCommandIndex(0)
+    } else {
+      setCommandMenuOpen(false)
+    }
   }
 
   const selectMode = (mode: InteractionMode) => {
@@ -118,6 +198,36 @@ export function PromptInput() {
     <div className="border-t border-border p-3 bg-surface-0 shrink-0">
       <div className="flex items-end gap-2 max-w-3xl mx-auto">
         <div className="flex-1 relative">
+          {/* Slash command autocomplete menu */}
+          {commandMenuOpen && (
+            <div
+              ref={commandMenuRef}
+              className="absolute bottom-full left-0 mb-1 w-80 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
+            >
+              {filteredCommands.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-text-muted">No matching commands</div>
+              ) : (
+                filteredCommands.map((command, index) => (
+                  <button
+                    key={command.name}
+                    onClick={() => selectCommand(command)}
+                    onMouseEnter={() => setSelectedCommandIndex(index)}
+                    className={`w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
+                      index === selectedCommandIndex ? 'bg-surface-3' : 'hover:bg-surface-3'
+                    }`}
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-medium text-accent">/{command.name}</span>
+                      {command.input?.hint && (
+                        <span className="text-xs text-text-muted italic">{command.input.hint}</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-text-secondary">{command.description}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={isCreating && session?.pendingPrompt ? session.pendingPrompt : text}

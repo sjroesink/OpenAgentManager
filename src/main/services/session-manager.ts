@@ -7,6 +7,7 @@ import { gitService } from './git-service'
 import { worktreeHookService } from './worktree-hook-service'
 import { threadStore } from './thread-store'
 import { workspaceService } from './workspace-service'
+import { settingsService } from './settings-service'
 import { logger } from '../util/logger'
 
 /**
@@ -274,6 +275,91 @@ export class SessionManagerService {
     const client = agentManager.getClient(session.connectionId)
     if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
     return await client.setConfigOption(sessionId, configId, value)
+  }
+
+  /**
+   * Auto-generate a thread title using the configured summarization agent.
+   * Launches the agent, sends the conversation as context, and extracts a short title.
+   */
+  async generateTitle(sessionId: string): Promise<string | null> {
+    const settings = settingsService.get()
+    const agentId = settings.general.summarizationAgentId
+    if (!agentId) return null
+
+    const session = this.sessions.get(sessionId)
+    if (!session) return null
+
+    // Build a summary of the conversation for the title prompt
+    const conversationText = session.messages
+      .filter((m) => m.content.length > 0)
+      .map((m) => {
+        const text = m.content
+          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n')
+        return `${m.role === 'user' ? 'User' : 'Agent'}: ${text}`
+      })
+      .join('\n\n')
+
+    if (!conversationText.trim()) return null
+
+    const titlePrompt = `Generate a very short title (max 6 words) for the following conversation. Reply with ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n${conversationText}`
+
+    try {
+      // Find or launch the summarization agent
+      const connections = agentManager.listConnections()
+      let connection = connections.find(
+        (c) => c.agentId === agentId && c.status === 'connected'
+      )
+      if (!connection) {
+        connection = await agentManager.launch(agentId, session.workingDir)
+      }
+
+      const client = agentManager.getClient(connection.connectionId)
+      if (!client) return null
+
+      // Create a temporary session for the title generation
+      const tempSessionId = `title-${uuid().slice(0, 8)}`
+      await client.newSession(session.workingDir, [], tempSessionId)
+
+      // Collect response text from streaming events
+      let responseText = ''
+      const listener = (event: SessionUpdateEvent): void => {
+        if (event.sessionId !== tempSessionId) return
+        if (event.update.type === 'text_chunk' && event.update.text) {
+          responseText += event.update.text
+        }
+      }
+      client.on('session-update', listener)
+
+      try {
+        await client.prompt(tempSessionId, titlePrompt)
+      } finally {
+        client.removeListener('session-update', listener)
+      }
+
+      // Clean up: we don't persist the temp session
+      const title = responseText.trim().replace(/^["']|["']$/g, '').slice(0, 100)
+      if (!title) return null
+
+      // Apply the generated title
+      threadStore.rename(sessionId, title)
+      session.title = title
+
+      // Notify the renderer
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:update', {
+          sessionId,
+          update: { type: 'session_info_update', title }
+        })
+      }
+
+      logger.info(`Auto-generated title for ${sessionId}: ${title}`)
+      return title
+    } catch (error) {
+      logger.warn(`Failed to auto-generate title for ${sessionId}:`, error)
+      return null
+    }
   }
 
   getSession(sessionId: string): SessionInfo | undefined {

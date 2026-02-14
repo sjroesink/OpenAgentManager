@@ -39,6 +39,13 @@ export function registerSessionHandlers(): void {
     sessionManager.resolvePermission(response)
   })
 
+  ipcMain.handle(
+    'session:rename',
+    async (_event, { sessionId, title }: { sessionId: string; title: string }) => {
+      threadStore.rename(sessionId, title)
+    }
+  )
+
   ipcMain.handle('session:rebuild-cache', () => {
     const workspaces = workspaceService.list().map((w) => ({ path: w.path, id: w.id }))
     threadStore.rebuildCacheFromFolders(workspaces)
@@ -56,6 +63,13 @@ export function registerSessionHandlers(): void {
     'session:set-config-option',
     async (_event, { sessionId, configId, value }: { sessionId: string; configId: string; value: string }) => {
       return sessionManager.setConfigOption(sessionId, configId, value)
+    }
+  )
+
+  ipcMain.handle(
+    'session:generate-title',
+    async (_event, { sessionId }: { sessionId: string }) => {
+      return sessionManager.generateTitle(sessionId)
     }
   )
 }

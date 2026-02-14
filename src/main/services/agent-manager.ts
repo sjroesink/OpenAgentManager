@@ -242,13 +242,16 @@ export class AgentManagerService {
       const initResult = await client.initialize()
 
       this.connections.set(client.connectionId, client)
+
+      // Always mark as connected — authMethods are informational, not blocking.
+      // The agent may still accept sessions/prompts; auth errors surface at prompt time.
       emitStatus('connected')
 
       const connection: AgentConnection = {
         connectionId: client.connectionId,
         agentId,
         agentName: initResult.agentName,
-        status: initResult.authMethods.length > 0 ? 'authenticating' : 'connected',
+        status: 'connected',
         pid: client.pid,
         startedAt: new Date().toISOString(),
         capabilities: initResult.capabilities,
@@ -271,6 +274,14 @@ export class AgentManagerService {
     const client = this.connections.get(connectionId)
     if (!client) throw new Error(`Connection not found: ${connectionId}`)
     await client.authenticate(method, credentials)
+
+    // Emit connected status after successful authentication
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('agent:status-change', {
+        connectionId,
+        status: 'connected'
+      })
+    }
   }
 
   terminate(connectionId: string): void {

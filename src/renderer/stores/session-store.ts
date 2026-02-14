@@ -58,6 +58,7 @@ interface SessionState {
   // Persistence actions
   loadPersistedSessions: () => Promise<void>
   deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
+  renameSession: (sessionId: string, title: string) => Promise<void>
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
@@ -134,6 +135,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         next.delete(sessionId)
         return { deletingSessionIds: next }
       })
+    }
+  },
+
+  renameSession: async (sessionId, title) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === sessionId ? { ...s, title } : s
+      )
+    }))
+    try {
+      await window.api.invoke('session:rename', { sessionId, title })
+    } catch (error) {
+      console.error('Failed to rename session:', error)
     }
   },
 
@@ -218,7 +232,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.sessionId === activeSessionId
-          ? { ...s, status: 'prompting' as const, messages: [...s.messages, userMessage] }
+          ? { ...s, status: 'prompting' as const, lastError: undefined, messages: [...s.messages, userMessage] }
           : s
       )
     }))
@@ -233,13 +247,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           const messages = s.messages.map((m) =>
             m.isStreaming ? { ...m, isStreaming: false } : m
           )
-          return { ...s, status: 'active' as const, messages }
+          return { ...s, status: 'active' as const, lastError: undefined, messages }
         })
       }))
+
+      // Auto-generate title after first agent response if title is still default
+      const session = get().sessions.find((s) => s.sessionId === activeSessionId)
+      if (session) {
+        const isDefaultTitle =
+          session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
+        const userMessages = session.messages.filter((m) => m.role === 'user')
+        if (isDefaultTitle && userMessages.length === 1) {
+          // Fire-and-forget: title comes back via session_info_update event
+          window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
+        }
+      }
     } catch (error) {
+      const errorMessage = (error as Error).message || 'Prompt failed'
       set((state) => ({
         sessions: state.sessions.map((s) =>
-          s.sessionId === activeSessionId ? { ...s, status: 'error' as const } : s
+          s.sessionId === activeSessionId
+            ? { ...s, status: 'error' as const, lastError: errorMessage }
+            : s
         )
       }))
     }
