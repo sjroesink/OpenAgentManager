@@ -30,19 +30,23 @@ export function PermissionDialog() {
   const currentPermission = pendingPermissions[0]
   if (!currentPermission) return null
 
-  const { toolCall, options } = currentPermission
-  const title = formatToolTitle(toolCall)
-  const details = formatToolDetails(toolCall.rawInput)
+  const safeToolCall = currentPermission.toolCall || { title: (currentPermission as unknown as Record<string, unknown>).title as string || 'Permission Required' }
+  const safeOptions = currentPermission.options || [
+    { optionId: 'reject', name: 'Reject', kind: 'reject_once' as const },
+    { optionId: 'allow', name: 'Allow', kind: 'allow_once' as const }
+  ]
+  const title = formatToolTitle(safeToolCall)
+  const details = formatToolDetails(safeToolCall.rawInput)
 
   // Split options into allow (positive) and reject (negative) groups
-  const rejectOptions = options.filter((o) => o.kind.startsWith('reject'))
-  const allowOptions = options.filter((o) => o.kind.startsWith('allow'))
+  const rejectOptions = safeOptions.filter((o) => o.kind.startsWith('reject'))
+  const allowOptions = safeOptions.filter((o) => o.kind.startsWith('allow'))
 
   return (
     <Dialog
       open={true}
       onClose={() => {
-        const rejectOpt = rejectOptions[0] || options[0]
+        const rejectOpt = rejectOptions[0] || safeOptions[0]
         respondToPermission(currentPermission.requestId, rejectOpt.optionId)
       }}
       title="Permission Required"
