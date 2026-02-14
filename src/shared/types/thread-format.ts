@@ -111,13 +111,17 @@ export type StoredContentBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'image'; assetRef: string; mimeType: string }
+  | { type: 'audio'; assetRef: string; mimeType: string }
+  | { type: 'resource'; uri: string; mimeType?: string; text?: string; assetRef?: string }
+  | { type: 'resource_link'; uri: string; name: string; mimeType?: string; title?: string; description?: string; size?: number }
   | { type: 'tool_call_ref'; toolCallId: string }
 
 export interface StoredToolCall {
   toolCallId: string
   name: string
   title?: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  kind?: string
+  status: 'pending' | 'in_progress' | 'running' | 'completed' | 'failed'
   input?: string
   output?: string
   duration?: number
@@ -126,4 +130,5 @@ export interface StoredToolCall {
     oldText: string
     newText: string
   }
+  locations?: Array<{ path: string; line?: number }>
 }

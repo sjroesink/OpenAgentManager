@@ -6,6 +6,7 @@ import { PermissionDialog } from './components/thread/PermissionDialog'
 import { useSessionStore } from './stores/session-store'
 import { useAgentStore } from './stores/agent-store'
 import { useWorkspaceStore } from './stores/workspace-store'
+import { useAcpFeaturesStore } from './stores/acp-features-store'
 import { useIpcEvent } from './hooks/useIpc'
 import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
@@ -13,13 +14,16 @@ export default function App() {
   const { handleSessionUpdate, handlePermissionRequest, handleHookProgress, loadPersistedSessions } = useSessionStore()
   const { updateConnectionStatus, loadInstalled } = useAgentStore()
   const { loadWorkspaces } = useWorkspaceStore()
+  const { applyUpdate: applyAcpUpdate } = useAcpFeaturesStore()
 
   // Subscribe to IPC events from main process
   const onSessionUpdate = useCallback(
     (event: SessionUpdateEvent) => {
       handleSessionUpdate(event)
+      // Also forward to ACP features store for mode/config/plan/usage tracking
+      applyAcpUpdate(event.sessionId, event.update)
     },
-    [handleSessionUpdate]
+    [handleSessionUpdate, applyAcpUpdate]
   )
 
   const onPermissionRequest = useCallback(

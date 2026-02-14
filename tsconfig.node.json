@@ -23,6 +23,8 @@
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
-    "electron.vite.config.ts"
+    "src/mcp-server/**/*.ts",
+    "electron.vite.config.ts",
+    "vite.mcp.config.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import type { BrowserWindow } from 'electron'
-import type { SessionInfo, CreateSessionRequest, PermissionResponse, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep } from '@shared/types/session'
+import type { SessionInfo, CreateSessionRequest, PermissionResponse, PermissionRequestEvent, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep } from '@shared/types/session'
 import { applyUpdateToMessages } from '@shared/util/session-util'
 import { agentManager } from './agent-manager'
 import { gitService } from './git-service'
@@ -17,6 +17,7 @@ export class SessionManagerService {
   private sessions = new Map<string, SessionInfo>()
   private monitoredConnections = new Set<string>()
   private mainWindow: BrowserWindow | null = null
+  private pendingPermissions = new Map<string, PermissionRequestEvent>()
 
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window
@@ -45,6 +46,9 @@ export class SessionManagerService {
             session.status = 'error'
           }
         }
+      })
+      client.on('permission-request', (event: PermissionRequestEvent) => {
+        this.trackPermission(event)
       })
       this.monitoredConnections.add(connectionId)
     }
@@ -227,13 +231,16 @@ export class SessionManagerService {
 
     const client = agentManager.getClient(session.connectionId)
     if (client) {
-      await client.cancel(sessionId)
+      client.cancel(sessionId)
     }
 
     session.status = 'cancelled'
   }
 
   resolvePermission(response: PermissionResponse): void {
+    // Remove from pending tracking
+    this.pendingPermissions.delete(response.requestId)
+
     // Forward the permission response to all active agent connections.
     // Each client will check if it has a pending resolver for this requestId.
     const connections = agentManager.listConnections()
@@ -243,6 +250,30 @@ export class SessionManagerService {
         client.resolvePermission(response)
       }
     }
+  }
+
+  trackPermission(event: PermissionRequestEvent): void {
+    this.pendingPermissions.set(event.requestId, event)
+  }
+
+  listPendingPermissions(): PermissionRequestEvent[] {
+    return Array.from(this.pendingPermissions.values())
+  }
+
+  async setMode(sessionId: string, modeId: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    const client = agentManager.getClient(session.connectionId)
+    if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
+    await client.setMode(sessionId, modeId)
+  }
+
+  async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    const client = agentManager.getClient(session.connectionId)
+    if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
+    return await client.setConfigOption(sessionId, configId, value)
   }
 
   getSession(sessionId: string): SessionInfo | undefined {

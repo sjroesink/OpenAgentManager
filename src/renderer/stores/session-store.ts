@@ -609,7 +609,8 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
         newToolCalls[tcIdx] = {
           ...newToolCalls[tcIdx],
           status: update.status,
-          ...(update.output != null ? { output: update.output } : {})
+          ...(update.output != null ? { output: update.output } : {}),
+          ...(update.locations ? { locations: update.locations } : {})
         }
         return { ...msg, toolCalls: newToolCalls }
       })
@@ -628,6 +629,22 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
 
     case 'error':
       return { ...session, status: 'error' }
+
+    // ACP spec: mode/config/command/plan/usage updates — consumed by acp-features-store
+    case 'current_mode_update':
+    case 'config_options_update':
+    case 'available_commands_update':
+    case 'plan_update':
+    case 'usage_update':
+      return session
+
+    // RFD: session_info_update — sync title to session
+    case 'session_info_update': {
+      if (update.title !== undefined && update.title !== null) {
+        return { ...session, title: update.title }
+      }
+      return session
+    }
 
     default:
       return session

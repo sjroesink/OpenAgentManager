@@ -201,9 +201,11 @@ export class FolderThreadStore {
           title: tc.title,
           status: tc.status
         }
+        if (tc.kind) stc.kind = tc.kind
         if (tc.input !== undefined) stc.input = tc.input
         if (tc.output !== undefined) stc.output = tc.output
         if (tc.diff) stc.diff = tc.diff
+        if (tc.locations) stc.locations = tc.locations
         return stc
       })
     }
@@ -228,10 +230,12 @@ export class FolderThreadStore {
         toolCallId: stc.toolCallId,
         name: stc.name,
         title: stc.title || stc.name,
+        kind: stc.kind as import('@shared/types/session').ToolCallKind | undefined,
         status: stc.status,
         input: stc.input,
         output: stc.output,
-        diff: stc.diff
+        diff: stc.diff,
+        locations: stc.locations
       }))
     }
 
@@ -413,23 +417,63 @@ export class FolderThreadStore {
   // ---- Private helpers ----
 
   private contentBlockToStored(block: ContentBlock, threadDir: string): StoredContentBlock {
-    if (block.type === 'image') {
-      const assetRef = this.saveAsset(threadDir, block.data, block.mimeType)
-      return { type: 'image', assetRef, mimeType: block.mimeType }
+    switch (block.type) {
+      case 'image': {
+        const assetRef = this.saveAsset(threadDir, block.data, block.mimeType)
+        return { type: 'image', assetRef, mimeType: block.mimeType }
+      }
+      case 'audio': {
+        const assetRef = this.saveAsset(threadDir, block.data, block.mimeType)
+        return { type: 'audio', assetRef, mimeType: block.mimeType }
+      }
+      case 'resource': {
+        if (block.resource.blob) {
+          const ext = block.resource.mimeType?.split('/')[1] || 'bin'
+          const assetRef = this.saveAsset(threadDir, block.resource.blob, block.resource.mimeType || `application/${ext}`)
+          return { type: 'resource', uri: block.resource.uri, mimeType: block.resource.mimeType, text: block.resource.text, assetRef }
+        }
+        return { type: 'resource', uri: block.resource.uri, mimeType: block.resource.mimeType, text: block.resource.text }
+      }
+      case 'resource_link':
+        return { type: 'resource_link', uri: block.uri, name: block.name, mimeType: block.mimeType, title: block.title, description: block.description, size: block.size }
+      case 'text':
+      case 'thinking':
+      case 'tool_call_ref':
+        return block
     }
-    return block
   }
 
   private storedToContentBlock(block: StoredContentBlock, threadDir: string): ContentBlock {
-    if (block.type === 'image') {
-      const asset = this.loadAsset(threadDir, block.assetRef)
-      if (asset) {
-        return { type: 'image', data: asset.data, mimeType: asset.mimeType }
+    switch (block.type) {
+      case 'image': {
+        const asset = this.loadAsset(threadDir, block.assetRef)
+        if (asset) return { type: 'image', data: asset.data, mimeType: asset.mimeType }
+        return { type: 'text', text: `[Missing image: ${block.assetRef}]` }
       }
-      // Asset missing - return placeholder
-      return { type: 'text', text: `[Missing image: ${block.assetRef}]` }
+      case 'audio': {
+        const asset = this.loadAsset(threadDir, block.assetRef)
+        if (asset) return { type: 'audio', data: asset.data, mimeType: asset.mimeType }
+        return { type: 'text', text: `[Missing audio: ${block.assetRef}]` }
+      }
+      case 'resource': {
+        const resource: import('@shared/types/session').EmbeddedResourceData = {
+          uri: block.uri,
+          mimeType: block.mimeType,
+          text: block.text
+        }
+        if (block.assetRef) {
+          const asset = this.loadAsset(threadDir, block.assetRef)
+          if (asset) resource.blob = asset.data
+        }
+        return { type: 'resource', resource }
+      }
+      case 'resource_link':
+        return { type: 'resource_link', uri: block.uri, name: block.name, mimeType: block.mimeType, title: block.title, description: block.description, size: block.size }
+      case 'text':
+      case 'thinking':
+      case 'tool_call_ref':
+        return block
     }
-    return block
   }
 
   private computeStats(messages: Message[]): ThreadManifest['stats'] {

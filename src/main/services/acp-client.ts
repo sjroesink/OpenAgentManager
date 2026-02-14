@@ -15,7 +15,12 @@ import type {
   PermissionRequestEvent,
   PermissionResponse,
   PermissionOption,
-  InteractionMode
+  InteractionMode,
+  ToolCallKind,
+  ToolCallLocation,
+  ToolCallStatus,
+  ContentBlock,
+  StopReason
 } from '@shared/types/session'
 import { logger } from '../util/logger'
 
@@ -50,6 +55,17 @@ interface PendingRequest {
 
 type PermissionResolver = (response: PermissionResponse) => void
 
+interface TerminalProcess {
+  process: ChildProcess
+  output: string
+  truncated: boolean
+  exitCode: number | null
+  exitSignal: string | null
+  exited: boolean
+  outputByteLimit: number
+  waitResolvers: Array<() => void>
+}
+
 export class AcpClient extends EventEmitter {
   readonly connectionId: string
   private childProcess: ChildProcess | null = null
@@ -58,6 +74,7 @@ export class AcpClient extends EventEmitter {
   private buffer = ''
   private mainWindow: BrowserWindow | null = null
   private permissionResolvers = new Map<string, PermissionResolver>()
+  private terminals = new Map<string, TerminalProcess>()
 
   // Session mapping: remoteId <-> internalId
   private remoteToInternal = new Map<string, string>()
@@ -139,6 +156,7 @@ export class AcpClient extends EventEmitter {
       protocolVersion: ACP_PROTOCOL_VERSION,
       clientInfo: {
         name: CLIENT_INFO.name,
+        title: CLIENT_INFO.title,
         version: CLIENT_INFO.version
       },
       clientCapabilities: {
@@ -150,7 +168,7 @@ export class AcpClient extends EventEmitter {
       }
     }) as {
       protocolVersion?: number
-      agentInfo?: { name: string; version: string }
+      agentInfo?: { name: string; title?: string; version: string }
       agentCapabilities?: AgentCapabilities
       authMethods?: AuthMethod[]
     }
@@ -195,17 +213,21 @@ export class AcpClient extends EventEmitter {
     return remoteId
   }
 
-  /** Send a prompt to a session */
-  async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
+  /** Send a prompt to a session (spec: prompt is ContentBlock[]) */
+  async prompt(
+    sessionId: string,
+    content: ContentBlock[] | string,
+    mode?: InteractionMode
+  ): Promise<{ stopReason: string }> {
     const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    // Normalize: accept string for backwards compat, always send ContentBlock[]
+    const promptBlocks: ContentBlock[] =
+      typeof content === 'string'
+        ? [{ type: 'text', text: content }]
+        : content
     const params: Record<string, unknown> = {
       sessionId: remoteId,
-      prompt: [
-        {
-          type: 'text',
-          text
-        }
-      ]
+      prompt: promptBlocks
     }
     if (mode) {
       params.interactionMode = mode
@@ -214,10 +236,46 @@ export class AcpClient extends EventEmitter {
     return result
   }
 
-  /** Cancel a running prompt */
-  async cancel(sessionId: string): Promise<void> {
+  /** Set the session mode (spec: session/set_mode) */
+  async setMode(sessionId: string, modeId: string): Promise<void> {
     const remoteId = this.internalToRemote.get(sessionId) || sessionId
-    await this.sendRequest('session/cancel', { sessionId: remoteId })
+    await this.sendRequest('session/set_mode', { sessionId: remoteId, modeId })
+  }
+
+  /** Set a config option value (spec: session/set_config_option) */
+  async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    return await this.sendRequest('session/set_config_option', {
+      sessionId: remoteId,
+      configId,
+      value
+    })
+  }
+
+  /** Load an existing session (spec: session/load) */
+  async loadSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<void> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    await this.sendRequest('session/load', {
+      sessionId: remoteId,
+      cwd,
+      mcpServers
+    })
+  }
+
+  /** Cancel a running prompt (ACP spec: notification, not request) */
+  cancel(sessionId: string): void {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    this.sendNotification('session/cancel', { sessionId: remoteId })
+  }
+
+  /** Cancel a specific pending request (RFD: $/cancel_request) */
+  cancelRequest(requestId: number | string): void {
+    this.sendNotification('$/cancel_request', { requestId })
+  }
+
+  /** Logout - invalidate credentials (RFD) */
+  async logout(): Promise<void> {
+    await this.sendRequest('logout', {})
   }
 
   /** Resolve a pending permission request */
@@ -277,6 +335,15 @@ export class AcpClient extends EventEmitter {
       logger.info(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
+  }
+
+  /** Send a one-way JSON-RPC notification (no id, no response expected) */
+  private sendNotification(method: string, params?: unknown): void {
+    if (!this.childProcess || !this.childProcess.stdin) return
+    const notification = { jsonrpc: '2.0', method, params }
+    const json = JSON.stringify(notification) + '\n'
+    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    this.childProcess.stdin.write(json)
   }
 
   private sendResponse(id: any, result: unknown): void {
@@ -372,10 +439,42 @@ export class AcpClient extends EventEmitter {
         this.handleTerminalCreate(id!, params)
         break
 
+      case 'terminal/output':
+        this.handleTerminalOutput(id!, params)
+        break
+
+      case 'terminal/wait_for_exit':
+        this.handleTerminalWaitForExit(id!, params)
+        break
+
+      case 'terminal/kill':
+        this.handleTerminalKill(id!, params)
+        break
+
+      case 'terminal/release':
+        this.handleTerminalRelease(id!, params)
+        break
+
+      case '$/cancel_request': {
+        // RFD: agent cancels a request it sent us
+        const requestId = params.requestId as number
+        const pending = this.pendingRequests.get(requestId)
+        if (pending) {
+          this.pendingRequests.delete(requestId)
+          pending.reject(new Error('Request cancelled by agent (code -32800)'))
+        }
+        break
+      }
+
       default:
-        logger.warn(`Unknown agent method: ${method}`)
-        if (id !== undefined) {
-          this.sendError(id, -32601, `Method not found: ${method}`)
+        // Ignore unknown notifications (prefix with _ or $/)
+        if (method.startsWith('_') || method.startsWith('$/')) {
+          logger.debug(`Ignoring unknown extension method: ${method}`)
+        } else {
+          logger.warn(`Unknown agent method: ${method}`)
+          if (id !== undefined) {
+            this.sendError(id, -32601, `Method not found: ${method}`)
+          }
         }
     }
   }
@@ -470,7 +569,7 @@ export class AcpClient extends EventEmitter {
         return {
           type: 'message_complete',
           messageId: (raw.messageId as string) || 'current',
-          stopReason: (raw.stopReason as 'end_turn' | 'max_tokens' | 'cancelled' | 'error') || 'end_turn'
+          stopReason: (raw.stopReason as StopReason) || 'end_turn'
         }
       }
 
@@ -494,6 +593,12 @@ export class AcpClient extends EventEmitter {
         const meta = raw._meta as Record<string, Record<string, string>> | undefined
         const toolName = meta?.claudeCode?.toolName || (raw.title as string) || 'unknown'
 
+        // ACP spec: kind categorizes the tool type
+        const kind = (raw.kind as ToolCallKind) || undefined
+
+        // ACP spec: locations for file-following
+        const locations = raw.locations as ToolCallLocation[] | undefined
+
         return {
           type: 'tool_call_start',
           messageId: (raw.messageId as string) || 'current',
@@ -501,8 +606,11 @@ export class AcpClient extends EventEmitter {
             toolCallId,
             title: (raw.title as string) || 'Tool Call',
             name: toolName,
-            status: (raw.status as 'pending' | 'running' | 'completed' | 'failed') || 'running',
+            kind,
+            status: (raw.status as ToolCallStatus) || 'pending',
             input: rawInput ? JSON.stringify(rawInput) : undefined,
+            rawInput,
+            locations,
             ...(diff ? { diff } : {})
           }
         }
@@ -510,17 +618,92 @@ export class AcpClient extends EventEmitter {
 
       case 'tool_call_update': {
         const rawOutput = raw.rawOutput || raw.output
+        const locations = raw.locations as ToolCallLocation[] | undefined
         return {
           type: 'tool_call_update',
           toolCallId: (raw.toolCallId as string) || '',
-          status: (raw.status as 'completed' | 'failed') || 'completed',
-          output: typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput)
+          status: (raw.status as ToolCallStatus) || 'completed',
+          output: typeof rawOutput === 'string' ? rawOutput : (rawOutput != null ? JSON.stringify(rawOutput) : undefined),
+          locations
         }
       }
 
-      case 'plan':
+      case 'plan': {
+        // ACP spec: plan entries with content, priority, status
+        const entries = (raw.entries as Array<Record<string, unknown>>) || []
+        return {
+          type: 'plan_update',
+          entries: entries.map((e) => ({
+            content: (e.content as string) || '',
+            priority: (e.priority as 'high' | 'medium' | 'low') || 'medium',
+            status: (e.status as 'pending' | 'in_progress' | 'completed') || 'pending'
+          }))
+        }
+      }
+
+      case 'current_mode_update': {
+        return {
+          type: 'current_mode_update',
+          modeId: (raw.modeId as string) || ''
+        }
+      }
+
+      case 'config_options_update': {
+        const options = (raw.options as Array<Record<string, unknown>>) || []
+        return {
+          type: 'config_options_update',
+          options: options.map((opt) => ({
+            id: (opt.id as string) || '',
+            name: (opt.name as string) || '',
+            description: opt.description as string | undefined,
+            category: opt.category as string | undefined,
+            type: 'select' as const,
+            currentValue: (opt.currentValue as string) || '',
+            options: ((opt.options as Array<Record<string, unknown>>) || []).map((v) => ({
+              value: (v.value as string) || '',
+              name: (v.name as string) || '',
+              description: v.description as string | undefined
+            }))
+          }))
+        }
+      }
+
+      case 'available_commands_update': {
+        const commands = (raw.commands as Array<Record<string, unknown>>) || []
+        return {
+          type: 'available_commands_update',
+          commands: commands.map((cmd) => ({
+            name: (cmd.name as string) || '',
+            description: (cmd.description as string) || '',
+            input: cmd.input as { hint: string } | undefined
+          }))
+        }
+      }
+
+      case 'session_info_update': {
+        // RFD: agent dynamically updates session metadata
+        return {
+          type: 'session_info_update',
+          title: raw.title as string | null | undefined,
+          updatedAt: raw.updatedAt as string | null | undefined,
+          _meta: raw._meta as Record<string, unknown> | null | undefined
+        }
+      }
+
+      case 'usage_update': {
+        // RFD: token/context/cost tracking
+        return {
+          type: 'usage_update',
+          usage: {
+            used: (raw.used as number) || 0,
+            size: (raw.size as number) || 0,
+            cost: raw.cost as { amount: number; currency: string } | undefined
+          }
+        }
+      }
+
       case 'user_message_chunk':
-        // Informational updates — ignore silently
+        // History replay during session/load — ignore for now
         return { type: 'text_chunk', messageId: 'current', text: '' }
 
       default:
@@ -591,6 +774,9 @@ export class AcpClient extends EventEmitter {
         }, 5 * 60 * 1000)
       })
 
+      // Emit for SessionManager permission tracking
+      this.emit('permission-request', event)
+
       // Forward to renderer
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send('session:permission-request', event)
@@ -627,9 +813,20 @@ export class AcpClient extends EventEmitter {
 
   private handleReadFile(id: number, params: Record<string, unknown>): void {
     const filePath = params.path as string
+    const line = params.line as number | undefined    // 1-based start line
+    const limit = params.limit as number | undefined  // max lines to read
     try {
       const resolvedPath = path.resolve(this.cwd, filePath)
-      const content = fs.readFileSync(resolvedPath, 'utf-8')
+      let content = fs.readFileSync(resolvedPath, 'utf-8')
+
+      // ACP spec: optional line/limit for partial reads
+      if (line !== undefined || limit !== undefined) {
+        const lines = content.split('\n')
+        const startIdx = line ? Math.max(0, line - 1) : 0
+        const endIdx = limit ? startIdx + limit : lines.length
+        content = lines.slice(startIdx, endIdx).join('\n')
+      }
+
       this.sendResponse(id, { content })
     } catch (err) {
       this.sendError(id, -32002, `File not found: ${filePath}`)
@@ -649,10 +846,140 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  // ============================
+  // Terminal methods (ACP spec: 5 methods)
+  // ============================
+
   private handleTerminalCreate(id: number, params: Record<string, unknown>): void {
-    // Return a terminal ID - actual PTY creation is handled by TerminalService
     const terminalId = uuid()
-    this.sendResponse(id, { terminalId })
+    const command = params.command as string
+    const args = (params.args as string[]) || []
+    const env = params.env as Array<{ name: string; value: string }> | undefined
+    const termCwd = (params.cwd as string) || this.cwd
+    const outputByteLimit = (params.outputByteLimit as number) || 1024 * 1024 // 1MB default
+
+    try {
+      const envObj: Record<string, string> = { ...process.env as Record<string, string> }
+      if (env) {
+        for (const e of env) envObj[e.name] = e.value
+      }
+
+      const proc = spawn(command, args, {
+        cwd: termCwd,
+        env: envObj,
+        shell: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+
+      const terminal: TerminalProcess = {
+        process: proc,
+        output: '',
+        truncated: false,
+        exitCode: null,
+        exitSignal: null,
+        exited: false,
+        outputByteLimit,
+        waitResolvers: []
+      }
+
+      const appendOutput = (data: Buffer): void => {
+        const text = data.toString()
+        terminal.output += text
+        // Truncate from beginning if over limit
+        const byteLen = Buffer.byteLength(terminal.output)
+        if (byteLen > terminal.outputByteLimit) {
+          terminal.output = terminal.output.slice(terminal.output.length - terminal.outputByteLimit)
+          terminal.truncated = true
+        }
+      }
+
+      proc.stdout?.on('data', appendOutput)
+      proc.stderr?.on('data', appendOutput)
+      proc.on('exit', (code, signal) => {
+        terminal.exitCode = code
+        terminal.exitSignal = signal
+        terminal.exited = true
+        for (const r of terminal.waitResolvers) r()
+        terminal.waitResolvers = []
+      })
+      proc.on('error', (err) => {
+        terminal.output += `\nError: ${err.message}\n`
+        terminal.exited = true
+        terminal.exitCode = 1
+        for (const r of terminal.waitResolvers) r()
+        terminal.waitResolvers = []
+      })
+
+      this.terminals.set(terminalId, terminal)
+      this.sendResponse(id, { terminalId })
+    } catch (err) {
+      this.sendError(id, -32000, `Failed to create terminal: ${(err as Error).message}`)
+    }
+  }
+
+  private handleTerminalOutput(id: number, params: Record<string, unknown>): void {
+    const terminalId = params.terminalId as string
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) {
+      this.sendError(id, -32002, `Terminal not found: ${terminalId}`)
+      return
+    }
+
+    const result: Record<string, unknown> = {
+      output: terminal.output,
+      truncated: terminal.truncated
+    }
+    if (terminal.exited) {
+      result.exitStatus = { exitCode: terminal.exitCode, signal: terminal.exitSignal }
+    }
+    this.sendResponse(id, result)
+  }
+
+  private handleTerminalWaitForExit(id: number, params: Record<string, unknown>): void {
+    const terminalId = params.terminalId as string
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) {
+      this.sendError(id, -32002, `Terminal not found: ${terminalId}`)
+      return
+    }
+
+    if (terminal.exited) {
+      this.sendResponse(id, { exitCode: terminal.exitCode, signal: terminal.exitSignal })
+      return
+    }
+
+    terminal.waitResolvers.push(() => {
+      this.sendResponse(id, { exitCode: terminal.exitCode, signal: terminal.exitSignal })
+    })
+  }
+
+  private handleTerminalKill(id: number, params: Record<string, unknown>): void {
+    const terminalId = params.terminalId as string
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) {
+      this.sendError(id, -32002, `Terminal not found: ${terminalId}`)
+      return
+    }
+
+    if (!terminal.exited) {
+      terminal.process.kill('SIGTERM')
+    }
+    this.sendResponse(id, {})
+  }
+
+  private handleTerminalRelease(id: number, params: Record<string, unknown>): void {
+    const terminalId = params.terminalId as string
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) {
+      this.sendError(id, -32002, `Terminal not found: ${terminalId}`)
+      return
+    }
+
+    if (!terminal.exited) {
+      terminal.process.kill('SIGKILL')
+    }
+    this.terminals.delete(terminalId)
+    this.sendResponse(id, {})
   }
 
   private rejectAllPending(error: Error): void {
@@ -660,5 +987,12 @@ export class AcpClient extends EventEmitter {
       pending.reject(error)
     }
     this.pendingRequests.clear()
+    // Clean up terminals
+    for (const [, terminal] of this.terminals) {
+      if (!terminal.exited) {
+        terminal.process.kill('SIGKILL')
+      }
+    }
+    this.terminals.clear()
   }
 }

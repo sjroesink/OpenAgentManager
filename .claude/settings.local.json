@@ -6,7 +6,8 @@
       "Bash(npm run typecheck:*)",
       "Bash(npm run build:*)",
       "Bash(npm config:*)",
-      "Bash(where:*)"
+      "Bash(where:*)",
+      "WebFetch(domain:agentclientprotocol.com)"
     ]
   }
 }

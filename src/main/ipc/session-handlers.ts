@@ -44,4 +44,18 @@ export function registerSessionHandlers(): void {
     threadStore.rebuildCacheFromFolders(workspaces)
     return { threadCount: threadStore.loadAll().length }
   })
+
+  ipcMain.handle(
+    'session:set-mode',
+    async (_event, { sessionId, modeId }: { sessionId: string; modeId: string }) => {
+      await sessionManager.setMode(sessionId, modeId)
+    }
+  )
+
+  ipcMain.handle(
+    'session:set-config-option',
+    async (_event, { sessionId, configId, value }: { sessionId: string; configId: string; value: string }) => {
+      return sessionManager.setConfigOption(sessionId, configId, value)
+    }
+  )
 }

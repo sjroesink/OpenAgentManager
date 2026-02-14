@@ -13,7 +13,8 @@ import type {
   PermissionRequestEvent,
   PermissionResponse,
   InteractionMode,
-  WorktreeHookProgressEvent
+  WorktreeHookProgressEvent,
+  ConfigOption
 } from './session'
 import type { AgentProjectConfig } from './thread-format'
 import type { ProjectInfo, FileTreeNode, FileChange, DiffResult } from './project'
@@ -50,6 +51,8 @@ export interface IpcChannels {
   'session:remove': { request: { sessionId: string; cleanupWorktree: boolean }; response: void }
   'session:permission-response': { request: PermissionResponse; response: void }
   'session:rebuild-cache': { request: void; response: { threadCount: number } }
+  'session:set-mode': { request: { sessionId: string; modeId: string }; response: void }
+  'session:set-config-option': { request: { sessionId: string; configId: string; value: string }; response: ConfigOption[] }
 
   // --- Files ---
   'file:read-tree': { request: { dirPath: string; depth?: number }; response: FileTreeNode[] }

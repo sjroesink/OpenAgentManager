@@ -15,5 +15,6 @@ export const ACP_PROTOCOL_VERSION = 1
 
 export const CLIENT_INFO = {
   name: APP_NAME,
+  title: 'Open Agent Manager',
   version: '1.0.0'
 } as const

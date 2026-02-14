@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agent-manager": {
+      "command": "node",
+      "args": ["./out/mcp-server/index.mjs"]
+    }
+  }
+}

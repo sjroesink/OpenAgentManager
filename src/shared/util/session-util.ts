@@ -77,7 +77,8 @@ export function applyUpdateToMessages(messages: Message[], update: SessionUpdate
         newToolCalls[tcIdx] = {
           ...newToolCalls[tcIdx],
           status: update.status,
-          ...(update.output != null ? { output: update.output } : {})
+          ...(update.output != null ? { output: update.output } : {}),
+          ...(update.locations ? { locations: update.locations } : {})
         }
         return { ...msg, toolCalls: newToolCalls }
       })

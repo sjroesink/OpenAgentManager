@@ -84,22 +84,34 @@ export interface AgentConnection {
   error?: string
 }
 
+/** ACP agent capabilities (spec-aligned naming) */
 export interface AgentCapabilities {
-  sessions?: {
-    new?: boolean
-    load?: boolean
-  }
-  prompts?: {
-    text?: boolean
+  // Spec: top-level boolean for session loading
+  loadSession?: boolean
+
+  // Spec: promptCapabilities
+  promptCapabilities?: {
     image?: boolean
     audio?: boolean
-    embeddedResources?: boolean
+    embeddedContext?: boolean
   }
-  mcpServers?: {
-    stdio?: boolean
+
+  // Spec: mcp
+  mcp?: {
     http?: boolean
     sse?: boolean
   }
+
+  // Session management capabilities (from RFDs)
+  sessionCapabilities?: {
+    list?: Record<string, unknown>
+    delete?: Record<string, unknown>
+    fork?: Record<string, unknown>
+    resume?: Record<string, unknown>
+  }
+
+  // Extensibility
+  _meta?: Record<string, unknown>
 }
 
 export interface AuthMethod {

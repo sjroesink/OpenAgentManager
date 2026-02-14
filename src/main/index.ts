@@ -7,6 +7,7 @@ import { terminalService } from './services/terminal-service'
 import { threadStore } from './services/thread-store'
 import { folderThreadStore } from './services/folder-thread-store'
 import { workspaceService } from './services/workspace-service'
+import { startInternalApi, stopInternalApi } from './mcp/internal-api'
 import { logger } from './util/logger'
 
 // Prevent multiple instances
@@ -69,6 +70,9 @@ app.whenReady().then(() => {
     }
   })
 
+  // Start internal HTTP API for MCP bridge
+  startInternalApi()
+
   logger.info('AgentManager ready')
 })
 
@@ -83,4 +87,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   terminalService.killAll()
+  stopInternalApi()
 })
