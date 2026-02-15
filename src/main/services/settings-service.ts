@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import type { AppSettings, AgentSettings } from '@shared/types/settings'
+import type { AppSettings, AgentSettings, McpServerConfig } from '@shared/types/settings'
 import { DEFAULT_SETTINGS } from '@shared/types/settings'
 
 const store = new Store<AppSettings>({
@@ -33,6 +33,26 @@ export class SettingsService {
     const all = store.get('agents', {})
     all[agentId] = { ...all[agentId], ...settings }
     store.set('agents', all)
+  }
+
+  getMcpServers(): McpServerConfig[] {
+    return this.get().mcp.servers
+  }
+
+  addMcpServer(server: McpServerConfig): void {
+    const current = this.get().mcp
+    store.set('mcp', { ...current, servers: [...current.servers, server] })
+  }
+
+  removeMcpServer(serverId: string): void {
+    const current = this.get().mcp
+    store.set('mcp', { ...current, servers: current.servers.filter((s) => s.id !== serverId) })
+  }
+
+  updateMcpServer(serverId: string, updates: Partial<McpServerConfig>): void {
+    const current = this.get().mcp
+    const servers = current.servers.map((s) => (s.id === serverId ? { ...s, ...updates } : s))
+    store.set('mcp', { ...current, servers })
   }
 }
 

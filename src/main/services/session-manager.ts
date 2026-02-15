@@ -24,6 +24,21 @@ export class SessionManagerService {
     this.mainWindow = window
   }
 
+  /** Read enabled MCP servers from settings, mapped to the format ACP session/new expects */
+  private getEnabledMcpServers(): Record<string, unknown>[] {
+    const servers = settingsService.get().mcp.servers
+    return servers
+      .filter((s) => s.enabled)
+      .map((s) => ({
+        name: s.name,
+        transport: s.transport,
+        ...(s.command ? { command: s.command } : {}),
+        ...(s.args?.length ? { args: s.args } : {}),
+        ...(s.url ? { url: s.url } : {}),
+        ...(s.env && Object.keys(s.env).length ? { env: s.env } : {})
+      }))
+  }
+
   private sendHookProgress(event: WorktreeHookProgressEvent): void {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('session:hook-progress', event)
@@ -103,7 +118,8 @@ export class SessionManagerService {
     }
 
     // Create ACP session with our stable sessionId for mapping
-    await client.newSession(workingDir, [], sessionId)
+    const mcpServers = this.getEnabledMcpServers()
+    await client.newSession(workingDir, mcpServers, sessionId)
 
     const session: SessionInfo = {
       sessionId,
@@ -183,7 +199,7 @@ export class SessionManagerService {
       client = agentManager.getClient(session.connectionId)!
       
       // Re-create ACP session
-      await client.newSession(session.workingDir, [], sessionId)
+      await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
     }
 
     this.ensureListener(session.connectionId)
@@ -320,7 +336,7 @@ export class SessionManagerService {
 
       // Create a temporary session for the title generation
       const tempSessionId = `title-${uuid().slice(0, 8)}`
-      await client.newSession(session.workingDir, [], tempSessionId)
+      await client.newSession(session.workingDir, this.getEnabledMcpServers(), tempSessionId)
 
       // Collect response text from streaming events
       let responseText = ''

@@ -9,6 +9,8 @@ import { gitService } from '../services/git-service'
 import { fileService } from '../services/file-service'
 import { settingsService } from '../services/settings-service'
 import { threadStore } from '../services/thread-store'
+import type { AppSettings } from '@shared/types/settings'
+import type { McpServerConfig } from '@shared/types/settings'
 import { getAppDataDir } from '../util/paths'
 import { logger } from '../util/logger'
 
@@ -171,6 +173,31 @@ const routes: Record<string, RouteHandler> = {
 
   '/api/settings/get': async () => {
     return settingsService.get()
+  },
+
+  '/api/settings/set': async (body) => {
+    settingsService.set(body as Partial<AppSettings>)
+    return { success: true }
+  },
+
+  '/api/mcp/list-servers': async () => {
+    return settingsService.getMcpServers()
+  },
+
+  '/api/mcp/add-server': async (body) => {
+    settingsService.addMcpServer(body as unknown as McpServerConfig)
+    return { success: true }
+  },
+
+  '/api/mcp/remove-server': async (body) => {
+    settingsService.removeMcpServer(body.serverId as string)
+    return { success: true }
+  },
+
+  '/api/mcp/update-server': async (body) => {
+    const { serverId, ...updates } = body as { serverId: string } & Partial<McpServerConfig>
+    settingsService.updateMcpServer(serverId, updates)
+    return { success: true }
   }
 }
 
