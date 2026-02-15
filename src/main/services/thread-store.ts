@@ -185,7 +185,8 @@ function toPersistedThread(session: SessionInfo): PersistedThread {
       return rest
     }),
     useWorktree: session.useWorktree,
-    workspaceId: session.workspaceId
+    workspaceId: session.workspaceId,
+    parentSessionId: session.parentSessionId
   }
 }
 

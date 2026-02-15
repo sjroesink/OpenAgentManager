@@ -59,6 +59,7 @@ interface SessionState {
   loadPersistedSessions: () => Promise<void>
   deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+  forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
@@ -99,7 +100,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         status: 'idle' as const,
         messages: t.messages,
         useWorktree: t.useWorktree,
-        workspaceId: t.workspaceId
+        workspaceId: t.workspaceId,
+        parentSessionId: t.parentSessionId
       }))
 
       set((state) => {
@@ -123,7 +125,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         const next = new Set(state.deletingSessionIds)
         next.delete(sessionId)
         return {
-          sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+          // Remove the session and promote orphaned children to root level
+          sessions: state.sessions
+            .filter((s) => s.sessionId !== sessionId)
+            .map((s) =>
+              s.parentSessionId === sessionId
+                ? { ...s, parentSessionId: undefined }
+                : s
+            ),
           activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
           deletingSessionIds: next
         }
@@ -148,6 +157,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await window.api.invoke('session:rename', { sessionId, title })
     } catch (error) {
       console.error('Failed to rename session:', error)
+    }
+  },
+
+  forkSession: async (sessionId, title?) => {
+    try {
+      const session = await window.api.invoke('session:fork', { sessionId, title })
+      set((state) => ({
+        sessions: [...state.sessions, session],
+        activeSessionId: session.sessionId
+      }))
+      return session
+    } catch (error) {
+      console.error('Failed to fork session:', error)
+      throw error
     }
   },
 

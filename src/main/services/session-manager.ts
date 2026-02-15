@@ -154,6 +154,52 @@ export class SessionManagerService {
     return session
   }
 
+  async forkSession(sourceSessionId: string, title?: string): Promise<SessionInfo> {
+    // Find the source session
+    const source = this.sessions.get(sourceSessionId)
+    if (!source) throw new Error(`Source session not found: ${sourceSessionId}`)
+
+    // Verify agent connection
+    const client = agentManager.getClient(source.connectionId)
+    if (!client) throw new Error(`Agent connection not found: ${source.connectionId}`)
+
+    // Check agent capability
+    if (!client.supportsFork) {
+      throw new Error(`Agent ${client.agentName} does not support session/fork`)
+    }
+
+    // Generate IDs
+    const newSessionId = uuid()
+
+    // Call ACP fork with our stable sessionId for mapping
+    await client.forkSession(sourceSessionId, source.workingDir, [], newSessionId)
+
+    // Build the forked SessionInfo
+    const session: SessionInfo = {
+      sessionId: newSessionId,
+      connectionId: source.connectionId,
+      agentId: source.agentId,
+      agentName: source.agentName,
+      title: title || `Fork of ${source.title}`,
+      createdAt: new Date().toISOString(),
+      worktreePath: source.worktreePath,
+      worktreeBranch: source.worktreeBranch,
+      workingDir: source.workingDir,
+      status: 'active',
+      messages: [],
+      useWorktree: source.useWorktree,
+      workspaceId: source.workspaceId,
+      parentSessionId: sourceSessionId
+    }
+
+    this.sessions.set(newSessionId, session)
+    this.ensureListener(source.connectionId)
+    threadStore.save(session)
+    logger.info(`Session forked: ${newSessionId} from ${sourceSessionId}`)
+
+    return session
+  }
+
   async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
     let session = this.sessions.get(sessionId)
     
@@ -405,6 +451,14 @@ export class SessionManagerService {
         }
       } catch (error) {
         logger.warn('Failed to clean up worktree:', error)
+      }
+    }
+
+    // Orphan children: promote child sessions to root level
+    for (const [, s] of this.sessions) {
+      if (s.parentSessionId === sessionId) {
+        s.parentSessionId = undefined
+        threadStore.save(s)
       }
     }
 

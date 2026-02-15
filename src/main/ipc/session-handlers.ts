@@ -72,4 +72,11 @@ export function registerSessionHandlers(): void {
       return sessionManager.generateTitle(sessionId)
     }
   )
+
+  ipcMain.handle(
+    'session:fork',
+    async (_event, { sessionId, title }: { sessionId: string; title?: string }) => {
+      return sessionManager.forkSession(sessionId, title)
+    }
+  )
 }

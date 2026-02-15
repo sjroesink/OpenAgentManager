@@ -213,6 +213,34 @@ export class AcpClient extends EventEmitter {
     return remoteId
   }
 
+  /** Fork an existing session (RFD: session/fork) */
+  async forkSession(
+    sourceSessionId: string,
+    cwd: string,
+    mcpServers: unknown[] = [],
+    internalSessionId?: string
+  ): Promise<string> {
+    const remoteId = this.internalToRemote.get(sourceSessionId) || sourceSessionId
+    const params: Record<string, unknown> = { sessionId: remoteId, cwd }
+    if (mcpServers.length > 0) params.mcpServers = mcpServers
+
+    const result = (await this.sendRequest('session/fork', params)) as { sessionId: string }
+    const newRemoteId = result.sessionId
+
+    if (internalSessionId) {
+      this.remoteToInternal.set(newRemoteId, internalSessionId)
+      this.internalToRemote.set(internalSessionId, newRemoteId)
+      return internalSessionId
+    }
+
+    return newRemoteId
+  }
+
+  /** Check if the connected agent supports session/fork */
+  get supportsFork(): boolean {
+    return !!this.capabilities?.sessionCapabilities?.fork
+  }
+
   /** Send a prompt to a session (spec: prompt is ContentBlock[]) */
   async prompt(
     sessionId: string,

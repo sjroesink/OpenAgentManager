@@ -55,6 +55,7 @@ export interface IpcChannels {
   'session:rename': { request: { sessionId: string; title: string }; response: void }
   'session:set-config-option': { request: { sessionId: string; configId: string; value: string }; response: ConfigOption[] }
   'session:generate-title': { request: { sessionId: string }; response: string | null }
+  'session:fork': { request: { sessionId: string; title?: string }; response: SessionInfo }
 
   // --- Files ---
   'file:read-tree': { request: { dirPath: string; depth?: number }; response: FileTreeNode[] }

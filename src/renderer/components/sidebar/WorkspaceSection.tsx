@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Badge } from '../common/Badge'
@@ -112,8 +112,224 @@ function DeletePopover({
   )
 }
 
+// ---- Recursive ThreadItem for tree rendering ----
+
+interface ThreadItemProps {
+  session: SessionInfo
+  childMap: Map<string, SessionInfo[]>
+  depth: number
+  activeSessionId: string | null
+  deletingSessionIds: Set<string>
+  editingId: string | null
+  editTitle: string
+  editInputRef: React.RefObject<HTMLInputElement | null>
+  confirmDelete: string | null
+  onSelect: (sessionId: string) => void
+  onStartRename: (session: SessionInfo) => void
+  onCommitRename: () => void
+  onSetEditTitle: (title: string) => void
+  onCancelEdit: () => void
+  onFork: (sessionId: string) => void
+  onOpenInVSCode: (path: string) => void
+  onSetConfirmDelete: (sessionId: string | null) => void
+  onDelete: (sessionId: string, cleanupWorktree: boolean) => void
+}
+
+function ThreadItem({
+  session,
+  childMap,
+  depth,
+  activeSessionId,
+  deletingSessionIds,
+  editingId,
+  editTitle,
+  editInputRef,
+  confirmDelete,
+  onSelect,
+  onStartRename,
+  onCommitRename,
+  onSetEditTitle,
+  onCancelEdit,
+  onFork,
+  onOpenInVSCode,
+  onSetConfirmDelete,
+  onDelete
+}: ThreadItemProps) {
+  const children = childMap.get(session.sessionId) || []
+  const hasChildren = children.length > 0
+  const [expanded, setExpanded] = useState(true)
+  const isDeleting = deletingSessionIds.has(session.sessionId)
+  const isActive = session.sessionId === activeSessionId && !isDeleting
+  const canFork = session.status !== 'prompting' && session.status !== 'creating' && session.status !== 'initializing'
+
+  // Dynamic indent: base 32px + 16px per depth level, capped at 4 levels
+  const paddingLeft = 32 + Math.min(depth, 4) * 16
+
+  return (
+    <>
+      <div className="relative group/thread">
+        <button
+          onClick={() => !isDeleting && onSelect(session.sessionId)}
+          disabled={isDeleting}
+          style={{ paddingLeft }}
+          className={`
+            w-full text-left pr-3 py-1.5 flex items-start gap-2 transition-colors
+            ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
+            ${isActive ? 'bg-accent/10 border-r-2 border-accent' : 'hover:bg-surface-2'}
+          `}
+        >
+          {/* Expand chevron for threads with children */}
+          {hasChildren ? (
+            <span
+              role="button"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+              className="p-0 mt-1 shrink-0 text-text-muted hover:text-text-primary"
+            >
+              <svg
+                className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+          ) : isDeleting ? (
+            <svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-text-muted animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : (
+            <span
+              className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusColors[session.status] || 'bg-text-muted'}`}
+            />
+          )}
+
+          <div className="flex-1 min-w-0">
+            {editingId === session.sessionId ? (
+              <input
+                ref={editInputRef}
+                value={editTitle}
+                onChange={(e) => onSetEditTitle(e.target.value)}
+                onBlur={onCommitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onCommitRename()
+                  if (e.key === 'Escape') onCancelEdit()
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm w-full bg-surface-2 border border-accent rounded px-1 py-0 outline-none text-text-primary"
+                autoFocus
+              />
+            ) : (
+              <div
+                className="text-sm truncate"
+                onDoubleClick={(e) => { e.stopPropagation(); if (!isDeleting) onStartRename(session) }}
+              >
+                {isDeleting ? 'Deleting...' : session.title}
+              </div>
+            )}
+            <div className="text-[10px] text-text-muted truncate opacity-0 group-hover/thread:opacity-100 transition-opacity">{session.agentName}</div>
+            {session.worktreeBranch && !isDeleting && (
+              <Badge variant="default" className="mt-0.5">
+                {session.worktreeBranch}
+              </Badge>
+            )}
+          </div>
+
+          {/* Thread action buttons */}
+          {!isDeleting && (
+            <div className="flex items-center gap-0.5 opacity-0 group-hover/thread:opacity-100 transition-opacity shrink-0 mt-0.5">
+              {/* Fork thread */}
+              {canFork && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); onFork(session.sessionId) }}
+                  className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-accent"
+                  title="Fork thread"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 3v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3m12-9v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3" />
+                  </svg>
+                </span>
+              )}
+              {/* Rename thread */}
+              <span
+                role="button"
+                onClick={(e) => { e.stopPropagation(); onStartRename(session) }}
+                className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+                title="Rename thread"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </span>
+              {/* Open worktree in VS Code */}
+              {session.worktreePath && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenInVSCode(session.worktreePath!) }}
+                  className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+                  title="Open worktree in VS Code"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </span>
+              )}
+              {/* Delete thread */}
+              <DeletePopover
+                hasWorktree={!!session.worktreePath}
+                open={confirmDelete === session.sessionId}
+                onOpen={(e) => { e.stopPropagation(); onSetConfirmDelete(session.sessionId) }}
+                onClose={() => onSetConfirmDelete(null)}
+                onDelete={(cleanupWorktree) => { onDelete(session.sessionId, cleanupWorktree); onSetConfirmDelete(null) }}
+              />
+            </div>
+          )}
+        </button>
+      </div>
+
+      {/* Children (recursive) */}
+      {expanded && hasChildren && (
+        <div className="relative">
+          {/* Tree line connector */}
+          <div
+            className="absolute top-0 bottom-0 border-l border-border/30"
+            style={{ left: paddingLeft + 5 }}
+          />
+          {children.map((child) => (
+            <ThreadItem
+              key={child.sessionId}
+              session={child}
+              childMap={childMap}
+              depth={depth + 1}
+              activeSessionId={activeSessionId}
+              deletingSessionIds={deletingSessionIds}
+              editingId={editingId}
+              editTitle={editTitle}
+              editInputRef={editInputRef}
+              confirmDelete={confirmDelete}
+              onSelect={onSelect}
+              onStartRename={onStartRename}
+              onCommitRename={onCommitRename}
+              onSetEditTitle={onSetEditTitle}
+              onCancelEdit={onCancelEdit}
+              onFork={onFork}
+              onOpenInVSCode={onOpenInVSCode}
+              onSetConfirmDelete={onSetConfirmDelete}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ---- Main WorkspaceSection ----
+
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, deleteSession, renameSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, deleteSession, renameSession, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -125,10 +341,31 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const isExpanded = expandedWorkspaceIds.has(workspace.id)
   const hasDraftForThis = draftThread?.workspaceId === workspace.id
 
+  // Build tree structure from flat sessions list
+  const childMap = useMemo(() => {
+    const map = new Map<string, SessionInfo[]>()
+    const sessionIds = new Set(sessions.map((s) => s.sessionId))
+    for (const s of sessions) {
+      // Only group under parent if parent is in this workspace's sessions
+      if (s.parentSessionId && sessionIds.has(s.parentSessionId)) {
+        const children = map.get(s.parentSessionId) || []
+        children.push(s)
+        map.set(s.parentSessionId, children)
+      }
+    }
+    return map
+  }, [sessions])
+
+  const rootSessions = useMemo(() => {
+    const sessionIds = new Set(sessions.map((s) => s.sessionId))
+    return sessions.filter(
+      (s) => !s.parentSessionId || !sessionIds.has(s.parentSessionId)
+    )
+  }, [sessions])
+
   const handleNewThread = (e: React.MouseEvent) => {
     e.stopPropagation()
     startDraftThread(workspace.id, workspace.path)
-    // Ensure the workspace section is expanded
     if (!isExpanded) toggleExpanded(workspace.id)
   }
 
@@ -143,6 +380,14 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
       renameSession(editingId, editTitle.trim())
     }
     setEditingId(null)
+  }
+
+  const handleFork = async (sessionId: string) => {
+    try {
+      await forkSession(sessionId)
+    } catch (error) {
+      console.error('Fork failed:', error)
+    }
   }
 
   return (
@@ -224,7 +469,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         </button>
       </div>
 
-      {/* Thread list */}
+      {/* Thread tree */}
       {isExpanded && (
         <div>
           {/* Draft thread item */}
@@ -234,7 +479,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 useSessionStore.setState({ activeDraftId: draftThread!.id, activeSessionId: null })
               }
               className={`
-                w-full text-left pl-8 pr-3 py-2 flex items-start gap-2 transition-colors
+                w-full text-left pl-8 pr-3 py-1.5 flex items-start gap-2 transition-colors
                 ${activeDraftId === draftThread!.id
                   ? 'bg-accent/10 border-r-2 border-accent'
                   : 'hover:bg-surface-2'
@@ -246,113 +491,37 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               </svg>
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-accent font-medium truncate">New Thread</div>
-                <div className="text-[11px] text-text-muted truncate">Configure &amp; send first message</div>
+                <div className="text-[10px] text-text-muted truncate">Configure &amp; send first message</div>
               </div>
             </button>
           )}
 
-          {sessions.length === 0 && !hasDraftForThis ? (
+          {rootSessions.length === 0 && !hasDraftForThis ? (
             <div className="px-8 py-1.5 text-[11px] text-text-muted">No threads yet</div>
           ) : (
-            sessions.map((session) => {
-              const isDeleting = deletingSessionIds.has(session.sessionId)
-              return (
-                <div key={session.sessionId} className="relative group/thread">
-                  <button
-                    onClick={() => !isDeleting && setActiveSession(session.sessionId)}
-                    disabled={isDeleting}
-                    className={`
-                      w-full text-left pl-8 pr-3 py-2 flex items-start gap-2 transition-colors
-                      ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
-                      ${
-                        session.sessionId === activeSessionId && !isDeleting
-                          ? 'bg-accent/10 border-r-2 border-accent'
-                          : 'hover:bg-surface-2'
-                      }
-                    `}
-                  >
-                    {isDeleting ? (
-                      <svg className="w-3.5 h-3.5 mt-1 shrink-0 text-text-muted animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusColors[session.status] || 'bg-text-muted'}`}
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {editingId === session.sessionId ? (
-                        <input
-                          ref={editInputRef}
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') commitRename()
-                            if (e.key === 'Escape') setEditingId(null)
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-sm w-full bg-surface-2 border border-accent rounded px-1 py-0 outline-none text-text-primary"
-                          autoFocus
-                        />
-                      ) : (
-                        <div
-                          className="text-sm truncate"
-                          onDoubleClick={(e) => { e.stopPropagation(); if (!isDeleting) startRename(session) }}
-                        >
-                          {isDeleting ? 'Deleting...' : session.title}
-                        </div>
-                      )}
-                      <div className="text-[11px] text-text-muted truncate opacity-0 group-hover/thread:opacity-100 transition-opacity">{session.agentName}</div>
-                      {session.worktreeBranch && !isDeleting && (
-                        <Badge variant="default" className="mt-0.5">
-                          {session.worktreeBranch}
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Thread action buttons */}
-                    {!isDeleting && (
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover/thread:opacity-100 transition-opacity shrink-0 mt-0.5">
-                        {/* Rename thread */}
-                        <span
-                          role="button"
-                          onClick={(e) => { e.stopPropagation(); startRename(session) }}
-                          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
-                          title="Rename thread"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </span>
-                        {/* Open worktree in VS Code */}
-                        {session.worktreePath && (
-                          <span
-                            role="button"
-                            onClick={(e) => { e.stopPropagation(); openInVSCode(session.worktreePath!) }}
-                            className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
-                            title="Open worktree in VS Code"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </span>
-                        )}
-                        {/* Delete thread */}
-                        <DeletePopover
-                          hasWorktree={!!session.worktreePath}
-                          open={confirmDelete === session.sessionId}
-                          onOpen={(e) => { e.stopPropagation(); setConfirmDelete(session.sessionId) }}
-                          onClose={() => setConfirmDelete(null)}
-                          onDelete={(cleanupWorktree) => { deleteSession(session.sessionId, cleanupWorktree); setConfirmDelete(null) }}
-                        />
-                      </div>
-                    )}
-                  </button>
-                </div>
-              )
-            })
+            rootSessions.map((session) => (
+              <ThreadItem
+                key={session.sessionId}
+                session={session}
+                childMap={childMap}
+                depth={0}
+                activeSessionId={activeSessionId}
+                deletingSessionIds={deletingSessionIds}
+                editingId={editingId}
+                editTitle={editTitle}
+                editInputRef={editInputRef}
+                confirmDelete={confirmDelete}
+                onSelect={setActiveSession}
+                onStartRename={startRename}
+                onCommitRename={commitRename}
+                onSetEditTitle={setEditTitle}
+                onCancelEdit={() => setEditingId(null)}
+                onFork={handleFork}
+                onOpenInVSCode={openInVSCode}
+                onSetConfirmDelete={setConfirmDelete}
+                onDelete={deleteSession}
+              />
+            ))
           )}
         </div>
       )}

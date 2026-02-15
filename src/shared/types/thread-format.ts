@@ -88,6 +88,8 @@ export interface ThreadManifest {
     agentMessageCount: number
     toolCallCount: number
   }
+  /** ID of the parent thread if this was forked. */
+  parentThreadId?: string
   metadata?: Record<string, unknown>
 }
 

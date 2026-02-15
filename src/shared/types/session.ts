@@ -16,6 +16,8 @@ export interface SessionInfo {
   messages: Message[]
   useWorktree: boolean
   workspaceId: string
+  /** ID of the parent session this was forked from. Undefined for root sessions. */
+  parentSessionId?: string
   /** The first prompt to be sent once session creation completes. UI-only field. */
   pendingPrompt?: string
   /** Tracks agent initialization progress (launching, connecting, creating session). UI-only field. */
@@ -325,4 +327,6 @@ export interface PersistedThread {
   messages: Message[]
   useWorktree: boolean
   workspaceId: string
+  /** ID of the parent session this was forked from. */
+  parentSessionId?: string
 }

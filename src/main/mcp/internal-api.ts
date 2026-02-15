@@ -82,6 +82,7 @@ const routes: Record<string, RouteHandler> = {
       worktreeBranch: s.worktreeBranch,
       useWorktree: s.useWorktree,
       workspaceId: s.workspaceId,
+      parentSessionId: s.parentSessionId,
       messageCount: s.messages.length
     }))
   },
@@ -99,6 +100,7 @@ const routes: Record<string, RouteHandler> = {
       worktreeBranch: t.worktreeBranch,
       useWorktree: t.useWorktree,
       workspaceId: t.workspaceId,
+      parentSessionId: t.parentSessionId,
       messageCount: t.messages?.length ?? 0
     }))
   },
@@ -133,6 +135,13 @@ const routes: Record<string, RouteHandler> = {
       (body.cleanupWorktree as boolean) || false
     )
     return { success: true }
+  },
+
+  '/api/session/fork': async (body) => {
+    return sessionManager.forkSession(
+      body.sessionId as string,
+      body.title as string | undefined
+    )
   },
 
   '/api/session/pending-permissions': async () => {

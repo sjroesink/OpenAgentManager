@@ -282,7 +282,8 @@ export class FolderThreadStore {
             }
           : {})
       },
-      stats
+      stats,
+      parentThreadId: session.parentSessionId
     }
   }
 
@@ -302,7 +303,8 @@ export class FolderThreadStore {
       workingDir: manifest.context.workingDir,
       messages,
       useWorktree: !!manifest.context.worktree,
-      workspaceId
+      workspaceId,
+      parentSessionId: manifest.parentThreadId
     }
   }
 

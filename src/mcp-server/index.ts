@@ -257,6 +257,19 @@ server.tool(
 )
 
 server.tool(
+  'session_fork',
+  'Fork an existing session, creating a new session with the same conversation context',
+  {
+    sessionId: z.string().describe('Session ID to fork'),
+    title: z.optional(z.string()).describe('Title for the forked session')
+  },
+  async ({ sessionId, title }) => {
+    const result = await api('/api/session/fork', { sessionId, title }, 60_000)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
+server.tool(
   'session_remove',
   'Remove a session and optionally clean up its worktree',
   {
