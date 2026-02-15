@@ -25,6 +25,10 @@ interface UiState {
   // Selected file for diff viewer
   selectedDiffFile: string | null
 
+  // Full-page diff view
+  diffViewOpen: boolean
+  diffViewSelectedFile: string | null
+
   // Interaction mode
   interactionMode: InteractionMode
 
@@ -40,6 +44,9 @@ interface UiState {
   setSettingsOpen: (open: boolean) => void
   setNewThreadDialogOpen: (open: boolean) => void
   setSelectedDiffFile: (path: string | null) => void
+  openDiffView: (filePath?: string) => void
+  closeDiffView: () => void
+  setDiffViewSelectedFile: (path: string | null) => void
   setInteractionMode: (mode: InteractionMode) => void
 }
 
@@ -60,6 +67,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   selectedDiffFile: null,
 
+  diffViewOpen: false,
+  diffViewSelectedFile: null,
+
   interactionMode: 'ask',
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
@@ -73,5 +83,8 @@ export const useUiStore = create<UiState>((set) => ({
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setNewThreadDialogOpen: (open) => set({ newThreadDialogOpen: open }),
   setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
+  openDiffView: (filePath) => set({ diffViewOpen: true, diffViewSelectedFile: filePath ?? null }),
+  closeDiffView: () => set({ diffViewOpen: false, diffViewSelectedFile: null }),
+  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
   setInteractionMode: (mode) => set({ interactionMode: mode })
 }))

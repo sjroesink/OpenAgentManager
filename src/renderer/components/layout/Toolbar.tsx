@@ -22,7 +22,8 @@ function useAppMenu(): MenuGroup[] {
     toggleReviewPanel,
     toggleTerminal,
     setSettingsOpen,
-    setRegistryBrowserOpen
+    setRegistryBrowserOpen,
+    openDiffView
   } = useUiStore()
 
   return [
@@ -53,6 +54,7 @@ function useAppMenu(): MenuGroup[] {
         { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: toggleSidebar },
         { label: 'Toggle Review Panel', action: toggleReviewPanel },
         { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
+        { label: 'Diff View', shortcut: 'Ctrl+Shift+D', action: () => openDiffView() },
         { label: 'Agent Registry', action: () => setRegistryBrowserOpen(true) },
         { label: '', separator: true },
         { label: 'Zoom In', shortcut: 'Ctrl+=', action: () => window.api.invoke('window:zoom-in', undefined) },
@@ -155,7 +157,10 @@ export function Toolbar() {
     toggleReviewPanel,
     toggleTerminal,
     setRegistryBrowserOpen,
-    setSettingsOpen
+    setSettingsOpen,
+    openDiffView,
+    diffViewOpen,
+    closeDiffView
   } = useUiStore()
 
   const activeSession = useSessionStore((s) => s.getActiveSession())
@@ -234,6 +239,22 @@ export function Toolbar() {
         </svg>
         Agents
       </Button>
+
+      {/* Diff view toggle */}
+      <button
+        onClick={() => (diffViewOpen ? closeDiffView() : openDiffView())}
+        className={`titlebar-no-drag p-1.5 rounded transition-colors ${
+          diffViewOpen
+            ? 'bg-accent/20 text-accent'
+            : 'hover:bg-surface-2 text-text-secondary hover:text-text-primary'
+        }`}
+        title="Diff view (Ctrl+Shift+D)"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v16M20 4v16" />
+        </svg>
+      </button>
 
       {/* Toggle panels */}
       <button

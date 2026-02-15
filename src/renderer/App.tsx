@@ -7,6 +7,7 @@ import { useSessionStore } from './stores/session-store'
 import { useAgentStore } from './stores/agent-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useAcpFeaturesStore } from './stores/acp-features-store'
+import { useUiStore } from './stores/ui-store'
 import { useIpcEvent } from './hooks/useIpc'
 import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
@@ -62,6 +63,23 @@ export default function App() {
     loadWorkspaces()
     loadPersistedSessions()
   }, [loadInstalled, loadWorkspaces, loadPersistedSessions])
+
+  // Global keyboard shortcut for diff view
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault()
+        const store = useUiStore.getState()
+        if (store.diffViewOpen) {
+          store.closeDiffView()
+        } else {
+          store.openDiffView()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   return (
     <>

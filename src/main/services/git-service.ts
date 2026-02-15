@@ -185,6 +185,34 @@ export class GitService {
     }
   }
 
+  /**
+   * Get per-file addition/deletion counts via git diff --numstat
+   */
+  async getDiffStat(workingDir: string): Promise<Map<string, { additions: number; deletions: number }>> {
+    const git = simpleGit(workingDir)
+    let numstatText: string
+    try {
+      numstatText = await git.diff(['--numstat', 'HEAD'])
+    } catch {
+      try {
+        numstatText = await git.diff(['--numstat', '--cached'])
+      } catch {
+        return new Map()
+      }
+    }
+    const result = new Map<string, { additions: number; deletions: number }>()
+    for (const line of numstatText.split('\n')) {
+      const match = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/)
+      if (match) {
+        result.set(match[3], {
+          additions: match[1] === '-' ? 0 : parseInt(match[1], 10),
+          deletions: match[2] === '-' ? 0 : parseInt(match[2], 10)
+        })
+      }
+    }
+    return result
+  }
+
   // ============================
   // Private helpers
   // ============================

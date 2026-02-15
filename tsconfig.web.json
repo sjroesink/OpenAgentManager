@@ -16,6 +16,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "types": ["vite/client"],
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@renderer/*": ["./src/renderer/*"]

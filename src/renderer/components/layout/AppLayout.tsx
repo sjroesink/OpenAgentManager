@@ -5,11 +5,13 @@ import { Sidebar } from './Sidebar'
 import { MainPanel } from './MainPanel'
 import { ReviewPanel } from './ReviewPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
+import { DiffView } from '../diff/DiffView'
 import { useUiStore } from '../../stores/ui-store'
 
 export function AppLayout() {
   const terminalVisible = useUiStore((s) => s.terminalVisible)
   const terminalHeight = useUiStore((s) => s.terminalHeight)
+  const diffViewOpen = useUiStore((s) => s.diffViewOpen)
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -25,11 +27,17 @@ export function AppLayout() {
         <div className="flex flex-col flex-1 min-w-0">
           {/* Main panel area */}
           <div className="flex flex-1 min-h-0">
-            {/* Thread / conversation panel */}
-            <MainPanel />
+            {diffViewOpen ? (
+              <DiffView />
+            ) : (
+              <>
+                {/* Thread / conversation panel */}
+                <MainPanel />
 
-            {/* Review panel */}
-            <ReviewPanel />
+                {/* Review panel */}
+                <ReviewPanel />
+              </>
+            )}
           </div>
 
           {/* Terminal panel (bottom) */}

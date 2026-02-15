@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { FileTreeNode, FileChange } from '@shared/types/project'
+import { gitService } from './git-service'
 import { logger } from '../util/logger'
 
 /** Directories and files to skip when building file tree */
@@ -52,22 +53,34 @@ export class FileService {
       const status = await git.status()
       const changes: FileChange[] = []
 
+      // Get per-file addition/deletion counts
+      let diffStats = new Map<string, { additions: number; deletions: number }>()
+      try {
+        diffStats = await gitService.getDiffStat(workingDir)
+      } catch {
+        // Ignore — stats will be 0
+      }
+
       for (const file of status.created) {
-        changes.push({ path: file, status: 'added', additions: 0, deletions: 0 })
+        const stat = diffStats.get(file)
+        changes.push({ path: file, status: 'added', additions: stat?.additions ?? 0, deletions: stat?.deletions ?? 0 })
       }
       for (const file of status.modified) {
-        changes.push({ path: file, status: 'modified', additions: 0, deletions: 0 })
+        const stat = diffStats.get(file)
+        changes.push({ path: file, status: 'modified', additions: stat?.additions ?? 0, deletions: stat?.deletions ?? 0 })
       }
       for (const file of status.deleted) {
-        changes.push({ path: file, status: 'deleted', additions: 0, deletions: 0 })
+        const stat = diffStats.get(file)
+        changes.push({ path: file, status: 'deleted', additions: stat?.additions ?? 0, deletions: stat?.deletions ?? 0 })
       }
       for (const file of status.renamed) {
+        const stat = diffStats.get(file.to) || diffStats.get(file.from)
         changes.push({
           path: file.to,
           status: 'renamed',
           oldPath: file.from,
-          additions: 0,
-          deletions: 0
+          additions: stat?.additions ?? 0,
+          deletions: stat?.deletions ?? 0
         })
       }
 
