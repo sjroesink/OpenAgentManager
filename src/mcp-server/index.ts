@@ -359,6 +359,91 @@ server.tool(
   }
 )
 
+server.tool(
+  'settings_set',
+  'Update AgentManager app settings (partial update)',
+  {
+    general: z.optional(z.object({
+      theme: z.optional(z.enum(['light', 'dark', 'system'])),
+      fontSize: z.optional(z.number()),
+      showToolCallDetails: z.optional(z.boolean()),
+      summarizationAgentId: z.optional(z.string())
+    })).describe('General settings'),
+    git: z.optional(z.object({
+      enableWorktrees: z.optional(z.boolean()),
+      worktreeBaseDir: z.optional(z.string()),
+      autoCommit: z.optional(z.boolean()),
+      commitPrefix: z.optional(z.string()),
+      cleanupWorktreesOnClose: z.optional(z.boolean())
+    })).describe('Git & worktree settings')
+  },
+  async ({ general, git }) => {
+    const partial: Record<string, unknown> = {}
+    if (general) partial.general = general
+    if (git) partial.git = git
+    const result = await api('/api/settings/set', partial)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
+server.tool(
+  'mcp_server_list',
+  'List all configured MCP servers',
+  async () => {
+    const result = await api('/api/mcp/list-servers')
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
+server.tool(
+  'mcp_server_add',
+  'Add a new MCP server configuration',
+  {
+    id: z.string().describe('Unique identifier for the server'),
+    name: z.string().describe('Display name'),
+    transport: z.enum(['stdio', 'http', 'sse']).describe('Transport type'),
+    command: z.optional(z.string()).describe('Command to run (stdio transport)'),
+    args: z.optional(z.array(z.string())).describe('Command arguments (stdio transport)'),
+    url: z.optional(z.string()).describe('Server URL (http/sse transport)'),
+    env: z.optional(z.record(z.string(), z.string())).describe('Environment variables'),
+    enabled: z.optional(z.boolean()).describe('Whether server is enabled (default true)')
+  },
+  async (params) => {
+    const serverConfig = { ...params, enabled: params.enabled ?? true }
+    const result = await api('/api/mcp/add-server', serverConfig)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
+server.tool(
+  'mcp_server_remove',
+  'Remove an MCP server configuration by ID',
+  { serverId: z.string().describe('ID of the server to remove') },
+  async ({ serverId }) => {
+    const result = await api('/api/mcp/remove-server', { serverId })
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
+server.tool(
+  'mcp_server_update',
+  'Update an existing MCP server configuration',
+  {
+    serverId: z.string().describe('ID of the server to update'),
+    name: z.optional(z.string()).describe('Display name'),
+    transport: z.optional(z.enum(['stdio', 'http', 'sse'])).describe('Transport type'),
+    command: z.optional(z.string()).describe('Command to run (stdio transport)'),
+    args: z.optional(z.array(z.string())).describe('Command arguments'),
+    url: z.optional(z.string()).describe('Server URL (http/sse transport)'),
+    env: z.optional(z.record(z.string(), z.string())).describe('Environment variables'),
+    enabled: z.optional(z.boolean()).describe('Whether server is enabled')
+  },
+  async (params) => {
+    const result = await api('/api/mcp/update-server', params)
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+  }
+)
+
 // ============================================================
 // Main
 // ============================================================
