@@ -69,7 +69,10 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(
     'session:generate-title',
     async (_event, { sessionId }: { sessionId: string }) => {
-      return sessionManager.generateTitle(sessionId)
+      console.log('[session:generate-title] Received request for sessionId:', sessionId)
+      const result = await sessionManager.generateTitle(sessionId)
+      console.log('[session:generate-title] Result:', result)
+      return result
     }
   )
 

@@ -59,6 +59,7 @@ interface SessionState {
   loadPersistedSessions: () => Promise<void>
   deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+  generateTitle: (sessionId: string) => Promise<string | null>
   forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
 
   // Draft thread actions
@@ -157,6 +158,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await window.api.invoke('session:rename', { sessionId, title })
     } catch (error) {
       console.error('Failed to rename session:', error)
+    }
+  },
+
+  generateTitle: async (sessionId) => {
+    try {
+      const title = await window.api.invoke('session:generate-title', { sessionId })
+      if (title) {
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.sessionId === sessionId ? { ...s, title } : s
+          )
+        }))
+      }
+      return title
+    } catch (error) {
+      console.error('Failed to generate title:', error)
+      return null
     }
   },
 

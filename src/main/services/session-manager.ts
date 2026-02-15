@@ -371,10 +371,33 @@ export class SessionManagerService {
   async generateTitle(sessionId: string): Promise<string | null> {
     const settings = settingsService.get()
     const agentId = settings.general.summarizationAgentId
-    if (!agentId) return null
+    if (!agentId) {
+      logger.warn('generateTitle: no summarization agent configured')
+      return null
+    }
 
-    const session = this.sessions.get(sessionId)
-    if (!session) return null
+    let session = this.sessions.get(sessionId)
+    // Also check persisted threads if not in memory
+    if (!session) {
+      const persisted = threadStore.loadAll().find((t) => t.sessionId === sessionId)
+      if (persisted) {
+        session = {
+          ...persisted,
+          connectionId: '',
+          agentId: '',
+          status: 'idle',
+          messages: persisted.messages.map((m) => ({
+            ...m,
+            content: m.content as ContentBlock[]
+          }))
+        }
+        logger.info(`generateTitle: loaded session from persisted store, workingDir: ${session.workingDir}`)
+      }
+    }
+    if (!session) {
+      logger.warn(`generateTitle: session not found: ${sessionId}`)
+      return null
+    }
 
     // Build a summary of the conversation for the title prompt
     const conversationText = session.messages
@@ -388,7 +411,12 @@ export class SessionManagerService {
       })
       .join('\n\n')
 
-    if (!conversationText.trim()) return null
+    if (!conversationText.trim()) {
+      logger.warn(`generateTitle: no conversation text for session: ${sessionId}, message count: ${session.messages.length}`)
+      return null
+    }
+
+    logger.info(`generateTitle: generating title for session ${sessionId} with ${session.messages.length} messages`)
 
     const titlePrompt = `Generate a very short title (max 6 words) for the following conversation. Reply with ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n${conversationText}`
 

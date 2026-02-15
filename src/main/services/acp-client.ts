@@ -127,6 +127,8 @@ export class AcpClient extends EventEmitter {
       if (text) {
         stderrChunks.push(text)
         logger.warn(`[${this.agentId}:stderr] ${text}`)
+        // Try parsing as JSON-RPC (some agents write to stderr)
+        this.handleData(text)
       }
     })
 
@@ -146,13 +148,13 @@ export class AcpClient extends EventEmitter {
   }
 
   /** Initialize the ACP connection */
-  async initialize(): Promise<{
+  async initialize(timeoutMs: number = 30000): Promise<{
     capabilities: AgentCapabilities
     authMethods: AuthMethod[]
     agentName: string
     agentVersion: string
   }> {
-    const result = await this.sendRequest('initialize', {
+    const result = await this.sendRequestWithTimeout('initialize', {
       protocolVersion: ACP_PROTOCOL_VERSION,
       clientInfo: {
         name: CLIENT_INFO.name,
@@ -166,7 +168,7 @@ export class AcpClient extends EventEmitter {
         },
         terminal: true
       }
-    }) as {
+    }, timeoutMs) as {
       protocolVersion?: number
       agentInfo?: { name: string; title?: string; version: string }
       agentCapabilities?: AgentCapabilities
@@ -358,6 +360,42 @@ export class AcpClient extends EventEmitter {
       }
 
       this.pendingRequests.set(id, { resolve, reject })
+
+      const json = JSON.stringify(request) + '\n'
+      logger.info(`[${this.agentId}:send] ${json.trim()}`)
+      this.childProcess.stdin.write(json)
+    })
+  }
+
+  private async sendRequestWithTimeout(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.childProcess || !this.childProcess.stdin) {
+        return reject(new Error('Agent process not running'))
+      }
+
+      const id = this.nextId++
+      const request: JsonRpcRequest = {
+        jsonrpc: '2.0',
+        id,
+        method,
+        params
+      }
+
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id)
+        reject(new Error(`Request '${method}' timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+
+      this.pendingRequests.set(id, {
+        resolve: (value) => {
+          clearTimeout(timeout)
+          resolve(value)
+        },
+        reject: (error) => {
+          clearTimeout(timeout)
+          reject(error)
+        }
+      })
 
       const json = JSON.stringify(request) + '\n'
       logger.info(`[${this.agentId}:send] ${json.trim()}`)

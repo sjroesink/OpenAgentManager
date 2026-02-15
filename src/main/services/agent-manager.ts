@@ -158,7 +158,15 @@ export class AgentManagerService {
       throw new Error(`Agent not installed: ${agentId}`)
     }
 
-    const registry = registryService.getCached()
+    // Get registry with fallback to fetch if cache is missing or args are needed
+    let registry = registryService.getCached()
+    const needsArgs = agent.distributionType === 'binary'
+    
+    if (!registry || (needsArgs)) {
+      logger.info(`Fetching registry to resolve agent args for: ${agentId}`)
+      registry = await registryService.fetch()
+    }
+    
     const registryAgent = registry?.agents.find((a) => a.id === agentId)
 
     // Resolve spawn command
@@ -219,6 +227,8 @@ export class AgentManagerService {
 
       logger.info(`WSL spawn: wsl ${spawnArgs.join(' ')}`)
     }
+
+    logger.info(`Launching ${agentId} with command: ${spawnCommand} ${spawnArgs.join(' ')}`)
 
     // Create ACP client
     const client = new AcpClient(agentId, spawnCommand, spawnArgs, useWsl ? {} : finalEnv, spawnCwd, useWsl)

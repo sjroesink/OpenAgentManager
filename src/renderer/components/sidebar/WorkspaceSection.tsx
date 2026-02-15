@@ -123,11 +123,13 @@ interface ThreadItemProps {
   editTitle: string
   editInputRef: React.RefObject<HTMLInputElement | null>
   confirmDelete: string | null
+  generatingTitle: boolean
   onSelect: (sessionId: string) => void
   onStartRename: (session: SessionInfo) => void
   onCommitRename: () => void
   onSetEditTitle: (title: string) => void
   onCancelEdit: () => void
+  onGenerateTitle: (sessionId: string) => void
   onFork: (sessionId: string) => void
   onOpenInVSCode: (path: string) => void
   onSetConfirmDelete: (sessionId: string | null) => void
@@ -145,11 +147,13 @@ function ThreadItem({
   editTitle,
   editInputRef,
   confirmDelete,
+  generatingTitle,
   onSelect,
   onStartRename,
   onCommitRename,
   onSetEditTitle,
   onCancelEdit,
+  onGenerateTitle,
   onFork,
   onOpenInVSCode,
   onSetConfirmDelete,
@@ -209,19 +213,38 @@ function ThreadItem({
 
           <div className="flex-1 min-w-0">
             {editingId === session.sessionId ? (
-              <input
-                ref={editInputRef}
-                value={editTitle}
-                onChange={(e) => onSetEditTitle(e.target.value)}
-                onBlur={onCommitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onCommitRename()
-                  if (e.key === 'Escape') onCancelEdit()
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="text-sm w-full bg-surface-2 border border-accent rounded px-1 py-0 outline-none text-text-primary"
-                autoFocus
-              />
+              <div className="flex items-center gap-1">
+                <input
+                  ref={editInputRef}
+                  value={editTitle}
+                  onChange={(e) => onSetEditTitle(e.target.value)}
+                  onBlur={onCommitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onCommitRename()
+                    if (e.key === 'Escape') onCancelEdit()
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm flex-1 bg-surface-2 border border-accent rounded px-1 py-0 outline-none text-text-primary"
+                  autoFocus
+                />
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onGenerateTitle(session.sessionId) }}
+                  disabled={generatingTitle}
+                  className="p-0.5 rounded hover:bg-surface-3 text-accent disabled:opacity-50 shrink-0"
+                  title="Generate title with AI"
+                >
+                  {generatingTitle ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             ) : (
               <div
                 className="text-sm truncate"
@@ -249,11 +272,13 @@ function ThreadItem({
               editTitle={editTitle}
               editInputRef={editInputRef}
               confirmDelete={confirmDelete}
+              generatingTitle={generatingTitle}
               onSelect={onSelect}
               onStartRename={onStartRename}
               onCommitRename={onCommitRename}
               onSetEditTitle={onSetEditTitle}
               onCancelEdit={onCancelEdit}
+              onGenerateTitle={onGenerateTitle}
               onFork={onFork}
               onOpenInVSCode={onOpenInVSCode}
               onSetConfirmDelete={onSetConfirmDelete}
@@ -270,12 +295,13 @@ function ThreadItem({
 // ---- Main WorkspaceSection ----
 
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, deleteSession, renameSession, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [generatingTitle, setGeneratingTitle] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
@@ -322,6 +348,24 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
       renameSession(editingId, editTitle.trim())
     }
     setEditingId(null)
+  }
+
+  const handleGenerateTitle = async (sessionId: string) => {
+    console.log('[handleGenerateTitle] Starting for sessionId:', sessionId)
+    setGeneratingTitle(true)
+    try {
+      const title = await generateTitle(sessionId)
+      console.log('[handleGenerateTitle] Result:', title)
+      if (title) {
+        setEditingId(null)
+      } else {
+        console.warn('Title generation returned null - check if summarization agent is configured and session has messages')
+      }
+    } catch (error) {
+      console.error('Failed to generate title:', error)
+    } finally {
+      setGeneratingTitle(false)
+    }
   }
 
   const handleFork = async (sessionId: string) => {
@@ -471,11 +515,13 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 editTitle={editTitle}
                 editInputRef={editInputRef}
                 confirmDelete={confirmDelete}
+                generatingTitle={generatingTitle}
                 onSelect={setActiveSession}
                 onStartRename={startRename}
                 onCommitRename={commitRename}
                 onSetEditTitle={setEditTitle}
                 onCancelEdit={() => setEditingId(null)}
+                onGenerateTitle={handleGenerateTitle}
                 onFork={handleFork}
                 onOpenInVSCode={openInVSCode}
                 onSetConfirmDelete={setConfirmDelete}
