@@ -1,4 +1,5 @@
 import React from 'react'
+import ReactMarkdown from 'react-markdown'
 import type { Message } from '@shared/types/session'
 import { ToolCallCard } from './ToolCallCard'
 
@@ -61,8 +62,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   }
                 `}
               >
-                <div className="markdown-body whitespace-pre-wrap break-words">
-                  {block.text}
+                <div className="whitespace-pre-wrap break-words">
+                  <ReactMarkdown>{block.text}</ReactMarkdown>
                 </div>
               </div>
             )
