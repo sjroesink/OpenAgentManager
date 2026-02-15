@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
-import { Badge } from '../common/Badge'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { SessionInfo } from '@shared/types/session'
@@ -133,6 +132,7 @@ interface ThreadItemProps {
   onOpenInVSCode: (path: string) => void
   onSetConfirmDelete: (sessionId: string | null) => void
   onDelete: (sessionId: string, cleanupWorktree: boolean) => void
+  onContextMenu: (e: React.MouseEvent, sessionId: string) => void
 }
 
 function ThreadItem({
@@ -153,7 +153,8 @@ function ThreadItem({
   onFork,
   onOpenInVSCode,
   onSetConfirmDelete,
-  onDelete
+  onDelete,
+  onContextMenu
 }: ThreadItemProps) {
   const children = childMap.get(session.sessionId) || []
   const hasChildren = children.length > 0
@@ -170,10 +171,11 @@ function ThreadItem({
       <div className="relative group/thread">
         <button
           onClick={() => !isDeleting && onSelect(session.sessionId)}
+          onContextMenu={(e) => !isDeleting && onContextMenu(e, session.sessionId)}
           disabled={isDeleting}
           style={{ paddingLeft }}
           className={`
-            w-full text-left pr-3 py-1.5 flex items-start gap-2 transition-colors
+            w-full text-left pr-3 py-0.5 flex items-start gap-2 transition-colors
             ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
             ${isActive ? 'bg-accent/10 border-r-2 border-accent' : 'hover:bg-surface-2'}
           `}
@@ -228,75 +230,13 @@ function ThreadItem({
                 {isDeleting ? 'Deleting...' : session.title}
               </div>
             )}
-            <div className="text-[10px] text-text-muted truncate opacity-0 group-hover/thread:opacity-100 transition-opacity">{session.agentName}</div>
-            {session.worktreeBranch && !isDeleting && (
-              <Badge variant="default" className="mt-0.5">
-                {session.worktreeBranch}
-              </Badge>
-            )}
           </div>
-
-          {/* Thread action buttons */}
-          {!isDeleting && (
-            <div className="flex items-center gap-0.5 opacity-0 group-hover/thread:opacity-100 transition-opacity shrink-0 mt-0.5">
-              {/* Fork thread */}
-              {canFork && (
-                <span
-                  role="button"
-                  onClick={(e) => { e.stopPropagation(); onFork(session.sessionId) }}
-                  className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-accent"
-                  title="Fork thread"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 3v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3m12-9v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3" />
-                  </svg>
-                </span>
-              )}
-              {/* Rename thread */}
-              <span
-                role="button"
-                onClick={(e) => { e.stopPropagation(); onStartRename(session) }}
-                className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
-                title="Rename thread"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </span>
-              {/* Open worktree in VS Code */}
-              {session.worktreePath && (
-                <span
-                  role="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenInVSCode(session.worktreePath!) }}
-                  className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
-                  title="Open worktree in VS Code"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </span>
-              )}
-              {/* Delete thread */}
-              <DeletePopover
-                hasWorktree={!!session.worktreePath}
-                open={confirmDelete === session.sessionId}
-                onOpen={(e) => { e.stopPropagation(); onSetConfirmDelete(session.sessionId) }}
-                onClose={() => onSetConfirmDelete(null)}
-                onDelete={(cleanupWorktree) => { onDelete(session.sessionId, cleanupWorktree); onSetConfirmDelete(null) }}
-              />
-            </div>
-          )}
         </button>
       </div>
 
       {/* Children (recursive) */}
       {expanded && hasChildren && (
-        <div className="relative">
-          {/* Tree line connector */}
-          <div
-            className="absolute top-0 bottom-0 border-l border-border/30"
-            style={{ left: paddingLeft + 5 }}
-          />
+        <div>
           {children.map((child) => (
             <ThreadItem
               key={child.sessionId}
@@ -318,6 +258,7 @@ function ThreadItem({
               onOpenInVSCode={onOpenInVSCode}
               onSetConfirmDelete={onSetConfirmDelete}
               onDelete={onDelete}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
@@ -335,6 +276,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const [showSettings, setShowSettings] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
 
@@ -390,12 +332,30 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     }
   }
 
+  const handleThreadContextMenu = (e: React.MouseEvent, sessionId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, type: 'thread', sessionId })
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const handleClick = () => setContextMenu(null)
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [contextMenu])
+
   return (
     <div>
       {/* Workspace header */}
       <div
-        className="flex items-center gap-1.5 px-3 py-2 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer group"
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer group"
         onClick={() => toggleExpanded(workspace.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setContextMenu({ x: e.clientX, y: e.clientY, type: 'workspace' })
+        }}
         title={workspace.path}
       >
         {/* Chevron */}
@@ -424,7 +384,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         {/* New thread button */}
         <button
           onClick={handleNewThread}
-          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity"
+          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-accent opacity-0 group-hover:opacity-100"
           title="New thread"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -439,7 +399,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               e.stopPropagation()
               setShowSettings(true)
             }}
-            className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100"
             title="Worktree setup"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -455,7 +415,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
             e.stopPropagation()
             openInVSCode(workspace.path)
           }}
-          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100"
           title="Open in VS Code"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -479,7 +439,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 useSessionStore.setState({ activeDraftId: draftThread!.id, activeSessionId: null })
               }
               className={`
-                w-full text-left pl-8 pr-3 py-1.5 flex items-start gap-2 transition-colors
+                w-full text-left pl-8 pr-3 py-1 flex items-start gap-2 transition-colors
                 ${activeDraftId === draftThread!.id
                   ? 'bg-accent/10 border-r-2 border-accent'
                   : 'hover:bg-surface-2'
@@ -497,7 +457,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
           )}
 
           {rootSessions.length === 0 && !hasDraftForThis ? (
-            <div className="px-8 py-1.5 text-[11px] text-text-muted">No threads yet</div>
+            <div className="px-8 py-1 text-[11px] text-text-muted">No threads yet</div>
           ) : (
             rootSessions.map((session) => (
               <ThreadItem
@@ -520,6 +480,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 onOpenInVSCode={openInVSCode}
                 onSetConfirmDelete={setConfirmDelete}
                 onDelete={deleteSession}
+                onContextMenu={handleThreadContextMenu}
               />
             ))
           )}
@@ -532,6 +493,79 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         workspacePath={workspace.path}
         workspaceName={workspace.name}
       />
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === 'workspace' && (
+            <>
+              <button
+                onClick={() => { handleNewThread({ stopPropagation: () => {} } as React.MouseEvent); setContextMenu(null) }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                New Thread
+              </button>
+              {workspace.isGitRepo && (
+                <button
+                  onClick={() => { setShowSettings(true); setContextMenu(null) }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                >
+                  Worktree Settings
+                </button>
+              )}
+              <button
+                onClick={() => { openInVSCode(workspace.path); setContextMenu(null) }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                Open in VS Code
+              </button>
+            </>
+          )}
+          {contextMenu.type === 'thread' && contextMenu.sessionId && (
+            <>
+              {(() => {
+                const session = sessions.find(s => s.sessionId === contextMenu.sessionId)
+                const canFork = session && session.status !== 'prompting' && session.status !== 'creating' && session.status !== 'initializing'
+                return (
+                  <>
+                    {canFork && (
+                    <button
+                      onClick={() => { if (contextMenu.sessionId) { handleFork(contextMenu.sessionId); setContextMenu(null) } }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                    >
+                      Fork Thread
+                    </button>
+                    )}
+                    <button
+                      onClick={() => { startRename(session!); setContextMenu(null) }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                    >
+                      Rename
+                    </button>
+                    {session?.worktreePath && (
+                      <button
+                        onClick={() => { openInVSCode(session.worktreePath!); setContextMenu(null) }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                      >
+                        Open in VS Code
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { if (contextMenu.sessionId) { setConfirmDelete(contextMenu.sessionId); setContextMenu(null) } }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )
+              })()}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

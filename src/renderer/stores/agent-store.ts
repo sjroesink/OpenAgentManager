@@ -18,7 +18,7 @@ interface AgentState {
   installAgent: (agentId: string) => Promise<InstalledAgent>
   uninstallAgent: (agentId: string) => Promise<void>
   loadInstalled: () => Promise<void>
-  launchAgent: (agentId: string, projectPath: string) => Promise<AgentConnection>
+  launchAgent: (agentId: string, projectPath: string, extraEnv?: Record<string, string>) => Promise<AgentConnection>
   terminateAgent: (connectionId: string) => Promise<void>
   authenticateAgent: (connectionId: string, method: string, credentials?: Record<string, string>) => Promise<void>
   updateConnectionStatus: (connectionId: string, status: AgentConnection['status'], error?: string) => void
@@ -65,8 +65,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ installed })
   },
 
-  launchAgent: async (agentId: string, projectPath: string) => {
-    const connection = await window.api.invoke('agent:launch', { agentId, projectPath })
+  launchAgent: async (agentId: string, projectPath: string, extraEnv?: Record<string, string>) => {
+    const connection = await window.api.invoke('agent:launch', { agentId, projectPath, extraEnv })
     set((state) => ({
       connections: [...state.connections, connection]
     }))

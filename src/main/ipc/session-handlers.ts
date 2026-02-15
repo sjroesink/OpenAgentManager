@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { sessionManager } from '../services/session-manager'
 import { threadStore } from '../services/thread-store'
 import { workspaceService } from '../services/workspace-service'
-import type { CreateSessionRequest, PermissionResponse, InteractionMode } from '@shared/types/session'
+import type { CreateSessionRequest, PermissionResponse, InteractionMode, ContentBlock } from '@shared/types/session'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle('session:create', async (_event, request: CreateSessionRequest) => {
@@ -11,8 +11,8 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle(
     'session:prompt',
-    async (_event, { sessionId, text, mode }: { sessionId: string; text: string; mode?: InteractionMode }) => {
-      return sessionManager.prompt(sessionId, text, mode)
+    async (_event, { sessionId, content, mode }: { sessionId: string; content: ContentBlock[]; mode?: InteractionMode }) => {
+      return sessionManager.prompt(sessionId, content, mode)
     }
   )
 
@@ -76,7 +76,9 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(
     'session:fork',
     async (_event, { sessionId, title }: { sessionId: string; title?: string }) => {
-      return sessionManager.forkSession(sessionId, title)
+      const result = await sessionManager.forkSession(sessionId, title)
+      console.log('[session:fork] Returning:', result)
+      return result
     }
   )
 }

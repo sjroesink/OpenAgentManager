@@ -27,8 +27,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     'agent:launch',
-    async (_event, { agentId, projectPath }: { agentId: string; projectPath: string }) => {
-      return agentManager.launch(agentId, projectPath)
+    async (_event, { agentId, projectPath, extraEnv }: { agentId: string; projectPath: string; extraEnv?: Record<string, string> }) => {
+      return agentManager.launch(agentId, projectPath, extraEnv)
     }
   )
 

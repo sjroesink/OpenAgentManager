@@ -48,7 +48,7 @@ interface SessionState {
     pendingPrompt?: string
   ) => Promise<SessionInfo>
   setActiveSession: (sessionId: string | null) => void
-  sendPrompt: (text: string, mode?: InteractionMode) => Promise<void>
+  sendPrompt: (content: ContentBlock[], mode?: InteractionMode) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
   handlePermissionRequest: (event: PermissionRequestEvent) => void
@@ -163,10 +163,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   forkSession: async (sessionId, title?) => {
     try {
       const session = await window.api.invoke('session:fork', { sessionId, title })
+      console.log('[forkSession] Got session from IPC:', session)
       set((state) => ({
         sessions: [...state.sessions, session],
         activeSessionId: session.sessionId
       }))
+      console.log('[forkSession] State updated, sessions count:', get().sessions.length)
       return session
     } catch (error) {
       console.error('Failed to fork session:', error)
@@ -240,7 +242,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  sendPrompt: async (text, mode) => {
+sendPrompt: async (content, mode) => {
     const { activeSessionId } = get()
     if (!activeSessionId) return
 
@@ -248,7 +250,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const userMessage: Message = {
       id: uuid(),
       role: 'user',
-      content: [{ type: 'text', text }],
+      content: content,
       timestamp: new Date().toISOString()
     }
 
@@ -261,7 +263,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }))
 
     try {
-      await window.api.invoke('session:prompt', { sessionId: activeSessionId, text, mode })
+      await window.api.invoke('session:prompt', { sessionId: activeSessionId, content, mode })
 
       // Prompt completed successfully — mark session as active and finalize streaming message
       set((state) => ({
@@ -568,7 +570,7 @@ async function runInitPipeline(
     }))
 
     // Send the first prompt
-    await get().sendPrompt(prompt)
+    await get().sendPrompt([{ type: 'text', text: prompt }])
   } catch (error) {
     // Mark the running step as failed and set error status
     set((state) => ({

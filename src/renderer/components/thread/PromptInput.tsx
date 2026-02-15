@@ -3,7 +3,7 @@ import { useSessionStore } from '../../stores/session-store'
 import { useUiStore } from '../../stores/ui-store'
 import { useAcpFeaturesStore } from '../../stores/acp-features-store'
 import { Button } from '../common/Button'
-import type { InteractionMode, SlashCommand } from '@shared/types/session'
+import type { InteractionMode, SlashCommand, ContentBlock, ImageContent } from '@shared/types/session'
 
 const MODE_CONFIG: Record<InteractionMode, { icon: React.ReactNode; label: string; description: string }> = {
   ask: {
@@ -49,14 +49,17 @@ const MODES: InteractionMode[] = ['ask', 'code', 'plan', 'act']
 
 export function PromptInput() {
   const [text, setText] = useState('')
+  const [attachments, setAttachments] = useState<ImageContent[]>([])
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
   const [commandQuery, setCommandQuery] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const commandMenuRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const { activeSessionId, sendPrompt, getActiveSession } = useSessionStore()
   const { interactionMode, setInteractionMode } = useUiStore()
   const { getSessionState } = useAcpFeaturesStore()
@@ -125,18 +128,27 @@ export function PromptInput() {
   }, [commandMenuOpen])
 
   const handleSubmit = useCallback(async () => {
-    if (!text.trim() || !activeSessionId || isBusy) return
+    if (!text.trim() && attachments.length === 0) return
+    if (!activeSessionId || isBusy) return
 
-    const prompt = text.trim()
+    const content: ContentBlock[] = []
+
+    if (text.trim()) {
+      content.push({ type: 'text', text: text.trim() })
+    }
+
+    content.push(...attachments)
+
     setText('')
+    setAttachments([])
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
 
-    await sendPrompt(prompt, interactionMode)
-  }, [text, activeSessionId, isBusy, sendPrompt, interactionMode])
+    await sendPrompt(content, interactionMode)
+  }, [text, attachments, activeSessionId, isBusy, sendPrompt, interactionMode])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commandMenuOpen && filteredCommands.length > 0) {
@@ -192,10 +204,133 @@ export function PromptInput() {
     setModeMenuOpen(false)
   }
 
+  const processFile = useCallback((file: File): Promise<ImageContent | null> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) {
+        resolve(null)
+        return
+      }
+
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const base64 = result.split(',')[1]
+        resolve({
+          type: 'image',
+          data: base64,
+          mimeType: file.type
+        })
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+  }, [])
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const imageFiles: File[] = []
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) imageFiles.push(file)
+      }
+    }
+
+    if (imageFiles.length === 0) return
+
+    e.preventDefault()
+    const newImages: ImageContent[] = []
+    for (const file of imageFiles) {
+      const image = await processFile(file)
+      if (image) newImages.push(image)
+    }
+    if (newImages.length > 0) {
+      setAttachments((prev) => [...prev, ...newImages])
+    }
+  }, [processFile])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.currentTarget === e.target) {
+      setIsDragging(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+
+    if (imageFiles.length === 0) return
+
+    const newImages: ImageContent[] = []
+    for (const file of imageFiles) {
+      const image = await processFile(file)
+      if (image) newImages.push(image)
+    }
+    if (newImages.length > 0) {
+      setAttachments((prev) => [...prev, ...newImages])
+    }
+  }, [processFile])
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }, [])
+
   if (!activeSessionId) return null
 
+  const canSubmit = (text.trim() || attachments.length > 0) && !isBusy
+
   return (
-    <div className="border-t border-border p-3 bg-surface-0 shrink-0">
+    <div
+      ref={containerRef}
+      className={`border-t border-border p-3 bg-surface-0 shrink-0 ${isDragging ? 'bg-accent/5' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 max-w-3xl mx-auto flex-wrap">
+          {attachments.map((attachment, index) => (
+            <div key={index} className="relative group">
+              <img
+                src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                alt={`Attachment ${index + 1}`}
+                className="w-16 h-16 object-cover rounded-lg border border-border"
+              />
+              <button
+                onClick={() => removeAttachment(index)}
+                className="absolute -top-1 -right-1 w-5 h-5 bg-error rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 bg-accent/10 border-2 border-dashed border-accent rounded-lg flex items-center justify-center pointer-events-none z-50">
+          <span className="text-accent font-medium">Drop images here</span>
+        </div>
+      )}
+
       <div className="flex items-end gap-2 max-w-3xl mx-auto">
         <div className="flex-1 relative">
           {/* Slash command autocomplete menu */}
@@ -233,7 +368,8 @@ export function PromptInput() {
             value={isCreating && session?.pendingPrompt ? session.pendingPrompt : text}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line)'}
+            onPaste={handlePaste}
+            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'}
             disabled={isBusy}
             readOnly={isInitializing || isCreating}
             rows={1}
@@ -244,7 +380,7 @@ export function PromptInput() {
         <Button
           variant="primary"
           size="md"
-          disabled={!text.trim() || isBusy}
+          disabled={!canSubmit}
           onClick={handleSubmit}
           className="shrink-0 rounded-xl h-[40px] w-[40px] !p-0"
         >

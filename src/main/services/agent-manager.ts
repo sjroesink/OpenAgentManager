@@ -152,7 +152,7 @@ export class AgentManagerService {
   // Launching & Connection
   // ============================
 
-  async launch(agentId: string, projectPath: string): Promise<AgentConnection> {
+  async launch(agentId: string, projectPath: string, extraEnv?: Record<string, string>): Promise<AgentConnection> {
     const agent = this.installed.get(agentId)
     if (!agent) {
       throw new Error(`Agent not installed: ${agentId}`)
@@ -179,6 +179,11 @@ export class AgentManagerService {
     // Merge custom env
     if (agentSettings?.customEnv) {
       Object.assign(finalEnv, agentSettings.customEnv)
+    }
+
+    // Merge extra env (e.g. from env_var auth method)
+    if (extraEnv) {
+      Object.assign(finalEnv, extraEnv)
     }
 
     // Add custom args

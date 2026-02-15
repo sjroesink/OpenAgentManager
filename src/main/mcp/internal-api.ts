@@ -121,7 +121,7 @@ const routes: Record<string, RouteHandler> = {
   '/api/session/prompt': async (body) => {
     return sessionManager.prompt(
       body.sessionId as string,
-      body.text as string,
+      [{ type: 'text', text: body.text as string }],
       body.mode as 'ask' | 'code' | 'plan' | 'act' | undefined
     )
   },

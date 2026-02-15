@@ -114,10 +114,28 @@ export interface AgentCapabilities {
   _meta?: Record<string, unknown>
 }
 
+/**
+ * ACP authentication method.
+ * See: https://agentclientprotocol.com/rfds/auth-methods
+ *
+ * - `agent` (default): Agent handles auth itself; client shows description text.
+ * - `env_var`: Client collects the value and restarts the agent with the env var set.
+ * - `terminal`: Client opens an interactive terminal to run the agent's login flow.
+ */
 export interface AuthMethod {
   id: string
   name: string
   description?: string
+  /** Auth type — defaults to 'agent' when omitted (backward-compatible). */
+  type?: 'agent' | 'env_var' | 'terminal'
+  /** (env_var) Name of the environment variable to set. */
+  varName?: string
+  /** (env_var) URL where the user can obtain the credential. */
+  link?: string
+  /** (terminal) Extra CLI args for the interactive login command. */
+  args?: string[]
+  /** (terminal) Extra env vars for the interactive login command. */
+  env?: Record<string, string>
 }
 
 export type PlatformTarget =

@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import type { BrowserWindow } from 'electron'
-import type { SessionInfo, CreateSessionRequest, PermissionResponse, PermissionRequestEvent, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep } from '@shared/types/session'
+import type { SessionInfo, CreateSessionRequest, PermissionResponse, PermissionRequestEvent, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep, ContentBlock } from '@shared/types/session'
 import { applyUpdateToMessages } from '@shared/util/session-util'
 import { agentManager } from './agent-manager'
 import { gitService } from './git-service'
@@ -147,7 +147,7 @@ export class SessionManagerService {
       const promptText = pendingInitialPrompt
       const hookSteps = lastHookSteps
       setImmediate(() => {
-        this.prompt(sessionId, promptText).then(() => {
+        this.prompt(sessionId, [{ type: 'text', text: promptText }]).then(() => {
           if (hookSteps) {
             const ipStep = hookSteps.find((s) => s.label === 'Initial prompt')
             if (ipStep) ipStep.status = 'completed'
@@ -172,11 +172,36 @@ export class SessionManagerService {
 
   async forkSession(sourceSessionId: string, title?: string): Promise<SessionInfo> {
     // Find the source session
-    const source = this.sessions.get(sourceSessionId)
+    let source = this.sessions.get(sourceSessionId)
+
+    // Recovery: if not in memory, try to load from store
+    if (!source) {
+      const persisted = threadStore.loadAll().find((t) => t.sessionId === sourceSessionId)
+      if (persisted) {
+        source = {
+          ...persisted,
+          connectionId: '',
+          status: 'idle'
+        }
+        this.sessions.set(sourceSessionId, source)
+        logger.info(`Session rehydrated from store for fork: ${sourceSessionId}`)
+      }
+    }
+
     if (!source) throw new Error(`Source session not found: ${sourceSessionId}`)
 
+    // Recovery: if connection lost, re-launch agent
+    let client = agentManager.getClient(source.connectionId)
+    if (!client) {
+      logger.info(`Agent connection lost for source session ${sourceSessionId}, re-launching agent ${source.agentId}...`)
+      const connection = await agentManager.launch(source.agentId, source.workingDir)
+      source.connectionId = connection.connectionId
+      this.sessions.set(sourceSessionId, source)
+      client = agentManager.getClient(source.connectionId)!
+      await client.newSession(source.workingDir, this.getEnabledMcpServers(), sourceSessionId)
+    }
+
     // Verify agent connection
-    const client = agentManager.getClient(source.connectionId)
     if (!client) throw new Error(`Agent connection not found: ${source.connectionId}`)
 
     // Check agent capability
@@ -216,7 +241,7 @@ export class SessionManagerService {
     return session
   }
 
-  async prompt(sessionId: string, text: string, mode?: InteractionMode): Promise<{ stopReason: string }> {
+  async prompt(sessionId: string, content: ContentBlock[], mode?: InteractionMode): Promise<{ stopReason: string }> {
     let session = this.sessions.get(sessionId)
     
     // Recovery: if not in memory, try to load from store
@@ -257,7 +282,7 @@ export class SessionManagerService {
     session.messages.push({
       id: uuid(),
       role: 'user',
-      content: [{ type: 'text', text }],
+      content: content,
       timestamp: new Date().toISOString()
     })
 
@@ -272,7 +297,7 @@ export class SessionManagerService {
     client.on('session-update', promptListener)
 
     try {
-      const result = await client.prompt(sessionId, text, mode)
+      const result = await client.prompt(sessionId, content, mode)
 
       session.status = 'active'
       // Persist messages after prompt completes

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from 'react'
 import type { SessionInfo } from '@shared/types/session'
+import type { AuthMethod } from '@shared/types/agent'
 import { useAgentStore } from '../../stores/agent-store'
 import { MessageBubble } from './MessageBubble'
 import { InitializationProgress } from './InitializationProgress'
+import { AuthMethodPrompt } from './AuthMethodPrompt'
 import { Spinner } from '../common/Spinner'
 
 interface ThreadViewProps {
@@ -12,7 +14,7 @@ interface ThreadViewProps {
 export function ThreadView({ session }: ThreadViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or errors change
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -58,6 +60,9 @@ export function ThreadView({ session }: ThreadViewProps) {
             <ErrorBanner
               error={session.lastError!}
               authMethods={authMethods}
+              connectionId={session.connectionId}
+              agentId={session.agentId}
+              projectPath={session.workingDir}
             />
           )}
         </div>
@@ -68,10 +73,16 @@ export function ThreadView({ session }: ThreadViewProps) {
 
 function ErrorBanner({
   error,
-  authMethods
+  authMethods,
+  connectionId,
+  agentId,
+  projectPath
 }: {
   error: string
-  authMethods?: { id: string; name: string; description?: string }[]
+  authMethods?: AuthMethod[]
+  connectionId: string
+  agentId: string
+  projectPath: string
 }) {
   const looksLikeAuthError =
     authMethods &&
@@ -99,23 +110,13 @@ function ErrorBanner({
           <p className="text-text-secondary mt-0.5 break-words">{error}</p>
 
           {looksLikeAuthError && (
-            <div className="mt-2 pt-2 border-t border-error/10">
-              <p className="text-text-secondary font-medium text-xs mb-1">
-                Authentication required
-              </p>
-              {authMethods!.map((method) => (
-                <div
-                  key={method.id}
-                  className="text-xs text-text-muted mt-0.5"
-                >
-                  <span className="font-medium text-text-secondary">
-                    {method.name}
-                  </span>
-                  {method.description && (
-                    <span className="ml-1">&mdash; {method.description}</span>
-                  )}
-                </div>
-              ))}
+            <div className="mt-3 pt-3 border-t border-error/10">
+              <AuthMethodPrompt
+                authMethods={authMethods!}
+                connectionId={connectionId}
+                agentId={agentId}
+                projectPath={projectPath}
+              />
             </div>
           )}
         </div>

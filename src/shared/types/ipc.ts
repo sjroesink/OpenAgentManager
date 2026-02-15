@@ -14,7 +14,8 @@ import type {
   PermissionResponse,
   InteractionMode,
   WorktreeHookProgressEvent,
-  ConfigOption
+  ConfigOption,
+  ContentBlock
 } from './session'
 import type { AgentProjectConfig } from './thread-format'
 import type { ProjectInfo, FileTreeNode, FileChange, DiffResult } from './project'
@@ -34,7 +35,7 @@ export interface IpcChannels {
   'agent:install': { request: { agentId: string }; response: InstalledAgent }
   'agent:uninstall': { request: { agentId: string }; response: void }
   'agent:list-installed': { request: void; response: InstalledAgent[] }
-  'agent:launch': { request: { agentId: string; projectPath: string }; response: AgentConnection }
+  'agent:launch': { request: { agentId: string; projectPath: string; extraEnv?: Record<string, string> }; response: AgentConnection }
   'agent:terminate': { request: { connectionId: string }; response: void }
   'agent:authenticate': {
     request: { connectionId: string; method: string; credentials?: Record<string, string> }
@@ -44,7 +45,7 @@ export interface IpcChannels {
 
   // --- Sessions ---
   'session:create': { request: CreateSessionRequest; response: SessionInfo }
-  'session:prompt': { request: { sessionId: string; text: string; mode?: InteractionMode }; response: PromptResult }
+  'session:prompt': { request: { sessionId: string; content: ContentBlock[]; mode?: InteractionMode }; response: PromptResult }
   'session:cancel': { request: { sessionId: string }; response: void }
   'session:list': { request: void; response: SessionInfo[] }
   'session:list-persisted': { request: void; response: PersistedThread[] }
