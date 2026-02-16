@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
-import { useAgentStore } from '../../stores/agent-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { SessionInfo } from '@shared/types/session'
@@ -196,7 +195,6 @@ function ThreadItem({
   const [expanded, setExpanded] = useState(true)
   const isDeleting = deletingSessionIds.has(session.sessionId)
   const isActive = session.sessionId === activeSessionId && !isDeleting
-  const canFork = session.status !== 'prompting' && session.status !== 'creating' && session.status !== 'initializing'
 
   // Dynamic indent: base 32px + 16px per depth level, capped at 4 levels
   const paddingLeft = 32 + Math.min(depth, 4) * 16

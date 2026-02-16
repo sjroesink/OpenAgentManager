@@ -141,12 +141,6 @@ export function MainPanel() {
     )
   }
 
-  const statusColor = activeSession.status === 'initializing' || activeSession.status === 'creating'
-    ? 'bg-warning animate-pulse'
-    : activeSession.status === 'error'
-      ? 'bg-error'
-      : 'bg-success'
-
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Session header */}

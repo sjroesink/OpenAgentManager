@@ -17,7 +17,7 @@ import {
   MESSAGES_FILE,
   ASSETS_DIR_NAME
 } from '@shared/types/thread-format'
-import { APP_NAME, CLIENT_INFO } from '../../shared/constants'
+import { APP_NAME, CLIENT_INFO } from '@shared/constants'
 import { logger } from '../util/logger'
 
 const DEFAULT_GITIGNORE = `# Agent Thread Storage Format - default .gitignore
@@ -106,7 +106,8 @@ export class FolderThreadStore {
     // Rewrite messages.jsonl
     const messagesPath = path.join(threadDir, MESSAGES_FILE)
     const lines = messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       const stored = this.messageToStored(rest as Message, threadDir)
       return JSON.stringify(stored)
     })

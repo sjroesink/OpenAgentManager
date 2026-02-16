@@ -1,4 +1,4 @@
-﻿import type { Message, SessionUpdate, ContentBlock, ToolCallInfo } from '../types/session'
+import type { ContentBlock, Message, SessionUpdate } from '@shared/types/session'
 import { v4 as uuid } from 'uuid'
 
 /**
@@ -129,3 +129,4 @@ function replaceAgentMessage(
   })
   return [...messages, newMsg]
 }
+

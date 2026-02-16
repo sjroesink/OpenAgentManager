@@ -15,7 +15,7 @@ interface WorkspaceState {
   touchWorkspace: (id: string) => Promise<void>
 }
 
-export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   workspaces: [],
   expandedWorkspaceIds: new Set<string>(),
   loading: false,

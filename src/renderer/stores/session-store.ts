@@ -11,7 +11,6 @@ import type {
   HookStep,
   Message,
   ContentBlock,
-  ToolCallInfo,
   InteractionMode
 } from '@shared/types/session'
 import { useWorkspaceStore } from './workspace-store'

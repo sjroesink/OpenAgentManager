@@ -70,7 +70,8 @@ export class ThreadStore {
     if (idx < 0) return
 
     const strippedMessages = messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       return rest
     })
 
@@ -302,7 +303,8 @@ function toPersistedThread(session: SessionInfo): PersistedThread {
     worktreeBranch: session.worktreeBranch,
     workingDir: session.workingDir,
     messages: session.messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       return rest
     }),
     useWorktree: session.useWorktree,

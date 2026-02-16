@@ -7,7 +7,6 @@ import { AgentSelector } from './AgentSelector'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
 import type { InstalledAgent } from '@shared/types/agent'
-import type { WorkspaceInfo } from '@shared/types/workspace'
 
 export function NewThreadDialog() {
   const open = useUiStore((s) => s.newThreadDialogOpen)

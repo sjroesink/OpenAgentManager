@@ -158,11 +158,12 @@ export function PromptInput() {
   const isCreating = session?.status === 'creating'
   const isPrompting = session?.status === 'prompting'
   const isBusy = isPrompting || isCreating || isInitializing
+  const isModeChangeDisabled = isInitializing || isCreating
 
   // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
-  const availableCommands = acpState?.commands || []
-  const configOptions = acpState?.configOptions || []
+  const availableCommands = useMemo(() => acpState?.commands ?? [], [acpState])
+  const configOptions = useMemo(() => acpState?.configOptions ?? [], [acpState])
 
   // Derive mode and model config options from ACP state
   const modeConfig = useMemo(
@@ -516,14 +517,15 @@ export function PromptInput() {
           <ConfigOptionSelector
             configOption={modeConfig!}
             onSelect={(value) => handleConfigOptionChange(modeConfig!.id, value)}
-            disabled={isBusy}
+            disabled={isModeChangeDisabled}
           />
         ) : (
           <div className="relative">
             <button
               ref={buttonRef}
-              onClick={() => setModeMenuOpen(!modeMenuOpen)}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors"
+              onClick={() => !isModeChangeDisabled && setModeMenuOpen(!modeMenuOpen)}
+              disabled={isModeChangeDisabled}
+              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors disabled:opacity-50"
             >
               <span>{currentFallbackMode.label}</span>
               <svg className={`w-3 h-3 opacity-60 transition-transform ${modeMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

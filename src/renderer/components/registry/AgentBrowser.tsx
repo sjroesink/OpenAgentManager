@@ -15,7 +15,7 @@ export function AgentBrowser() {
       fetchRegistry()
       loadInstalled()
     }
-  }, [registryBrowserOpen])
+  }, [registryBrowserOpen, fetchRegistry, loadInstalled])
 
   const filteredAgents = (registry?.agents || []).filter(
     (agent) =>

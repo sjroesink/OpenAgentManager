@@ -29,7 +29,7 @@ export function TerminalPanel() {
           setOutput(`Terminal error: ${err.message}\n`)
         })
     }
-  }, [activeSession?.sessionId])
+  }, [activeSession, terminalId])
 
   // Listen for terminal output
   const handleTerminalData = useCallback(

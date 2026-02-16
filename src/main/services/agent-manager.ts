@@ -278,7 +278,7 @@ export class AgentManagerService {
       // The agent may still accept sessions/prompts; auth errors surface at prompt time.
       emitStatus('connected')
 
-      const connection: AgentConnection = {
+      return {
         connectionId: client.connectionId,
         agentId,
         agentName: initResult.agentName,
@@ -288,8 +288,6 @@ export class AgentManagerService {
         capabilities: initResult.capabilities,
         authMethods: initResult.authMethods
       }
-
-      return connection
     } catch (error) {
       client.terminate()
       emitStatus('error', (error as Error).message)
@@ -422,7 +420,6 @@ export class AgentManagerService {
 
   private loadInstalled(): void {
     try {
-      const settings = settingsService.get()
       // Installed agents are stored separately in electron-store
       const store = new (require('electron-store'))({ name: 'installed-agents' })
       const agents = store.get('agents', {}) as Record<string, InstalledAgent>

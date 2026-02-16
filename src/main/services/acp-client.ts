@@ -570,7 +570,7 @@ export class AcpClient extends EventEmitter {
       try {
         const msg = JSON.parse(trimmed) as JsonRpcResponse
         this.handleMessage(msg)
-      } catch (err) {
+      } catch {
         logger.debug(`[${this.agentId}] Non-JSON output: ${trimmed}`)
       }
     }
@@ -1015,7 +1015,7 @@ export class AcpClient extends EventEmitter {
       }
 
       this.sendResponse(id, { content })
-    } catch (err) {
+    } catch {
       this.sendError(id, -32002, `File not found: ${filePath}`)
     }
   }
