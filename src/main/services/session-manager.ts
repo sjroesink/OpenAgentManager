@@ -356,6 +356,14 @@ export class SessionManagerService {
     await client.setMode(sessionId, modeId)
   }
 
+  async setModel(sessionId: string, modelId: string): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    const client = agentManager.getClient(session.connectionId)
+    if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
+    await client.setModel(sessionId, modelId)
+  }
+
   async setConfigOption(sessionId: string, configId: string, value: string): Promise<unknown> {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
@@ -474,6 +482,80 @@ export class SessionManagerService {
     } catch (error) {
       logger.warn(`Failed to auto-generate title for ${sessionId}:`, error)
       return null
+    }
+  }
+
+  /**
+   * Ensure the session has an active agent connection.
+   * If the agent is not running, re-launches it and re-creates the ACP session.
+   * Called proactively when the user selects a previously idle thread.
+   */
+  async ensureConnected(sessionId: string): Promise<{ connectionId: string }> {
+    let session = this.sessions.get(sessionId)
+
+    // Recovery: if not in memory, try to load from store
+    if (!session) {
+      const persisted = threadStore.loadAll().find((t) => t.sessionId === sessionId)
+      if (persisted) {
+        session = {
+          ...persisted,
+          connectionId: '',
+          status: 'idle'
+        }
+        this.sessions.set(sessionId, session)
+        logger.info(`ensureConnected: rehydrated session from store: ${sessionId}`)
+      }
+    }
+
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+
+    // Check if already connected
+    const existingClient = agentManager.getClient(session.connectionId)
+    if (existingClient) {
+      return { connectionId: session.connectionId }
+    }
+
+    // Re-launch agent and recreate ACP session
+    logger.info(`ensureConnected: re-launching agent ${session.agentId} for session ${sessionId}`)
+
+    // Notify renderer that session is reconnecting
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('session:update', {
+        sessionId,
+        update: { type: 'status_change', status: 'initializing' }
+      })
+    }
+
+    try {
+      const connection = await agentManager.launch(session.agentId, session.workingDir)
+      session.connectionId = connection.connectionId
+      this.sessions.set(sessionId, session)
+
+      const client = agentManager.getClient(session.connectionId)!
+      await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      this.ensureListener(session.connectionId)
+
+      session.status = 'active'
+
+      // Notify renderer that session is active
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:update', {
+          sessionId,
+          update: { type: 'status_change', status: 'active' }
+        })
+      }
+
+      logger.info(`ensureConnected: session ${sessionId} reconnected via ${session.connectionId}`)
+      return { connectionId: session.connectionId }
+    } catch (error) {
+      session.status = 'error'
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:update', {
+          sessionId,
+          update: { type: 'status_change', status: 'error' }
+        })
+      }
+      throw error
     }
   }
 

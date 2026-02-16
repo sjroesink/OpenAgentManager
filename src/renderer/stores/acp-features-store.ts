@@ -68,15 +68,28 @@ export const useAcpFeaturesStore = create<AcpFeaturesState>((set, get) => ({
         break
 
       case 'config_options_update':
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            [sessionId]: {
-              ...(state.sessions[sessionId] || EMPTY_STATE),
-              configOptions: update.options
+        set((state) => {
+          const existing = state.sessions[sessionId] || EMPTY_STATE
+          // Merge: incoming options replace existing ones with the same id, new ones are appended
+          const merged = [...existing.configOptions]
+          for (const incoming of update.options) {
+            const idx = merged.findIndex((o) => o.id === incoming.id)
+            if (idx >= 0) {
+              merged[idx] = incoming
+            } else {
+              merged.push(incoming)
             }
           }
-        }))
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                configOptions: merged
+              }
+            }
+          }
+        })
         break
 
       case 'available_commands_update':
@@ -141,15 +154,74 @@ export const useAcpFeaturesStore = create<AcpFeaturesState>((set, get) => ({
   },
 
   setConfigOption: async (sessionId, configId, value) => {
-    const result = await window.api.invoke('session:set-config-option', { sessionId, configId, value })
-    // Response contains the full updated config options list
-    if (Array.isArray(result)) {
+    // Snapshot for rollback on error
+    const prevOptions = (get().sessions[sessionId] || EMPTY_STATE).configOptions
+
+    // Optimistic update: immediately reflect the selection in the UI
+    set((state) => {
+      const existing = state.sessions[sessionId] || EMPTY_STATE
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...existing,
+            configOptions: existing.configOptions.map((opt) =>
+              opt.id === configId ? { ...opt, currentValue: value } : opt
+            )
+          }
+        }
+      }
+    })
+
+    try {
+      // For legacy mode options (synthesized from session/new modes field), use session/set_mode
+      const configOption = prevOptions.find((o) => o.id === configId)
+      if (configOption?.category === 'mode' && configId === '_mode') {
+        await window.api.invoke('session:set-mode', { sessionId, modeId: value })
+        return
+      }
+
+      // For legacy model options (synthesized from session/new models field), use session/set_model
+      if (configOption?.category === 'model' && configId === '_model') {
+        await window.api.invoke('session:set-model', { sessionId, modelId: value })
+        return
+      }
+
+      const result = await window.api.invoke('session:set-config-option', { sessionId, configId, value })
+      // Response contains the full updated config options list — reconcile with server state
+      if (Array.isArray(result)) {
+        set((state) => {
+          const existing = state.sessions[sessionId] || EMPTY_STATE
+          // Merge server response with any locally-known options
+          const merged = [...existing.configOptions]
+          for (const incoming of result as typeof existing.configOptions) {
+            const idx = merged.findIndex((o) => o.id === incoming.id)
+            if (idx >= 0) {
+              merged[idx] = incoming
+            } else {
+              merged.push(incoming)
+            }
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                configOptions: merged
+              }
+            }
+          }
+        })
+      }
+    } catch (error) {
+      // Revert optimistic update on failure
+      console.warn('[acp-features-store] setConfigOption failed, reverting:', error)
       set((state) => ({
         sessions: {
           ...state.sessions,
           [sessionId]: {
             ...(state.sessions[sessionId] || EMPTY_STATE),
-            configOptions: result
+            configOptions: prevOptions
           }
         }
       }))
