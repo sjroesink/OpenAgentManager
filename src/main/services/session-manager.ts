@@ -215,6 +215,9 @@ export class SessionManagerService {
     // Call ACP fork with our stable sessionId for mapping
     await client.forkSession(sourceSessionId, source.workingDir, [], newSessionId)
 
+    // Copy messages from the source session so the fork starts with full context
+    const forkedMessages = source.messages.map((m) => ({ ...m }))
+
     // Build the forked SessionInfo
     const session: SessionInfo = {
       sessionId: newSessionId,
@@ -227,7 +230,7 @@ export class SessionManagerService {
       worktreeBranch: source.worktreeBranch,
       workingDir: source.workingDir,
       status: 'active',
-      messages: [],
+      messages: forkedMessages,
       useWorktree: source.useWorktree,
       workspaceId: source.workspaceId,
       parentSessionId: sourceSessionId

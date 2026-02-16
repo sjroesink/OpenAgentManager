@@ -25,6 +25,28 @@ An open, filesystem-based specification for persisting AI agent conversation thr
           <hash>.<ext>
 ```
 
+### Worktree-Local Storage
+
+When a thread runs inside a **git worktree**, its `.agent/` data SHOULD be stored inside that worktree directory rather than in the main project root. This makes each worktree self-contained: the code and the conversation that produced it live together.
+
+```
+<worktree-dir>/                          # e.g. worktrees/myapp/thread-a1b2c3d4
+  .agent/
+    config.json
+    .gitignore
+    threads/
+      <thread-id>/
+        thread.json
+        messages.jsonl
+        assets/
+  src/
+  ...
+```
+
+Non-worktree threads continue to be stored under the main project root's `.agent/` directory.
+
+Implementations that scan for threads SHOULD check both the main project `.agent/` directory and the `.agent/` directories inside any known worktrees belonging to that project.
+
 ### Naming Conventions
 
 - **Thread IDs**: UUID v4 or any unique string. Directory name = thread ID.
@@ -296,3 +318,4 @@ threads/*/assets/
 - All text encoding is UTF-8.
 - File paths in `context.workingDir` are absolute. Use `context.relativeDir` for portability across machines.
 - The `"system"` role is available for injected context or metadata messages that are neither user nor agent-authored.
+- Worktree threads store their `.agent/` data inside the worktree directory. When a worktree is removed, its thread data is removed with it. Implementations SHOULD keep a cache of thread metadata to handle this gracefully.

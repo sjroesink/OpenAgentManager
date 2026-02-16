@@ -7,7 +7,6 @@ import { BrowserWindow } from 'electron'
 import { ACP_PROTOCOL_VERSION, CLIENT_INFO } from '@shared/constants'
 import type {
   AgentCapabilities,
-  AgentConnection,
   AuthMethod
 } from '@shared/types/agent'
 import type {
@@ -379,8 +378,7 @@ export class AcpClient extends EventEmitter {
     if (mode) {
       params.interactionMode = mode
     }
-    const result = (await this.sendRequest('session/prompt', params)) as { stopReason: string }
-    return result
+    return (await this.sendRequest('session/prompt', params)) as { stopReason: string }
   }
 
   /** Set the session mode (spec: session/set_mode) */
@@ -858,7 +856,7 @@ export class AcpClient extends EventEmitter {
       }
 
       case 'available_commands_update': {
-        const commands = (raw.commands as Array<Record<string, unknown>>) || []
+        const commands = (raw.availableCommands as Array<Record<string, unknown>>) || (raw.commands as Array<Record<string, unknown>>) || []
         return {
           type: 'available_commands_update',
           commands: commands.map((cmd) => ({
