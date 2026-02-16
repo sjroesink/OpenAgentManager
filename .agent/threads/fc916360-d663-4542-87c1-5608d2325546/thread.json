@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "fc916360-d663-4542-87c1-5608d2325546",
+  "title": "Session 00b79b52",
+  "createdAt": "2026-02-16T19:47:15.398Z",
+  "updatedAt": "2026-02-16T19:47:17.527Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 15
+  }
+}

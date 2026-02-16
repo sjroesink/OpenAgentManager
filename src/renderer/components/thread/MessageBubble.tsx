@@ -21,7 +21,7 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: M
           }
         `}
       >
-        <div className="markdown-body break-words">
+        <div className={`markdown-body break-words ${isUser ? '' : 'markdown-body-agent'}`}>
           <ReactMarkdown>{block.text}</ReactMarkdown>
         </div>
       </div>

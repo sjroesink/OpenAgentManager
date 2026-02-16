@@ -220,6 +220,23 @@ body,
   word-break: break-word;
 }
 
+/* Higher-contrast code blocks for agent responses */
+.markdown-body-agent pre {
+  background: #1f1a10;
+  border-color: #6f5b2b;
+  color: #fff6d8;
+}
+
+.markdown-body-agent pre code {
+  color: inherit;
+}
+
+.markdown-body-agent :not(pre) > code {
+  background: #272012;
+  border-color: #7d6630;
+  color: #fff0be;
+}
+
 .markdown-body table {
   width: 100%;
   border-collapse: collapse;

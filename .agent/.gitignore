@@ -1,0 +1,11 @@
+# Agent Thread Storage Format - default .gitignore
+# Conversation threads are not committed by default.
+# They can be large and may contain sensitive content.
+
+# Ignore message logs and binary assets
+threads/*/messages.jsonl
+threads/*/assets/
+
+# Thread metadata is also ignored by default.
+# Uncomment the next line to track thread metadata:
+# !threads/*/thread.json

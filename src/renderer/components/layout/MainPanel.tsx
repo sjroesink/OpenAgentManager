@@ -1,39 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useAgentStore } from '../../stores/agent-store'
 import { ThreadView } from '../thread/ThreadView'
 import { PromptInput } from '../thread/PromptInput'
 import { DraftThreadView } from '../thread/DraftThreadView'
 import { Button } from '../common/Button'
-
-const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
-
-function HeaderIcon({ agentId, name }: { agentId: string; name: string }) {
-  const [svgContent, setSvgContent] = useState<string | null>(null)
-  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
-
-  useEffect(() => {
-    fetch(iconUrl)
-      .then((res) => res.text())
-      .then((svg) => setSvgContent(svg))
-      .catch(() => setSvgContent(null))
-  }, [iconUrl])
-
-  if (svgContent) {
-    return (
-      <span
-        className="w-5 h-5 shrink-0"
-        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-5 h-5"') }}
-      />
-    )
-  }
-
-  return (
-    <span className="w-5 h-5 rounded bg-accent/20 flex items-center justify-center text-xs font-bold text-accent shrink-0">
-      {name[0]}
-    </span>
-  )
-}
+import { AgentIcon } from '../common/AgentIcon'
 
 /**
  * Shows worktree hook progress during session creation as a checklist.
@@ -96,11 +69,41 @@ function HookProgressLabel({ fallback }: { fallback: string }) {
 }
 
 export function MainPanel() {
-  const { getActiveSession, activeDraftId, draftThread, startDraftThread } = useSessionStore()
+  const {
+    getActiveSession,
+    activeDraftId,
+    draftThread,
+    startDraftThread,
+    renameSession,
+    forkSession,
+    deleteSession
+  } = useSessionStore()
   const { workspaces, createWorkspace, openInVSCode } = useWorkspaceStore()
+  const installedAgents = useAgentStore((s) => s.installed)
   const activeSession = getActiveSession()
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false)
+  const threadMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!threadMenuOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (threadMenuRef.current && !threadMenuRef.current.contains(event.target as Node)) {
+        setThreadMenuOpen(false)
+      }
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setThreadMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [threadMenuOpen])
 
-  // Draft thread view — agent selector + worktree toggle + message input
+  // Draft thread view — workspace + agent configuration before creating a thread
   if (activeDraftId && draftThread) {
     return <DraftThreadView draft={draftThread} />
   }
@@ -141,12 +144,51 @@ export function MainPanel() {
     )
   }
 
+  const activeSessionAgentIcon = installedAgents.find(
+    (agent) => agent.registryId === activeSession.agentId
+  )?.icon
+  const canFork =
+    activeSession.status !== 'prompting' &&
+    activeSession.status !== 'creating' &&
+    activeSession.status !== 'initializing'
+
+  const handleRename = () => {
+    const nextTitle = window.prompt('Rename thread', activeSession.title)
+    if (!nextTitle || !nextTitle.trim()) return
+    renameSession(activeSession.sessionId, nextTitle.trim())
+    setThreadMenuOpen(false)
+  }
+
+  const handleFork = async () => {
+    try {
+      await forkSession(activeSession.sessionId)
+      setThreadMenuOpen(false)
+    } catch (error) {
+      console.error('Fork failed:', error)
+    }
+  }
+
+  const handleDeleteThread = (cleanupWorktree: boolean) => {
+    const prompt = cleanupWorktree
+      ? 'Delete this thread and its worktree files?'
+      : 'Delete this thread?'
+    if (!window.confirm(prompt)) return
+    deleteSession(activeSession.sessionId, cleanupWorktree)
+    setThreadMenuOpen(false)
+  }
+
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Session header */}
       <div className="flex items-center px-4 py-2 border-b border-border gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <HeaderIcon agentId={activeSession.agentId} name={activeSession.agentName} />
+          <AgentIcon
+            agentId={activeSession.agentId}
+            icon={activeSessionAgentIcon}
+            name={activeSession.agentName}
+            size="sm"
+            className="w-5 h-5"
+          />
           <span className="text-sm font-medium truncate">{activeSession.agentName}</span>
           <span className="text-xs text-text-muted truncate">{activeSession.title}</span>
         </div>
@@ -170,6 +212,69 @@ export function MainPanel() {
             />
           </svg>
         </button>
+        <div className="relative" ref={threadMenuRef}>
+          <button
+            onClick={() => setThreadMenuOpen((v) => !v)}
+            className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
+            title="Thread menu"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5h.01M12 12h.01M12 19h.01" />
+            </svg>
+          </button>
+
+          {threadMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 z-30 w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5">
+              {canFork && (
+                <button
+                  onClick={handleFork}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                >
+                  Fork Thread
+                </button>
+              )}
+              <button
+                onClick={handleRename}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => {
+                  openInVSCode(activeSession.worktreePath || activeSession.workingDir)
+                  setThreadMenuOpen(false)
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                Open in VS Code
+              </button>
+              <div className="border-t border-border my-1" />
+              {activeSession.worktreePath ? (
+                <>
+                  <button
+                    onClick={() => handleDeleteThread(false)}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                  >
+                    Delete thread only
+                  </button>
+                  <button
+                    onClick={() => handleDeleteThread(true)}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+                  >
+                    Delete thread + worktree
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => handleDeleteThread(false)}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {activeSession.status === 'prompting' && (
           <Button
             variant="danger"

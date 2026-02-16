@@ -65,7 +65,7 @@ interface SessionState {
   startDraftThread: (workspaceId: string, workspacePath: string) => void
   updateDraftThread: (updates: Partial<Pick<DraftThread, 'agentId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>) => void
   discardDraftThread: () => void
-  commitDraftThread: (prompt: string) => Promise<void>
+  commitDraftThread: (prompt?: string) => Promise<void>
   retryInitialization: (sessionId: string) => void
 
   // Helpers
@@ -297,23 +297,23 @@ sendPrompt: async (content, mode) => {
     try {
       await window.api.invoke('session:prompt', { sessionId: activeSessionId, content, mode })
 
-      // Prompt completed successfully — mark session as active and force-close any open tool calls.
-      // Some agents do not reliably emit a final tool_call_update/message_complete for every call.
+      // Prompt completed successfully. Treat this as a hard turn boundary:
+      // if an agent failed to emit terminal tool updates, close remaining open calls.
       set((state) => ({
         sessions: state.sessions.map((s) => {
           if (s.sessionId !== activeSessionId) return s
-          const messages = s.messages.map((m) =>
-            m.isStreaming
-              ? {
-                  ...m,
-                  isStreaming: false,
-                  toolCalls: m.toolCalls?.map((tc) => ({
-                    ...tc,
-                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
-                  }))
-                }
-              : m
-          )
+          const messages = s.messages.map((m) => {
+            const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
+            if (!m.isStreaming && !hasOpenToolCalls) return m
+            return {
+              ...m,
+              isStreaming: false,
+              toolCalls: m.toolCalls?.map((tc) => ({
+                ...tc,
+                status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+              }))
+            }
+          })
           return { ...s, status: 'active' as const, lastError: undefined, messages }
         })
       }))
@@ -423,7 +423,7 @@ sendPrompt: async (content, mode) => {
     set({ draftThread: null, activeDraftId: null })
   },
 
-  commitDraftThread: async (prompt: string) => {
+  commitDraftThread: async (prompt?: string) => {
     const { draftThread } = get()
     if (!draftThread || !draftThread.agentId) return
 
@@ -542,7 +542,7 @@ interface InitPipelineParams {
   workspacePath: string
   useWorktree: boolean
   workspaceId: string
-  prompt: string
+  prompt?: string
   existingConnection: { connectionId: string } | null
 }
 
@@ -611,8 +611,10 @@ async function runInitPipeline(
         state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
     }))
 
-    // Send the first prompt
-    await get().sendPrompt([{ type: 'text', text: prompt }])
+    // Send the first prompt if one was provided.
+    if (prompt && prompt.trim().length > 0) {
+      await get().sendPrompt([{ type: 'text', text: prompt }])
+    }
   } catch (error) {
     // Mark the running step as failed and set error status
     set((state) => ({
