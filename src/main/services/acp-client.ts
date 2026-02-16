@@ -203,16 +203,133 @@ export class AcpClient extends EventEmitter {
     const result = (await this.sendRequest('session/new', {
       cwd,
       mcpServers
-    })) as { sessionId: string }
+    })) as {
+      sessionId: string
+      modes?: {
+        currentModeId?: string
+        availableModes?: Array<{ id: string; name: string; description?: string }>
+      }
+      models?: {
+        currentModelId?: string
+        availableModels?: Array<{ modelId: string; name: string; description?: string }>
+      }
+      configOptions?: Array<Record<string, unknown>>
+    }
     const remoteId = result.sessionId
 
     if (internalSessionId) {
       this.remoteToInternal.set(remoteId, internalSessionId)
       this.internalToRemote.set(internalSessionId, remoteId)
-      return internalSessionId
     }
 
-    return remoteId
+    const sessionId = internalSessionId || remoteId
+
+    // Forward initial modes and configOptions from session/new response as updates
+    if (result.modes) {
+      const modes = result.modes
+      // Build configOptions from legacy modes field for backward compat
+      if (modes.availableModes && modes.availableModes.length > 0) {
+        const modeConfigOption = {
+          id: '_mode',
+          name: 'Mode',
+          category: 'mode' as const,
+          type: 'select' as const,
+          currentValue: modes.currentModeId || modes.availableModes[0].id,
+          options: modes.availableModes.map((m) => ({
+            value: m.id,
+            name: m.name,
+            description: m.description
+          }))
+        }
+
+        // Only emit if there are no configOptions with category 'mode' already
+        const existingModeConfig = result.configOptions?.find(
+          (opt) => (opt.category as string) === 'mode'
+        )
+        if (!existingModeConfig) {
+          const event: SessionUpdateEvent = {
+            sessionId,
+            update: { type: 'config_options_update', options: [modeConfigOption] }
+          }
+          this.emit('session-update', event)
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send('session:update', event)
+          }
+        }
+
+        // Also emit current_mode_update
+        if (modes.currentModeId) {
+          const modeEvent: SessionUpdateEvent = {
+            sessionId,
+            update: { type: 'current_mode_update', modeId: modes.currentModeId }
+          }
+          this.emit('session-update', modeEvent)
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send('session:update', modeEvent)
+          }
+        }
+      }
+    }
+
+    // Forward initial models from session/new response as config option
+    if (result.models) {
+      const models = result.models
+      if (models.availableModels && models.availableModels.length > 0) {
+        const existingModelConfig = result.configOptions?.find(
+          (opt) => (opt.category as string) === 'model'
+        )
+        if (!existingModelConfig) {
+          const modelConfigOption = {
+            id: '_model',
+            name: 'Model',
+            category: 'model' as const,
+            type: 'select' as const,
+            currentValue: models.currentModelId || models.availableModels[0].modelId,
+            options: models.availableModels.map((m) => ({
+              value: m.modelId,
+              name: m.name,
+              description: m.description
+            }))
+          }
+          const event: SessionUpdateEvent = {
+            sessionId,
+            update: { type: 'config_options_update', options: [modelConfigOption] }
+          }
+          this.emit('session-update', event)
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send('session:update', event)
+          }
+        }
+      }
+    }
+
+    if (result.configOptions && result.configOptions.length > 0) {
+      const options = result.configOptions.map((opt) => ({
+        id: (opt.id as string) || '',
+        name: (opt.name as string) || '',
+        description: opt.description as string | undefined,
+        category: opt.category as string | undefined,
+        type: 'select' as const,
+        currentValue: (opt.currentValue as string) || '',
+        options: ((opt.options as Array<Record<string, unknown>>) || []).map((v) => ({
+          value: (v.value as string) || '',
+          name: (v.name as string) || '',
+          description: v.description as string | undefined
+        }))
+      }))
+
+      // Merge with any modes-derived configOptions
+      const event: SessionUpdateEvent = {
+        sessionId,
+        update: { type: 'config_options_update', options }
+      }
+      this.emit('session-update', event)
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('session:update', event)
+      }
+    }
+
+    return sessionId
   }
 
   /** Fork an existing session (RFD: session/fork) */
@@ -270,6 +387,12 @@ export class AcpClient extends EventEmitter {
   async setMode(sessionId: string, modeId: string): Promise<void> {
     const remoteId = this.internalToRemote.get(sessionId) || sessionId
     await this.sendRequest('session/set_mode', { sessionId: remoteId, modeId })
+  }
+
+  /** Set the session model (spec: session/set_model) */
+  async setModel(sessionId: string, modelId: string): Promise<void> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    await this.sendRequest('session/set_model', { sessionId: remoteId, modelId })
   }
 
   /** Set a config option value (spec: session/set_config_option) */

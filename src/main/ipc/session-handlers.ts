@@ -60,6 +60,13 @@ export function registerSessionHandlers(): void {
   )
 
   ipcMain.handle(
+    'session:set-model',
+    async (_event, { sessionId, modelId }: { sessionId: string; modelId: string }) => {
+      await sessionManager.setModel(sessionId, modelId)
+    }
+  )
+
+  ipcMain.handle(
     'session:set-config-option',
     async (_event, { sessionId, configId, value }: { sessionId: string; configId: string; value: string }) => {
       return sessionManager.setConfigOption(sessionId, configId, value)
@@ -82,6 +89,13 @@ export function registerSessionHandlers(): void {
       const result = await sessionManager.forkSession(sessionId, title)
       console.log('[session:fork] Returning:', result)
       return result
+    }
+  )
+
+  ipcMain.handle(
+    'session:ensure-connected',
+    async (_event, { sessionId }: { sessionId: string }) => {
+      return sessionManager.ensureConnected(sessionId)
     }
   )
 }

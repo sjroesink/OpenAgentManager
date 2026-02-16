@@ -74,6 +74,9 @@ interface SessionState {
   getSessionsByWorkspace: (workspaceId: string) => SessionInfo[]
 }
 
+/** Guard to prevent duplicate reconnect attempts for the same session. */
+const reconnectingIds = new Set<string>()
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -255,6 +258,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         if (workspace) {
           useProjectStore.getState().openProject(workspace.path)
           useWorkspaceStore.getState().touchWorkspace(workspace.id)
+        }
+
+        // Proactively reconnect idle/disconnected sessions so the agent is ready
+        if (session.status === 'idle' && !session.connectionId && !reconnectingIds.has(sessionId)) {
+          reconnectingIds.add(sessionId)
+          window.api.invoke('session:ensure-connected', { sessionId })
+            .catch((err) => {
+              console.warn('[session-store] Background reconnect failed:', err)
+            })
+            .finally(() => {
+              reconnectingIds.delete(sessionId)
+            })
         }
       }
     }

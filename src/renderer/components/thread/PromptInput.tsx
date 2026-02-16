@@ -3,49 +3,138 @@ import { useSessionStore } from '../../stores/session-store'
 import { useUiStore } from '../../stores/ui-store'
 import { useAcpFeaturesStore } from '../../stores/acp-features-store'
 import { Button } from '../common/Button'
-import type { InteractionMode, SlashCommand, ContentBlock, ImageContent } from '@shared/types/session'
+import type { InteractionMode, SlashCommand, ContentBlock, ImageContent, ConfigOption } from '@shared/types/session'
 
-const MODE_CONFIG: Record<InteractionMode, { icon: React.ReactNode; label: string; description: string }> = {
-  ask: {
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 11.5V14m0-2.5v-1a2.5 2.5 0 015 0v1m0 0V14m0-2.5a2.5 2.5 0 015 0v1V14" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 110-18 9 9 0 010 18z" />
-      </svg>
-    ),
-    label: 'Ask',
-    description: 'Asks for approval for each action.'
-  },
-  code: {
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-    ),
-    label: 'Code',
-    description: 'Starts immediately.'
-  },
-  plan: {
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-    label: 'Plan',
-    description: 'Defines a plan before acting.'
-  },
-  act: {
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-    label: 'Act',
-    description: 'Takes all actions without asking.'
-  }
+const FALLBACK_MODE_CONFIG: Record<InteractionMode, { label: string; description: string }> = {
+  ask: { label: 'Ask', description: 'Asks for approval for each action.' },
+  code: { label: 'Code', description: 'Starts immediately.' },
+  plan: { label: 'Plan', description: 'Defines a plan before acting.' },
+  act: { label: 'Act', description: 'Takes all actions without asking.' }
 }
+const FALLBACK_MODES: InteractionMode[] = ['ask', 'code', 'plan', 'act']
 
-const MODES: InteractionMode[] = ['ask', 'code', 'plan', 'act']
+/** Generic config option dropdown used for mode, model, and other selectors */
+function ConfigOptionSelector({
+  configOption,
+  onSelect,
+  disabled
+}: {
+  configOption: ConfigOption
+  onSelect: (value: string) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  const currentOption = configOption.options.find((o) => o.value === configOption.currentValue)
+  const currentLabel = currentOption?.name || configOption.currentValue
+
+  const isSearchable = configOption.options.length > 6
+
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery) return configOption.options
+    const q = searchQuery.toLowerCase()
+    return configOption.options.filter(
+      (o) => o.name.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)
+    )
+  }, [configOption.options, searchQuery])
+
+  useEffect(() => {
+    if (!open) return
+    const handleClick = (e: MouseEvent) => {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false)
+        setSearchQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  useEffect(() => {
+    if (open && isSearchable) {
+      requestAnimationFrame(() => searchRef.current?.focus())
+    }
+  }, [open, isSearchable])
+
+  const handleSelect = (value: string) => {
+    onSelect(value)
+    setOpen(false)
+    setSearchQuery('')
+  }
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors disabled:opacity-50"
+      >
+        <span className="truncate max-w-[200px]">{currentLabel}</span>
+        <svg className={`w-3 h-3 opacity-60 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          ref={menuRef}
+          className="absolute bottom-full left-0 mb-1 min-w-[200px] max-w-[350px] bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-80 flex flex-col"
+        >
+          {isSearchable && (
+            <div className="px-2 py-1.5 border-b border-border">
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`Search ${configOption.name.toLowerCase()}...`}
+                className="w-full bg-surface-1 border border-border rounded px-2 py-1 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-accent/50"
+              />
+            </div>
+          )}
+          <div className="overflow-y-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-text-muted">No matches</div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isActive = option.value === configOption.currentValue
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => handleSelect(option.value)}
+                    className={`w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-surface-3 transition-colors ${
+                      isActive ? 'text-text-primary' : 'text-text-secondary'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm truncate">{option.name}</div>
+                      {option.description && (
+                        <div className="text-xs text-text-muted truncate">{option.description}</div>
+                      )}
+                    </div>
+                    {isActive && (
+                      <svg className="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function PromptInput() {
   const [text, setText] = useState('')
@@ -62,18 +151,36 @@ export function PromptInput() {
   const containerRef = useRef<HTMLDivElement>(null)
   const { activeSessionId, sendPrompt, getActiveSession } = useSessionStore()
   const { interactionMode, setInteractionMode } = useUiStore()
-  const { getSessionState } = useAcpFeaturesStore()
+  const { getSessionState, setConfigOption } = useAcpFeaturesStore()
 
   const session = getActiveSession()
   const isInitializing = session?.status === 'initializing'
   const isCreating = session?.status === 'creating'
   const isPrompting = session?.status === 'prompting'
   const isBusy = isPrompting || isCreating || isInitializing
-  const currentMode = MODE_CONFIG[interactionMode]
 
-  // Slash commands from the agent
+  // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
   const availableCommands = acpState?.commands || []
+  const configOptions = acpState?.configOptions || []
+
+  // Derive mode and model config options from ACP state
+  const modeConfig = useMemo(
+    () => configOptions.find((o) => o.category === 'mode'),
+    [configOptions]
+  )
+  const modelConfig = useMemo(
+    () => configOptions.find((o) => o.category === 'model'),
+    [configOptions]
+  )
+  // Other config options (not mode or model)
+  const otherConfigs = useMemo(
+    () => configOptions.filter((o) => o.category !== 'mode' && o.category !== 'model'),
+    [configOptions]
+  )
+
+  const hasAcpModes = !!modeConfig
+  const currentFallbackMode = FALLBACK_MODE_CONFIG[interactionMode]
 
   const filteredCommands = useMemo(() => {
     if (!commandQuery) return availableCommands
@@ -87,7 +194,6 @@ export function PromptInput() {
     setCommandMenuOpen(false)
     if (textareaRef.current) {
       textareaRef.current.focus()
-      // Use requestAnimationFrame to set cursor after React re-renders with new text
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = commandText.length
@@ -97,7 +203,7 @@ export function PromptInput() {
     }
   }, [])
 
-  // Close mode menu on outside click
+  // Close fallback mode menu on outside click
   useEffect(() => {
     if (!modeMenuOpen) return
     const handleClick = (e: MouseEvent) => {
@@ -199,10 +305,18 @@ export function PromptInput() {
     }
   }
 
-  const selectMode = (mode: InteractionMode) => {
+  const selectFallbackMode = (mode: InteractionMode) => {
     setInteractionMode(mode)
     setModeMenuOpen(false)
   }
+
+  const handleConfigOptionChange = useCallback(
+    (configId: string, value: string) => {
+      if (!activeSessionId) return
+      setConfigOption(activeSessionId, configId, value)
+    },
+    [activeSessionId, setConfigOption]
+  )
 
   const processFile = useCallback((file: File): Promise<ImageContent | null> => {
     return new Promise((resolve) => {
@@ -395,54 +509,79 @@ export function PromptInput() {
         </Button>
       </div>
 
-      {/* Bottom bar: mode selector */}
+      {/* Bottom bar: config selectors */}
       <div className="flex items-center gap-1 max-w-3xl mx-auto mt-1.5">
-        {/* Mode selector */}
-        <div className="relative">
-          <button
-            ref={buttonRef}
-            onClick={() => setModeMenuOpen(!modeMenuOpen)}
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors"
-          >
-            {currentMode.icon}
-            <span>{currentMode.label}</span>
-            <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {modeMenuOpen && (
-            <div
-              ref={menuRef}
-              className="absolute bottom-full left-0 mb-1 w-64 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50"
+        {/* Mode selector: ACP dynamic or fallback */}
+        {hasAcpModes ? (
+          <ConfigOptionSelector
+            configOption={modeConfig!}
+            onSelect={(value) => handleConfigOptionChange(modeConfig!.id, value)}
+            disabled={isBusy}
+          />
+        ) : (
+          <div className="relative">
+            <button
+              ref={buttonRef}
+              onClick={() => setModeMenuOpen(!modeMenuOpen)}
+              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors"
             >
-              {MODES.map((mode) => {
-                const config = MODE_CONFIG[mode]
-                const isActive = mode === interactionMode
-                return (
-                  <button
-                    key={mode}
-                    onClick={() => selectMode(mode)}
-                    className={`w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-surface-3 transition-colors ${
-                      isActive ? 'text-text-primary' : 'text-text-secondary'
-                    }`}
-                  >
-                    <span className="mt-0.5 shrink-0">{config.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">{config.label}</div>
-                      <div className="text-xs text-text-muted">{config.description}</div>
-                    </div>
-                    {isActive && (
-                      <svg className="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
+              <span>{currentFallbackMode.label}</span>
+              <svg className={`w-3 h-3 opacity-60 transition-transform ${modeMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              </svg>
+            </button>
+
+            {modeMenuOpen && (
+              <div
+                ref={menuRef}
+                className="absolute bottom-full left-0 mb-1 w-64 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50"
+              >
+                {FALLBACK_MODES.map((mode) => {
+                  const config = FALLBACK_MODE_CONFIG[mode]
+                  const isActive = mode === interactionMode
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => selectFallbackMode(mode)}
+                      className={`w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-surface-3 transition-colors ${
+                        isActive ? 'text-text-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">{config.label}</div>
+                        <div className="text-xs text-text-muted">{config.description}</div>
+                      </div>
+                      {isActive && (
+                        <svg className="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Model selector (if agent provides models) */}
+        {modelConfig && (
+          <ConfigOptionSelector
+            configOption={modelConfig}
+            onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
+            disabled={isBusy}
+          />
+        )}
+
+        {/* Other config option selectors */}
+        {otherConfigs.map((config) => (
+          <ConfigOptionSelector
+            key={config.id}
+            configOption={config}
+            onSelect={(value) => handleConfigOptionChange(config.id, value)}
+            disabled={isBusy}
+          />
+        ))}
       </div>
     </div>
   )
