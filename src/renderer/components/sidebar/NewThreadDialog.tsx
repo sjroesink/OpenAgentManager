@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useSessionStore } from '../../stores/session-store'
 import { useAgentStore } from '../../stores/agent-store'
@@ -22,6 +22,29 @@ export function NewThreadDialog() {
   const [creating, setCreating] = useState(false)
 
   const selectedWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId)
+
+  useEffect(() => {
+    if (selectedWorkspace) {
+      // First apply from metadata (fast)
+      if (selectedWorkspace.defaultAgentId) {
+        setSelectedAgentId(selectedWorkspace.defaultAgentId)
+      }
+      if (selectedWorkspace.defaultUseWorktree !== undefined) {
+        setUseWorktree(selectedWorkspace.defaultUseWorktree)
+      }
+
+      // Then try to fetch from config file (shared)
+      window.api
+        .invoke('workspace:get-config', { workspacePath: selectedWorkspace.path })
+        .then((config) => {
+          if (config?.defaults) {
+            if (config.defaults.agentId) setSelectedAgentId(config.defaults.agentId)
+            if (config.defaults.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
+          }
+        })
+        .catch((err) => console.error('Failed to load workspace defaults from config:', err))
+    }
+  }, [selectedWorkspaceId, selectedWorkspace])
 
   const handleSelectNewWorkspace = useCallback(async () => {
     const path = await window.api.invoke('workspace:select-directory', undefined)

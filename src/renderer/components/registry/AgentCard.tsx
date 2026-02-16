@@ -1,8 +1,39 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { AcpRegistryAgent } from '@shared/types/agent'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../common/Button'
 import { Badge } from '../common/Badge'
+
+const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
+
+function AgentIcon({ agentId, name, size = 'lg' }: { agentId: string; name: string; size?: 'sm' | 'md' | 'lg' }) {
+  const [svgContent, setSvgContent] = useState<string | null>(null)
+  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
+
+  useEffect(() => {
+    fetch(iconUrl)
+      .then((res) => res.text())
+      .then((svg) => setSvgContent(svg))
+      .catch(() => setSvgContent(null))
+  }, [iconUrl])
+
+  const sizeClass = size === 'lg' ? 'w-10 h-10' : size === 'md' ? 'w-6 h-6' : 'w-4 h-4'
+
+  if (svgContent) {
+    return (
+      <span
+        className={`${sizeClass} rounded-lg shrink-0`}
+        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, `<svg class="${sizeClass}"`) }}
+      />
+    )
+  }
+
+  return (
+    <span className={`${sizeClass} rounded-lg bg-surface-3 flex items-center justify-center text-lg font-bold text-accent shrink-0`}>
+      {name[0]}
+    </span>
+  )
+}
 
 interface AgentCardProps {
   agent: AcpRegistryAgent
@@ -40,9 +71,11 @@ export function AgentCard({ agent }: AgentCardProps) {
     <div className="border border-border rounded-lg p-4 bg-surface-2 hover:border-border-subtle transition-colors">
       <div className="flex items-start gap-3">
         {/* Icon */}
-        <div className="w-10 h-10 rounded-lg bg-surface-3 flex items-center justify-center text-lg font-bold text-accent shrink-0">
-          {agent.name[0]}
-        </div>
+        <AgentIcon
+          agentId={agent.id}
+          name={agent.name}
+          size="lg"
+        />
 
         {/* Content */}
         <div className="flex-1 min-w-0">

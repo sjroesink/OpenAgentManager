@@ -184,6 +184,13 @@ export class AgentManagerService {
       finalEnv['OPENAI_API_KEY'] = agentSettings.apiKey
     }
 
+    // Add model as env var (some agents read this)
+    if (agentSettings?.model) {
+      finalEnv['MODEL'] = agentSettings.model
+      finalEnv['ANTHROPIC_MODEL'] = agentSettings.model
+      finalEnv['OPENAI_MODEL'] = agentSettings.model
+    }
+
     // Merge custom env
     if (agentSettings?.customEnv) {
       Object.assign(finalEnv, agentSettings.customEnv)
@@ -195,7 +202,12 @@ export class AgentManagerService {
     }
 
     // Add custom args
-    const finalArgs = [...args, ...(agentSettings?.customArgs || [])]
+    let finalArgs = [...args, ...(agentSettings?.customArgs || [])]
+
+    // Add model as CLI arg for agents like OpenCode that don't support session/set_config_option
+    if (agentSettings?.model) {
+      finalArgs = [...finalArgs, '--model', agentSettings.model]
+    }
 
     // Determine spawn parameters (potentially wrapped for WSL)
     let spawnCommand = command

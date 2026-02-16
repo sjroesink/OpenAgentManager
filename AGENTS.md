@@ -4,7 +4,15 @@ This file provides guidance for agentic coding agents working in this repository
 
 ## Project Overview
 
-OpenAgentManager is an Electron desktop app that connects to any ACP (Agent Client Protocol) compatible AI coding agent. It spawns agents as child processes communicating over JSON-RPC 2.0 via stdio.
+OpenAgentManager is an Electron desktop app that connects to any [ACP (Agent Client Protocol)](https://agentclientprotocol.com/) compatible AI coding agent. It spawns agents as child processes communicating over JSON-RPC 2.0 via stdio.
+
+### Agent Client Protocol
+
+This project uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with AI coding agents:
+- **Protocol specification**: https://agentclientprotocol.com/
+- **SDK**: `@agentclientprotocol/sdk` (see `package.json`)
+- **Registry**: Agent discovery via `cdn.agentclientprotocol.com`
+- **Reference**: Use the protocol docs at https://agentclientprotocol.com/protocol/ for session, content, and message types
 
 ## Commands
 

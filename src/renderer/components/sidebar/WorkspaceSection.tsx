@@ -1,23 +1,54 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useAgentStore } from '../../stores/agent-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { SessionInfo } from '@shared/types/session'
 
+const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
+
+const statusColors: Record<string, string> = {
+  active: 'text-success',
+  prompting: 'text-accent animate-pulse',
+  idle: 'text-text-muted',
+  error: 'text-error',
+  creating: 'text-warning animate-pulse',
+  initializing: 'text-warning animate-pulse',
+  cancelled: 'text-text-muted'
+}
+
+function SessionIcon({ agentId, name, status = 'idle' }: { agentId: string; name: string; status?: string }) {
+  const [svgContent, setSvgContent] = useState<string | null>(null)
+  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
+  const colorClass = statusColors[status] || statusColors.idle
+
+  useEffect(() => {
+    fetch(iconUrl)
+      .then((res) => res.text())
+      .then((svg) => setSvgContent(svg))
+      .catch(() => setSvgContent(null))
+  }, [iconUrl])
+
+  if (svgContent) {
+    return (
+      <span
+        className={`w-4 h-4 shrink-0 ${colorClass}`}
+        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-4 h-4"') }}
+      />
+    )
+  }
+
+  return (
+    <span className={`w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 ${colorClass}`}>
+      {name[0]}
+    </span>
+  )
+}
+
 interface WorkspaceSectionProps {
   workspace: WorkspaceInfo
   sessions: SessionInfo[]
-}
-
-const statusColors: Record<string, string> = {
-  active: 'bg-success',
-  prompting: 'bg-accent animate-pulse',
-  idle: 'bg-text-muted',
-  error: 'bg-error',
-  creating: 'bg-warning animate-pulse',
-  initializing: 'bg-warning animate-pulse',
-  cancelled: 'bg-text-muted'
 }
 
 function DeletePopover({
@@ -206,9 +237,7 @@ function ThreadItem({
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           ) : (
-            <span
-              className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusColors[session.status] || 'bg-text-muted'}`}
-            />
+            <SessionIcon agentId={session.agentId} name={session.agentName} status={session.status} />
           )}
 
           <div className="flex-1 min-w-0">
@@ -331,9 +360,34 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     )
   }, [sessions])
 
-  const handleNewThread = (e: React.MouseEvent) => {
+  const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
     startDraftThread(workspace.id, workspace.path)
+
+    // Apply defaults from workspace metadata or config file
+    const { updateDraftThread } = useSessionStore.getState()
+    
+    // First apply from metadata (fast)
+    if (workspace.defaultAgentId || workspace.defaultUseWorktree !== undefined) {
+      updateDraftThread({
+        agentId: workspace.defaultAgentId || null,
+        useWorktree: !!workspace.defaultUseWorktree
+      })
+    }
+
+    // Then try to fetch from config file (might have more up-to-date or shared values)
+    try {
+      const config = await window.api.invoke('workspace:get-config', { workspacePath: workspace.path })
+      if (config?.defaults) {
+        updateDraftThread({
+          agentId: config.defaults.agentId || workspace.defaultAgentId || null,
+          useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
+        })
+      }
+    } catch (err) {
+      console.error('Failed to load workspace defaults from config:', err)
+    }
+
     if (!isExpanded) toggleExpanded(workspace.id)
   }
 
@@ -437,21 +491,20 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         </button>
 
         {/* Worktree settings button */}
-        {workspace.isGitRepo && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowSettings(true)
-            }}
-            className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100"
-            title="Worktree setup"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        )}
+        {/* Workspace settings button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowSettings(true)
+          }}
+          className="p-0.5 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100"
+          title="Workspace settings"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
 
         {/* VS Code button */}
         <button
@@ -536,8 +589,11 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
       <WorkspaceSettingsDialog
         open={showSettings}
         onClose={() => setShowSettings(false)}
+        workspaceId={workspace.id}
         workspacePath={workspace.path}
         workspaceName={workspace.name}
+        defaultAgentId={workspace.defaultAgentId}
+        defaultUseWorktree={workspace.defaultUseWorktree}
       />
 
       {contextMenu && (
@@ -599,12 +655,27 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                         Open in VS Code
                       </button>
                     )}
-                    <button
-                      onClick={() => { if (contextMenu.sessionId) { setConfirmDelete(contextMenu.sessionId); setContextMenu(null) } }}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
-                    >
-                      Delete
-                    </button>
+                    {confirmDelete && contextMenu.sessionId ? (
+                      (() => {
+                        const session = sessions.find(s => s.sessionId === contextMenu.sessionId)
+                        return (
+                          <DeletePopover
+                            hasWorktree={!!session?.worktreePath}
+                            open={true}
+                            onOpen={() => {}}
+                            onClose={() => setConfirmDelete(null)}
+                            onDelete={(cleanupWorktree) => { deleteSession(contextMenu.sessionId!, cleanupWorktree); setConfirmDelete(null) }}
+                          />
+                        )
+                      })()
+                    ) : (
+                      <button
+                        onClick={() => { if (contextMenu.sessionId) { setConfirmDelete(contextMenu.sessionId); setContextMenu(null) } }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </>
                 )
               })()}

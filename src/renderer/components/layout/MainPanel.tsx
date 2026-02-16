@@ -1,10 +1,39 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { ThreadView } from '../thread/ThreadView'
 import { PromptInput } from '../thread/PromptInput'
 import { DraftThreadView } from '../thread/DraftThreadView'
 import { Button } from '../common/Button'
+
+const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
+
+function HeaderIcon({ agentId, name }: { agentId: string; name: string }) {
+  const [svgContent, setSvgContent] = useState<string | null>(null)
+  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
+
+  useEffect(() => {
+    fetch(iconUrl)
+      .then((res) => res.text())
+      .then((svg) => setSvgContent(svg))
+      .catch(() => setSvgContent(null))
+  }, [iconUrl])
+
+  if (svgContent) {
+    return (
+      <span
+        className="w-5 h-5 shrink-0"
+        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-5 h-5"') }}
+      />
+    )
+  }
+
+  return (
+    <span className="w-5 h-5 rounded bg-accent/20 flex items-center justify-center text-xs font-bold text-accent shrink-0">
+      {name[0]}
+    </span>
+  )
+}
 
 /**
  * Shows worktree hook progress during session creation as a checklist.
@@ -123,7 +152,7 @@ export function MainPanel() {
       {/* Session header */}
       <div className="flex items-center px-4 py-2 border-b border-border gap-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
+          <HeaderIcon agentId={activeSession.agentId} name={activeSession.agentName} />
           <span className="text-sm font-medium truncate">{activeSession.agentName}</span>
           <span className="text-xs text-text-muted truncate">{activeSession.title}</span>
         </div>

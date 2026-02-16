@@ -29,6 +29,27 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
         try {
           const ws = await createWorkspace(path)
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
+          
+          // Apply defaults for new workspace
+          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+            updateDraftThread({
+              agentId: ws.defaultAgentId || null,
+              useWorktree: !!ws.defaultUseWorktree
+            })
+          }
+
+          // Then try to fetch from config file (shared)
+          try {
+            const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
+            if (config?.defaults) {
+              updateDraftThread({
+                agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+              })
+            }
+          } catch (err) {
+            console.error('Failed to load workspace defaults from config:', err)
+          }
         } catch (err) {
           console.error('Failed to create workspace:', err)
         }
@@ -36,6 +57,27 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
         const ws = workspaces.find((w) => w.id === value)
         if (ws) {
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
+          
+          // Apply defaults from metadata
+          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+            updateDraftThread({
+              agentId: ws.defaultAgentId || null,
+              useWorktree: !!ws.defaultUseWorktree
+            })
+          }
+
+          // Then try to fetch from config file (shared)
+          try {
+            const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
+            if (config?.defaults) {
+              updateDraftThread({
+                agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+              })
+            }
+          } catch (err) {
+            console.error('Failed to load workspace defaults from config:', err)
+          }
         }
       }
     },

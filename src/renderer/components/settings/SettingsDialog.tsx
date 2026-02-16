@@ -179,6 +179,22 @@ export function SettingsDialog() {
                   ))}
                 </select>
               </SettingsField>
+              {settings.general.summarizationAgentId && (
+                <SettingsField label="Title Generation Model" description="Model to use for title generation">
+                  <input
+                    type="text"
+                    value={settings.general.summarizationModel || ''}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        general: { ...settings.general, summarizationModel: e.target.value || undefined }
+                      })
+                    }
+                    placeholder="Leave empty for default"
+                    className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                  />
+                </SettingsField>
+              )}
             </>
           )}
 
@@ -262,6 +278,23 @@ export function SettingsDialog() {
                           })
                         }
                         placeholder="Enter API key"
+                        className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                      />
+                    </SettingsField>
+                    <SettingsField label="Model" description="Model to use (e.g., claude-sonnet-4-20250514)">
+                      <input
+                        type="text"
+                        value={agentSettings.model || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            agents: {
+                              ...settings.agents,
+                              [agentId]: { ...agentSettings, model: e.target.value || undefined }
+                            }
+                          })
+                        }
+                        placeholder="Leave empty for default"
                         className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
                       />
                     </SettingsField>

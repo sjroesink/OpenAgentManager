@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useAgentStore } from '../../stores/agent-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
 import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCommand } from '@shared/types/thread-format'
@@ -6,22 +8,32 @@ import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCo
 interface WorkspaceSettingsDialogProps {
   open: boolean
   onClose: () => void
+  workspaceId: string
   workspacePath: string
   workspaceName: string
+  defaultAgentId?: string
+  defaultUseWorktree?: boolean
 }
 
 export function WorkspaceSettingsDialog({
   open,
   onClose,
+  workspaceId,
   workspacePath,
-  workspaceName
+  workspaceName,
+  defaultAgentId: initialDefaultAgentId,
+  defaultUseWorktree: initialDefaultUseWorktree
 }: WorkspaceSettingsDialogProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [symlinks, setSymlinks] = useState<SymlinkEntry[]>([])
   const [commands, setCommands] = useState<PostSetupCommand[]>([])
   const [initialPrompt, setInitialPrompt] = useState('')
+  const [defaultAgentId, setDefaultAgentId] = useState(initialDefaultAgentId || '')
+  const [useWorktree, setUseWorktree] = useState(initialDefaultUseWorktree || false)
   const [fullConfig, setFullConfig] = useState<AgentProjectConfig | null>(null)
+  const installedAgents = useAgentStore((s) => s.installed)
+  const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace)
 
   useEffect(() => {
     if (!open) return
@@ -34,6 +46,10 @@ export function WorkspaceSettingsDialog({
         setSymlinks(hooks?.symlinks || [])
         setCommands(hooks?.postSetupCommands || [])
         setInitialPrompt(hooks?.initialPrompt || '')
+        
+        // If config file has defaults, they override the workspace metadata
+        if (config?.defaults?.agentId) setDefaultAgentId(config.defaults.agentId)
+        if (config?.defaults?.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
       })
       .catch((err) => console.error('Failed to load workspace config:', err))
       .finally(() => setLoading(false))
@@ -42,6 +58,13 @@ export function WorkspaceSettingsDialog({
   const handleSave = useCallback(async () => {
     setSaving(true)
     try {
+      // 1. Update Workspace Metadata (Local)
+      await updateWorkspace(workspaceId, {
+        defaultAgentId: defaultAgentId || undefined,
+        defaultUseWorktree: useWorktree
+      })
+
+      // 2. Update .agent/config.json (Shared)
       const hooks: WorktreeHooksConfig = {}
       if (symlinks.length > 0) hooks.symlinks = symlinks
       if (commands.length > 0) hooks.postSetupCommands = commands
@@ -50,17 +73,22 @@ export function WorkspaceSettingsDialog({
       const config: AgentProjectConfig = {
         ...fullConfig,
         specVersion: fullConfig?.specVersion || '1.1',
+        defaults: {
+          ...fullConfig?.defaults,
+          agentId: defaultAgentId || undefined,
+          useWorktree: useWorktree || undefined
+        },
         worktreeHooks: Object.keys(hooks).length > 0 ? hooks : undefined
       }
 
       await window.api.invoke('workspace:set-config', { workspacePath, config })
       onClose()
     } catch (err) {
-      console.error('Failed to save workspace config:', err)
+      console.error('Failed to save workspace settings:', err)
     } finally {
       setSaving(false)
     }
-  }, [symlinks, commands, initialPrompt, fullConfig, workspacePath, onClose])
+  }, [symlinks, commands, initialPrompt, defaultAgentId, useWorktree, fullConfig, workspaceId, workspacePath, updateWorkspace, onClose])
 
   // Symlink helpers
   const addSymlink = () => setSymlinks([...symlinks, { source: '' }])
@@ -77,11 +105,49 @@ export function WorkspaceSettingsDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Worktree Setup - ${workspaceName}`}>
+    <Dialog open={open} onClose={onClose} title={`Workspace Settings - ${workspaceName}`}>
       {loading ? (
         <div className="text-text-muted text-sm py-8 text-center">Loading configuration...</div>
       ) : (
         <div className="space-y-6 min-w-[480px]">
+          {/* Default Settings */}
+          <section>
+            <h3 className="text-sm font-medium text-text-primary mb-2">New Thread Defaults</h3>
+            <p className="text-xs text-text-muted mb-3">
+              Standard settings for new threads in this workspace.
+            </p>
+            <div className="space-y-3 bg-surface-2/50 p-3 rounded-md border border-border/50">
+              <div>
+                <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                  Default Agent
+                </label>
+                <select
+                  value={defaultAgentId}
+                  onChange={(e) => setDefaultAgentId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="">No default agent</option>
+                  {installedAgents.map((agent) => (
+                    <option key={agent.registryId} value={agent.registryId}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useWorktree}
+                    onChange={(e) => setUseWorktree(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Use git worktree by default
+                </label>
+              </div>
+            </div>
+          </section>
+
           {/* Symlinks */}
           <section>
             <div className="flex items-center justify-between mb-2">

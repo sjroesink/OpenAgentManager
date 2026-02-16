@@ -13,7 +13,7 @@ import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEv
 
 export default function App() {
   const { handleSessionUpdate, handlePermissionRequest, handleHookProgress, loadPersistedSessions } = useSessionStore()
-  const { updateConnectionStatus, loadInstalled } = useAgentStore()
+  const { updateConnectionStatus, loadInstalled, fetchRegistry } = useAgentStore()
   const { loadWorkspaces } = useWorkspaceStore()
   const { applyUpdate: applyAcpUpdate } = useAcpFeaturesStore()
 
@@ -60,9 +60,10 @@ export default function App() {
   // Load installed agents, workspaces, and persisted sessions on startup
   useEffect(() => {
     loadInstalled()
+    fetchRegistry()
     loadWorkspaces()
     loadPersistedSessions()
-  }, [loadInstalled, loadWorkspaces, loadPersistedSessions])
+  }, [loadInstalled, fetchRegistry, loadWorkspaces, loadPersistedSessions])
 
   // Global keyboard shortcut for diff view
   useEffect(() => {

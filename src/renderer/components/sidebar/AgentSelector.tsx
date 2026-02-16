@@ -2,6 +2,35 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import type { InstalledAgent } from '@shared/types/agent'
 
+const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
+
+function AgentIcon({ agentId, name }: { agentId: string; name: string }) {
+  const [svgContent, setSvgContent] = useState<string | null>(null)
+  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
+
+  useEffect(() => {
+    fetch(iconUrl)
+      .then((res) => res.text())
+      .then((svg) => setSvgContent(svg))
+      .catch(() => setSvgContent(null))
+  }, [iconUrl])
+
+  if (svgContent) {
+    return (
+      <span
+        className="w-4 h-4 shrink-0"
+        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-4 h-4"') }}
+      />
+    )
+  }
+
+  return (
+    <span className="w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0">
+      {name[0]}
+    </span>
+  )
+}
+
 interface AgentSelectorProps {
   selectedAgentId: string | null
   onSelect: (agent: InstalledAgent) => void
@@ -38,9 +67,10 @@ export function AgentSelector({ selectedAgentId, onSelect }: AgentSelectorProps)
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center gap-2 px-3 py-2 text-sm bg-surface-2 hover:bg-surface-3 rounded-md border border-border transition-colors"
       >
-        <span className="w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0">
-          {(selectedAgent?.name || 'A')[0]}
-        </span>
+        <AgentIcon
+          agentId={selectedAgent?.registryId || ''}
+          name={selectedAgent?.name || 'A'}
+        />
         <span className="flex-1 text-left truncate">
           {selectedAgent?.name || 'Select Agent'}
         </span>
@@ -64,9 +94,10 @@ export function AgentSelector({ selectedAgentId, onSelect }: AgentSelectorProps)
                 ${agent.registryId === selectedAgentId ? 'bg-accent/10 text-accent' : 'text-text-primary'}
               `}
             >
-              <span className="w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0">
-                {agent.name[0]}
-              </span>
+              <AgentIcon
+                agentId={agent.registryId}
+                name={agent.name}
+              />
               <div className="flex-1 min-w-0">
                 <div className="truncate font-medium">{agent.name}</div>
                 <div className="text-xs text-text-muted truncate">{agent.description}</div>
