@@ -5,7 +5,11 @@ import { useAgentStore } from '../../stores/agent-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import { AgentIcon } from '../common/AgentIcon'
 import type { WorkspaceInfo } from '@shared/types/workspace'
-import type { SessionInfo } from '@shared/types/session'
+import type { SessionInfo, InteractionMode } from '@shared/types/session'
+
+function isInteractionMode(value: string): value is InteractionMode {
+  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+}
 
 const statusDotColors: Record<string, string> = {
   active: 'bg-success',
@@ -52,7 +56,9 @@ interface WorkspaceSectionProps {
 interface ThreadItemProps {
   session: SessionInfo
   childMap: Map<string, SessionInfo[]>
+  pendingPermissionCountBySession: Map<string, number>
   depth: number
+  pendingPermissionCount: number
   activeSessionId: string | null
   deletingSessionIds: Set<string>
   editingId: string | null
@@ -71,7 +77,9 @@ interface ThreadItemProps {
 function ThreadItem({
   session,
   childMap,
+  pendingPermissionCountBySession,
   depth,
+  pendingPermissionCount,
   activeSessionId,
   deletingSessionIds,
   editingId,
@@ -188,6 +196,15 @@ function ThreadItem({
                 >
                   {isDeleting ? 'Deleting...' : session.title}
                 </div>
+                {pendingPermissionCount > 0 && !isDeleting && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-error px-1.5 py-0.5 text-[10px] font-semibold text-white shrink-0"
+                    title={`${pendingPermissionCount} open permission ${pendingPermissionCount === 1 ? 'question' : 'questions'}`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                    {pendingPermissionCount}
+                  </span>
+                )}
                 {isPrompting && !isDeleting && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent shrink-0">
                     <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
@@ -209,7 +226,9 @@ function ThreadItem({
               key={child.sessionId}
               session={child}
               childMap={childMap}
+              pendingPermissionCountBySession={pendingPermissionCountBySession}
               depth={depth + 1}
+              pendingPermissionCount={pendingPermissionCountBySession.get(child.sessionId) || 0}
               activeSessionId={activeSessionId}
               deletingSessionIds={deletingSessionIds}
               editingId={editingId}
@@ -236,6 +255,7 @@ function ThreadItem({
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
   const { activeSessionId, setActiveSession, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
+  const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -270,6 +290,15 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     )
   }, [sessions])
 
+  const pendingPermissionCountBySession = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const permission of pendingPermissions) {
+      const current = counts.get(permission.sessionId) || 0
+      counts.set(permission.sessionId, current + 1)
+    }
+    return counts
+  }, [pendingPermissions])
+
   const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
     startDraftThread(workspace.id, workspace.path)
@@ -278,10 +307,16 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     const { updateDraftThread } = useSessionStore.getState()
     
     // First apply from metadata (fast)
-    if (workspace.defaultAgentId || workspace.defaultModelId || workspace.defaultUseWorktree !== undefined) {
+    if (
+      workspace.defaultAgentId ||
+      workspace.defaultModelId ||
+      workspace.defaultInteractionMode ||
+      workspace.defaultUseWorktree !== undefined
+    ) {
       updateDraftThread({
         agentId: workspace.defaultAgentId || null,
         modelId: workspace.defaultModelId || null,
+        interactionMode: workspace.defaultInteractionMode || null,
         useWorktree: !!workspace.defaultUseWorktree
       })
     }
@@ -293,6 +328,10 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         updateDraftThread({
           agentId: config.defaults.agentId || workspace.defaultAgentId || null,
           modelId: config.defaults.modelId || workspace.defaultModelId || null,
+          interactionMode:
+            (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
+              ? config.defaults.interactionMode
+              : workspace.defaultInteractionMode) || null,
           useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
         })
       }
@@ -459,7 +498,9 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 key={session.sessionId}
                 session={session}
                 childMap={childMap}
+                pendingPermissionCountBySession={pendingPermissionCountBySession}
                 depth={0}
+                pendingPermissionCount={pendingPermissionCountBySession.get(session.sessionId) || 0}
                 activeSessionId={activeSessionId}
                 deletingSessionIds={deletingSessionIds}
                 editingId={editingId}
@@ -487,6 +528,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         workspaceName={workspace.name}
         defaultAgentId={workspace.defaultAgentId}
         defaultModelId={workspace.defaultModelId}
+        defaultInteractionMode={workspace.defaultInteractionMode}
         defaultUseWorktree={workspace.defaultUseWorktree}
       />
 

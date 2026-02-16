@@ -4,6 +4,11 @@ import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useSessionStore } from '../../stores/session-store'
 import { WorkspaceSection } from '../sidebar/WorkspaceSection'
 import { Button } from '../common/Button'
+import type { InteractionMode } from '@shared/types/session'
+
+function isInteractionMode(value: string): value is InteractionMode {
+  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+}
 
 export function Sidebar() {
   const sidebarVisible = useUiStore((s) => s.sidebarVisible)
@@ -27,10 +32,16 @@ export function Sidebar() {
       // Start a draft on the most recently accessed workspace
       const topWorkspace = sortedWorkspaces[0]
       startDraftThread(topWorkspace.id, topWorkspace.path)
-      if (topWorkspace.defaultAgentId || topWorkspace.defaultModelId || topWorkspace.defaultUseWorktree !== undefined) {
+      if (
+        topWorkspace.defaultAgentId ||
+        topWorkspace.defaultModelId ||
+        topWorkspace.defaultInteractionMode ||
+        topWorkspace.defaultUseWorktree !== undefined
+      ) {
         updateDraftThread({
           agentId: topWorkspace.defaultAgentId || null,
           modelId: topWorkspace.defaultModelId || null,
+          interactionMode: topWorkspace.defaultInteractionMode || null,
           useWorktree: !!topWorkspace.defaultUseWorktree
         })
       }
@@ -40,6 +51,10 @@ export function Sidebar() {
           updateDraftThread({
             agentId: config.defaults.agentId || topWorkspace.defaultAgentId || null,
             modelId: config.defaults.modelId || topWorkspace.defaultModelId || null,
+            interactionMode:
+              (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
+                ? config.defaults.interactionMode
+                : topWorkspace.defaultInteractionMode) || null,
             useWorktree: config.defaults.useWorktree ?? topWorkspace.defaultUseWorktree ?? false
           })
         }
@@ -53,10 +68,16 @@ export function Sidebar() {
       try {
         const ws = await createWorkspace(path)
         startDraftThread(ws.id, ws.path)
-        if (ws.defaultAgentId || ws.defaultModelId || ws.defaultUseWorktree !== undefined) {
+        if (
+          ws.defaultAgentId ||
+          ws.defaultModelId ||
+          ws.defaultInteractionMode ||
+          ws.defaultUseWorktree !== undefined
+        ) {
           updateDraftThread({
             agentId: ws.defaultAgentId || null,
             modelId: ws.defaultModelId || null,
+            interactionMode: ws.defaultInteractionMode || null,
             useWorktree: !!ws.defaultUseWorktree
           })
         }
@@ -66,6 +87,10 @@ export function Sidebar() {
             updateDraftThread({
               agentId: config.defaults.agentId || ws.defaultAgentId || null,
               modelId: config.defaults.modelId || ws.defaultModelId || null,
+              interactionMode:
+                (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
+                  ? config.defaults.interactionMode
+                  : ws.defaultInteractionMode) || null,
               useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
             })
           }

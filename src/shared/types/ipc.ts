@@ -55,6 +55,7 @@ export interface IpcChannels {
   'session:permission-response': { request: PermissionResponse; response: void }
   'session:rebuild-cache': { request: void; response: { threadCount: number } }
   'session:set-mode': { request: { sessionId: string; modeId: string }; response: void }
+  'session:set-interaction-mode': { request: { sessionId: string; mode: InteractionMode }; response: void }
   'session:rename': { request: { sessionId: string; title: string }; response: void }
   'session:set-model': { request: { sessionId: string; modelId: string }; response: void }
   'session:set-config-option': { request: { sessionId: string; configId: string; value: string }; response: ConfigOption[] }
@@ -97,9 +98,9 @@ export interface IpcChannels {
   'workspace:remove': { request: { id: string }; response: void }
   'workspace:update': {
     request: {
-      id: string
-      updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>>
-    }
+        id: string
+        updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>>
+      }
     response: WorkspaceInfo
   }
   'workspace:select-directory': { request: void; response: string | null }

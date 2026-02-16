@@ -36,7 +36,6 @@ export function NewThreadDialog() {
       if (selectedWorkspace.defaultUseWorktree !== undefined) {
         setUseWorktree(selectedWorkspace.defaultUseWorktree)
       }
-
       // Then try to fetch from config file (shared)
       window.api
         .invoke('workspace:get-config', { workspacePath: selectedWorkspace.path })
@@ -99,6 +98,7 @@ export function NewThreadDialog() {
         workspace.path,
         worktree,
         workspaceId,
+        undefined,
         modelId || undefined
       )
     } catch (error) {

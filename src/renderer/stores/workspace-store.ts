@@ -15,7 +15,7 @@ interface WorkspaceState {
   touchWorkspace: (id: string) => Promise<void>
   updateWorkspace: (
     id: string,
-    updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>>
+    updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>>
   ) => Promise<WorkspaceInfo>
 }
 

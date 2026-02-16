@@ -103,6 +103,31 @@ export class ThreadStore {
     logger.info(`Thread renamed: ${sessionId} → ${title}`)
   }
 
+  /** Update a thread interaction mode — updates BOTH folder and cache. */
+  updateInteractionMode(
+    sessionId: string,
+    interactionMode: import('@shared/types/session').InteractionMode
+  ): void {
+    const all = this.loadAll()
+    const idx = all.findIndex((t) => t.sessionId === sessionId)
+    if (idx < 0) return
+
+    all[idx].interactionMode = interactionMode
+
+    // Rewrite thread manifest to persist metadata (primary)
+    this.writeToFolder(all[idx], (storagePath) => {
+      const sessionLike: SessionInfo = {
+        ...all[idx],
+        connectionId: '',
+        status: 'idle'
+      }
+      folderThreadStore.saveThread(storagePath, sessionLike)
+    })
+
+    // Update electron-store cache (secondary)
+    store.set('threads', all)
+  }
+
   /** Load all persisted threads from cache. */
   loadAll(): PersistedThread[] {
     return store.get('threads', [])
@@ -307,6 +332,7 @@ function toPersistedThread(session: SessionInfo): PersistedThread {
       delete rest.isStreaming
       return rest
     }),
+    interactionMode: session.interactionMode,
     useWorktree: session.useWorktree,
     workspaceId: session.workspaceId,
     parentSessionId: session.parentSessionId

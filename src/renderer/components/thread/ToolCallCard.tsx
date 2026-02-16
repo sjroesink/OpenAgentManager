@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { PermissionRequestEvent, PermissionOption, ToolCallInfo } from '@shared/types/session'
+import { toRelativeDisplayPath } from '@renderer/lib/path-display'
 import { Badge } from '../common/Badge'
 
 function formatInput(input: string): string {
@@ -13,6 +14,7 @@ function formatInput(input: string): string {
 
 interface ToolCallCardProps {
   toolCall: ToolCallInfo
+  workingDir?: string
   permissionRequest?: PermissionRequestEvent
   onPermissionRespond?: (requestId: string, optionId: string) => void
 }
@@ -33,8 +35,9 @@ function humanStatus(status: ToolCallInfo['status']): string {
   }
 }
 
-function summarizeToolCall(toolCall: ToolCallInfo): string {
-  const target = toolCall.locations?.[0]?.path || toolCall.diff?.path
+function summarizeToolCall(toolCall: ToolCallInfo, workingDir?: string): string {
+  const targetPath = toolCall.locations?.[0]?.path || toolCall.diff?.path
+  const target = targetPath ? toRelativeDisplayPath(targetPath, workingDir) : null
   const withTarget = (label: string): string => (target ? `${label}: ${target}` : label)
 
   switch (toolCall.kind) {
@@ -85,10 +88,68 @@ function optionVariant(option: PermissionOption): 'primary' | 'secondary' | 'gho
   return option.kind === 'allow_always' ? 'secondary' : 'primary'
 }
 
-export function ToolCallCard({ toolCall, permissionRequest, onPermissionRespond }: ToolCallCardProps) {
+function PermissionInlinePanel({
+  permissionRequest,
+  onPermissionRespond
+}: {
+  permissionRequest: PermissionRequestEvent
+  onPermissionRespond: (requestId: string, optionId: string) => void
+}) {
+  const permissionSummary = getPermissionInputSummary(permissionRequest.toolCall.rawInput)
+
+  return (
+    <div className="border-t border-border px-3 py-2">
+      <div className="rounded-md border border-error/40 bg-error/10 p-2.5">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-2 w-2 rounded-full bg-error animate-pulse" />
+          <div className="text-xs font-semibold text-error">Permission required</div>
+        </div>
+        <div className="mt-2 space-y-1.5">
+          {permissionSummary.command && (
+            <div>
+              <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Command</div>
+              <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary whitespace-pre-wrap">
+                {permissionSummary.command}
+              </pre>
+            </div>
+          )}
+          {permissionSummary.justification && (
+            <div className="text-xs text-text-secondary">
+              <span className="font-medium text-text-primary">Why:</span> {permissionSummary.justification}
+            </div>
+          )}
+          {permissionSummary.sandboxPermissions && (
+            <div className="text-xs text-text-secondary">
+              <span className="font-medium text-text-primary">Sandbox:</span>{' '}
+              <span className="font-mono">{permissionSummary.sandboxPermissions}</span>
+            </div>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {permissionRequest.options.map((option) => (
+            <button
+              key={option.optionId}
+              onClick={() => onPermissionRespond(permissionRequest.requestId, option.optionId)}
+              className={`
+                px-2 py-1 rounded text-xs border transition-colors
+                ${optionVariant(option) === 'primary' ? 'bg-accent text-accent-text border-accent hover:bg-accent-hover' : ''}
+                ${optionVariant(option) === 'secondary' ? 'bg-surface-2 text-text-primary border-border hover:bg-surface-3' : ''}
+                ${optionVariant(option) === 'ghost' ? 'bg-transparent text-text-secondary border-border hover:bg-surface-2' : ''}
+              `}
+            >
+              {option.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function ToolCallCard({ toolCall, workingDir, permissionRequest, onPermissionRespond }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
-  const summary = summarizeToolCall(toolCall)
-  const permissionSummary = permissionRequest ? getPermissionInputSummary(permissionRequest.toolCall.rawInput) : null
+  const summary = summarizeToolCall(toolCall, workingDir)
+  const diffPath = toolCall.diff?.path ? toRelativeDisplayPath(toolCall.diff.path, workingDir) : null
 
   const statusColors: Record<string, 'default' | 'accent' | 'success' | 'error' | 'warning'> = {
     pending: 'default',
@@ -147,54 +208,15 @@ export function ToolCallCard({ toolCall, permissionRequest, onPermissionRespond 
         </svg>
       </button>
 
+      {permissionRequest && onPermissionRespond && (
+        <PermissionInlinePanel
+          permissionRequest={permissionRequest}
+          onPermissionRespond={onPermissionRespond}
+        />
+      )}
+
       {expanded && (
         <div className="border-t border-border px-3 py-2 space-y-2">
-          {permissionRequest && onPermissionRespond && (
-            <div className="rounded-md border border-error/40 bg-error/10 p-2.5">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-2 w-2 rounded-full bg-error animate-pulse" />
-                <div className="text-xs font-semibold text-error">Permission required</div>
-              </div>
-              <div className="mt-2 space-y-1.5">
-                {permissionSummary?.command && (
-                  <div>
-                    <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Command</div>
-                    <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary whitespace-pre-wrap">
-                      {permissionSummary.command}
-                    </pre>
-                  </div>
-                )}
-                {permissionSummary?.justification && (
-                  <div className="text-xs text-text-secondary">
-                    <span className="font-medium text-text-primary">Why:</span> {permissionSummary.justification}
-                  </div>
-                )}
-                {permissionSummary?.sandboxPermissions && (
-                  <div className="text-xs text-text-secondary">
-                    <span className="font-medium text-text-primary">Sandbox:</span>{' '}
-                    <span className="font-mono">{permissionSummary.sandboxPermissions}</span>
-                  </div>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {permissionRequest.options.map((option) => (
-                  <button
-                    key={option.optionId}
-                    onClick={() => onPermissionRespond(permissionRequest.requestId, option.optionId)}
-                    className={`
-                      px-2 py-1 rounded text-xs border transition-colors
-                      ${optionVariant(option) === 'primary' ? 'bg-accent text-accent-text border-accent hover:bg-accent-hover' : ''}
-                      ${optionVariant(option) === 'secondary' ? 'bg-surface-2 text-text-primary border-border hover:bg-surface-3' : ''}
-                      ${optionVariant(option) === 'ghost' ? 'bg-transparent text-text-secondary border-border hover:bg-surface-2' : ''}
-                    `}
-                  >
-                    {option.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Technical Details</div>
           <div className="text-xs text-text-secondary">
             <span className="font-medium text-text-primary">Tool</span>: <span className="font-mono">{toolCall.name}</span>
@@ -208,7 +230,7 @@ export function ToolCallCard({ toolCall, permissionRequest, onPermissionRespond 
           {toolCall.diff && (
             <div>
               <div className="text-[10px] text-text-muted uppercase font-medium mb-1">
-                {toolCall.diff.path}
+                {diffPath}
               </div>
               <pre className="text-xs font-mono bg-surface-2 rounded p-2 overflow-x-auto text-text-secondary max-h-60 whitespace-pre-wrap">
                 {toolCall.diff.newText}

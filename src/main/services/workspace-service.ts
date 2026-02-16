@@ -54,7 +54,7 @@ export class WorkspaceService {
   update(
     id: string,
     updates: Partial<
-      Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>
+      Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>
     >
   ): WorkspaceInfo {
     const all = this.list()

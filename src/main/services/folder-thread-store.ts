@@ -20,6 +20,8 @@ import {
 import { APP_NAME, CLIENT_INFO } from '@shared/constants'
 import { logger } from '../util/logger'
 
+const INTERACTION_MODE_METADATA_KEY = 'interactionMode'
+
 const DEFAULT_GITIGNORE = `# Agent Thread Storage Format - default .gitignore
 # Conversation threads are not committed by default.
 # They can be large and may contain sensitive content.
@@ -284,7 +286,10 @@ export class FolderThreadStore {
           : {})
       },
       stats,
-      parentThreadId: session.parentSessionId
+      parentThreadId: session.parentSessionId,
+      metadata: session.interactionMode
+        ? { [INTERACTION_MODE_METADATA_KEY]: session.interactionMode }
+        : undefined
     }
   }
 
@@ -303,6 +308,10 @@ export class FolderThreadStore {
       worktreeBranch: manifest.context.worktree?.branch,
       workingDir: manifest.context.workingDir,
       messages,
+      interactionMode:
+        typeof manifest.metadata?.[INTERACTION_MODE_METADATA_KEY] === 'string'
+          ? (manifest.metadata?.[INTERACTION_MODE_METADATA_KEY] as import('@shared/types/session').InteractionMode)
+          : undefined,
       useWorktree: !!manifest.context.worktree,
       workspaceId,
       parentSessionId: manifest.parentThreadId
@@ -381,6 +390,7 @@ export class FolderThreadStore {
           workingDir: thread.workingDir,
           status: 'idle',
           messages: thread.messages,
+          interactionMode: thread.interactionMode,
           useWorktree: thread.useWorktree,
           workspaceId: thread.workspaceId
         }

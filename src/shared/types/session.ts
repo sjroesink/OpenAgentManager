@@ -14,6 +14,7 @@ export interface SessionInfo {
   workingDir: string
   status: SessionStatus
   messages: Message[]
+  interactionMode?: InteractionMode
   useWorktree: boolean
   workspaceId: string
   /** ID of the parent session this was forked from. Undefined for root sessions. */
@@ -214,6 +215,7 @@ export interface CreateSessionRequest {
   workingDir: string
   useWorktree: boolean
   workspaceId: string
+  interactionMode?: InteractionMode
   modelId?: string
   title?: string
 }
@@ -326,6 +328,7 @@ export interface PersistedThread {
   worktreeBranch?: string
   workingDir: string
   messages: Message[]
+  interactionMode?: InteractionMode
   useWorktree: boolean
   workspaceId: string
   /** ID of the parent session this was forked from. */

@@ -14,51 +14,47 @@ interface ThreadViewProps {
 export function ThreadView({ session }: ThreadViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const shouldStickToBottomRef = useRef<boolean>(true)
-  const scrollPositionBySessionRef = useRef<Map<string, number>>(new Map())
-  const previousSessionIdRef = useRef<string>(session.sessionId)
+  const lastScrollTopRef = useRef<number>(0)
 
   const isScrolledToBottom = (element: HTMLDivElement): boolean => {
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
     return distanceFromBottom <= 2
   }
 
-  // Persist and restore scroll position when switching sessions.
+  // Always scroll to bottom when switching sessions.
   useEffect(() => {
-    const previousSessionId = previousSessionIdRef.current
     const element = scrollRef.current
 
-    if (element && previousSessionId !== session.sessionId) {
-      scrollPositionBySessionRef.current.set(previousSessionId, element.scrollTop)
-    }
-
     if (!element) {
-      previousSessionIdRef.current = session.sessionId
       return
     }
 
-    const savedScrollTop = scrollPositionBySessionRef.current.get(session.sessionId)
-    if (savedScrollTop !== undefined) {
-      element.scrollTop = savedScrollTop
-    } else {
-      element.scrollTop = element.scrollHeight
-    }
-
-    shouldStickToBottomRef.current = isScrolledToBottom(element)
-    previousSessionIdRef.current = session.sessionId
+    element.scrollTop = element.scrollHeight
+    shouldStickToBottomRef.current = true
+    lastScrollTopRef.current = element.scrollTop
   }, [session.sessionId])
 
   // Auto-scroll to bottom when content changes, but only if user was already at the bottom.
   useEffect(() => {
     if (scrollRef.current && shouldStickToBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      scrollPositionBySessionRef.current.set(session.sessionId, scrollRef.current.scrollTop)
+      lastScrollTopRef.current = scrollRef.current.scrollTop
     }
   }, [session.messages, session.lastError, session.status])
 
   const handleScroll = (): void => {
     if (!scrollRef.current) return
-    shouldStickToBottomRef.current = isScrolledToBottom(scrollRef.current)
-    scrollPositionBySessionRef.current.set(session.sessionId, scrollRef.current.scrollTop)
+    const element = scrollRef.current
+    const currentScrollTop = element.scrollTop
+    const wasScrollingUp = currentScrollTop < lastScrollTopRef.current
+
+    if (isScrolledToBottom(element)) {
+      shouldStickToBottomRef.current = true
+    } else if (wasScrollingUp) {
+      shouldStickToBottomRef.current = false
+    }
+
+    lastScrollTopRef.current = currentScrollTop
   }
 
   const isInitializing = session.status === 'initializing'
@@ -86,7 +82,12 @@ export function ThreadView({ session }: ThreadViewProps) {
       ) : (
         <div className="space-y-4 max-w-3xl mx-auto">
           {session.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} sessionId={session.sessionId} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              sessionId={session.sessionId}
+              workingDir={session.workingDir}
+            />
           ))}
 
           {session.status === 'prompting' && (

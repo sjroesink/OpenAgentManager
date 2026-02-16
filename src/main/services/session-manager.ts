@@ -60,6 +60,9 @@ export class SessionManagerService {
             session.status = 'active'
           } else if (event.update.type === 'error') {
             session.status = 'error'
+          } else if (event.update.type === 'current_mode_update') {
+            session.interactionMode = event.update.modeId as InteractionMode
+            threadStore.updateInteractionMode(event.sessionId, event.update.modeId as InteractionMode)
           }
         }
       })
@@ -140,6 +143,7 @@ export class SessionManagerService {
       workingDir,
       status: 'active',
       messages: [],
+      interactionMode: request.interactionMode,
       useWorktree: request.useWorktree,
       workspaceId: request.workspaceId
     }
@@ -238,6 +242,7 @@ export class SessionManagerService {
       workingDir: source.workingDir,
       status: 'active',
       messages: forkedMessages,
+      interactionMode: source.interactionMode,
       useWorktree: source.useWorktree,
       workspaceId: source.workspaceId,
       parentSessionId: sourceSessionId
@@ -306,6 +311,11 @@ export class SessionManagerService {
     }
     client.on('session-update', promptListener)
 
+    if (mode) {
+      session.interactionMode = mode
+      threadStore.updateInteractionMode(sessionId, mode)
+    }
+
     try {
       const result = await client.prompt(sessionId, content, mode)
 
@@ -364,6 +374,32 @@ export class SessionManagerService {
     const client = agentManager.getClient(session.connectionId)
     if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
     await client.setMode(sessionId, modeId)
+  }
+
+  async setInteractionMode(sessionId: string, mode: InteractionMode): Promise<void> {
+    let session = this.sessions.get(sessionId)
+    if (!session) {
+      const persisted = threadStore.loadAll().find((t) => t.sessionId === sessionId)
+      if (persisted) {
+        session = {
+          ...persisted,
+          connectionId: '',
+          status: 'idle'
+        }
+        this.sessions.set(sessionId, session)
+      }
+    }
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    session.interactionMode = mode
+    threadStore.updateInteractionMode(sessionId, mode)
+
+    const client = agentManager.getClient(session.connectionId)
+    if (!client) return
+    try {
+      await client.setMode(sessionId, mode)
+    } catch (error) {
+      logger.warn(`Failed to apply interaction mode "${mode}" to session ${sessionId}:`, error)
+    }
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {

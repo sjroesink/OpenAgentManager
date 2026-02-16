@@ -66,7 +66,7 @@ export function ThreadList() {
       }
 
       // Create session
-      await createSession(connection.connectionId, project.path, useWorktree, '', undefined)
+      await createSession(connection.connectionId, project.path, useWorktree, '', undefined, undefined)
     } catch (error) {
       console.error('Failed to create thread:', error)
     } finally {

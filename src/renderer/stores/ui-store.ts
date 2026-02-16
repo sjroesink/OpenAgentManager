@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import type { InteractionMode } from '@shared/types/session'
 
 type ReviewTab = 'changes' | 'diff'
 
@@ -29,9 +28,6 @@ interface UiState {
   diffViewOpen: boolean
   diffViewSelectedFile: string | null
 
-  // Interaction mode
-  interactionMode: InteractionMode
-
   // Actions
   toggleSidebar: () => void
   toggleReviewPanel: () => void
@@ -47,7 +43,6 @@ interface UiState {
   openDiffView: (filePath?: string) => void
   closeDiffView: () => void
   setDiffViewSelectedFile: (path: string | null) => void
-  setInteractionMode: (mode: InteractionMode) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -70,8 +65,6 @@ export const useUiStore = create<UiState>((set) => ({
   diffViewOpen: false,
   diffViewSelectedFile: null,
 
-  interactionMode: 'ask',
-
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
   toggleTerminal: () => set((s) => ({ terminalVisible: !s.terminalVisible })),
@@ -85,6 +78,5 @@ export const useUiStore = create<UiState>((set) => ({
   setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
   openDiffView: (filePath) => set({ diffViewOpen: true, diffViewSelectedFile: filePath ?? null }),
   closeDiffView: () => set({ diffViewOpen: false, diffViewSelectedFile: null }),
-  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
-  setInteractionMode: (mode) => set({ interactionMode: mode })
+  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path })
 }))

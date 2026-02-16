@@ -31,7 +31,7 @@ export function registerWorkspaceHandlers(): void {
       }: {
         id: string
         updates: Partial<
-          Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>
+          Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>
         >
       }
     ) => {

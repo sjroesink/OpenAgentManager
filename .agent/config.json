@@ -6,6 +6,7 @@
   },
   "defaults": {
     "agentId": "codex-acp",
-    "modelId": "gpt-5.3-codex/medium"
+    "modelId": "gpt-5.3-codex/medium",
+    "interactionMode": "act"
   }
 }

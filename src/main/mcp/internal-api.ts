@@ -65,6 +65,7 @@ const routes: Record<string, RouteHandler> = {
       workingDir: body.workingDir as string,
       useWorktree: (body.useWorktree as boolean) || false,
       workspaceId: body.workspaceId as string,
+      interactionMode: body.mode as 'ask' | 'code' | 'plan' | 'act' | undefined,
       title: body.title as string | undefined
     })
   },
@@ -80,6 +81,7 @@ const routes: Record<string, RouteHandler> = {
       createdAt: s.createdAt,
       status: s.status,
       workingDir: s.workingDir,
+      interactionMode: s.interactionMode,
       worktreePath: s.worktreePath,
       worktreeBranch: s.worktreeBranch,
       useWorktree: s.useWorktree,
@@ -98,6 +100,7 @@ const routes: Record<string, RouteHandler> = {
       title: t.title,
       createdAt: t.createdAt,
       workingDir: t.workingDir,
+      interactionMode: t.interactionMode,
       worktreePath: t.worktreePath,
       worktreeBranch: t.worktreeBranch,
       useWorktree: t.useWorktree,
