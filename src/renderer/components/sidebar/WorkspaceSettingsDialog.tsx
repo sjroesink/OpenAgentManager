@@ -3,6 +3,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
+import { ModelPicker } from '../common/ModelPicker'
 import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCommand } from '@shared/types/thread-format'
 
 interface WorkspaceSettingsDialogProps {
@@ -12,6 +13,7 @@ interface WorkspaceSettingsDialogProps {
   workspacePath: string
   workspaceName: string
   defaultAgentId?: string
+  defaultModelId?: string
   defaultUseWorktree?: boolean
 }
 
@@ -22,6 +24,7 @@ export function WorkspaceSettingsDialog({
   workspacePath,
   workspaceName,
   defaultAgentId: initialDefaultAgentId,
+  defaultModelId: initialDefaultModelId,
   defaultUseWorktree: initialDefaultUseWorktree
 }: WorkspaceSettingsDialogProps) {
   const [loading, setLoading] = useState(true)
@@ -30,6 +33,7 @@ export function WorkspaceSettingsDialog({
   const [commands, setCommands] = useState<PostSetupCommand[]>([])
   const [initialPrompt, setInitialPrompt] = useState('')
   const [defaultAgentId, setDefaultAgentId] = useState(initialDefaultAgentId || '')
+  const [defaultModelId, setDefaultModelId] = useState(initialDefaultModelId || '')
   const [useWorktree, setUseWorktree] = useState(initialDefaultUseWorktree || false)
   const [fullConfig, setFullConfig] = useState<AgentProjectConfig | null>(null)
   const installedAgents = useAgentStore((s) => s.installed)
@@ -49,6 +53,7 @@ export function WorkspaceSettingsDialog({
         
         // If config file has defaults, they override the workspace metadata
         if (config?.defaults?.agentId) setDefaultAgentId(config.defaults.agentId)
+        if (config?.defaults?.modelId) setDefaultModelId(config.defaults.modelId)
         if (config?.defaults?.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
       })
       .catch((err) => console.error('Failed to load workspace config:', err))
@@ -61,6 +66,7 @@ export function WorkspaceSettingsDialog({
       // 1. Update Workspace Metadata (Local)
       await updateWorkspace(workspaceId, {
         defaultAgentId: defaultAgentId || undefined,
+        defaultModelId: defaultModelId || undefined,
         defaultUseWorktree: useWorktree
       })
 
@@ -76,6 +82,7 @@ export function WorkspaceSettingsDialog({
         defaults: {
           ...fullConfig?.defaults,
           agentId: defaultAgentId || undefined,
+          modelId: defaultModelId || undefined,
           useWorktree: useWorktree || undefined
         },
         worktreeHooks: Object.keys(hooks).length > 0 ? hooks : undefined
@@ -88,7 +95,7 @@ export function WorkspaceSettingsDialog({
     } finally {
       setSaving(false)
     }
-  }, [symlinks, commands, initialPrompt, defaultAgentId, useWorktree, fullConfig, workspaceId, workspacePath, updateWorkspace, onClose])
+  }, [symlinks, commands, initialPrompt, defaultAgentId, defaultModelId, useWorktree, fullConfig, workspaceId, workspacePath, updateWorkspace, onClose])
 
   // Symlink helpers
   const addSymlink = () => setSymlinks([...symlinks, { source: '' }])
@@ -123,7 +130,10 @@ export function WorkspaceSettingsDialog({
                 </label>
                 <select
                   value={defaultAgentId}
-                  onChange={(e) => setDefaultAgentId(e.target.value)}
+                  onChange={(e) => {
+                    setDefaultAgentId(e.target.value)
+                    setDefaultModelId('')
+                  }}
                   className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
                 >
                   <option value="">No default agent</option>
@@ -134,6 +144,14 @@ export function WorkspaceSettingsDialog({
                   ))}
                 </select>
               </div>
+              <ModelPicker
+                agentId={defaultAgentId || null}
+                projectPath={workspacePath}
+                value={defaultModelId}
+                onChange={(modelId) => setDefaultModelId(modelId || '')}
+                emptyLabel="Default model"
+                className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+              />
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
                   <input

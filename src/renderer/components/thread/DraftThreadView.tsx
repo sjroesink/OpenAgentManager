@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react'
 import { useSessionStore, type DraftThread } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { AgentSelector } from '../sidebar/AgentSelector'
+import { ModelPicker } from '../common/ModelPicker'
 import { Button } from '../common/Button'
 import type { InstalledAgent } from '@shared/types/agent'
 
@@ -28,9 +29,10 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
           
           // Apply defaults for new workspace
-          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+          if (ws.defaultAgentId || ws.defaultModelId || ws.defaultUseWorktree !== undefined) {
             updateDraftThread({
               agentId: ws.defaultAgentId || null,
+              modelId: ws.defaultModelId || null,
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -41,6 +43,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             if (config?.defaults) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                modelId: config.defaults.modelId || ws.defaultModelId || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }
@@ -56,9 +59,10 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
           
           // Apply defaults from metadata
-          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+          if (ws.defaultAgentId || ws.defaultModelId || ws.defaultUseWorktree !== undefined) {
             updateDraftThread({
               agentId: ws.defaultAgentId || null,
+              modelId: ws.defaultModelId || null,
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -69,6 +73,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             if (config?.defaults) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                modelId: config.defaults.modelId || ws.defaultModelId || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }
@@ -83,7 +88,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
 
   const handleAgentSelect = useCallback(
     (agent: InstalledAgent) => {
-      updateDraftThread({ agentId: agent.registryId })
+      updateDraftThread({ agentId: agent.registryId, modelId: null })
     },
     [updateDraftThread]
   )
@@ -153,6 +158,14 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             </label>
             <AgentSelector selectedAgentId={draft.agentId} onSelect={handleAgentSelect} />
           </div>
+
+          <ModelPicker
+            agentId={draft.agentId}
+            projectPath={draft.workspacePath}
+            value={draft.modelId}
+            onChange={(modelId) => updateDraftThread({ modelId })}
+            emptyLabel="Default model"
+          />
 
           {/* Worktree toggle */}
           {workspace?.isGitRepo && (

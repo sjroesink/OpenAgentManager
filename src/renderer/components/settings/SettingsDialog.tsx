@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useUiStore } from '../../stores/ui-store'
 import { useAgentStore } from '../../stores/agent-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
+import { ModelPicker } from '../common/ModelPicker'
 import type { AppSettings, AgentSettings, McpServerConfig } from '@shared/types/settings'
 import { DEFAULT_SETTINGS } from '@shared/types/settings'
 
@@ -16,6 +18,11 @@ export function SettingsDialog() {
     distributions: []
   })
   const installedAgents = useAgentStore((s) => s.installed)
+  const workspaces = useWorkspaceStore((s) => s.workspaces)
+  const modelProbePath = useMemo(() => {
+    const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
+    return sorted[0]?.path || '.'
+  }, [workspaces])
 
   useEffect(() => {
     if (settingsOpen) {
@@ -181,18 +188,21 @@ export function SettingsDialog() {
               </SettingsField>
               {settings.general.summarizationAgentId && (
                 <SettingsField label="Title Generation Model" description="Model to use for title generation">
-                  <input
-                    type="text"
-                    value={settings.general.summarizationModel || ''}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        general: { ...settings.general, summarizationModel: e.target.value || undefined }
-                      })
-                    }
-                    placeholder="Leave empty for default"
-                    className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
-                  />
+                  <div className="w-full max-w-[300px]">
+                    <ModelPicker
+                      agentId={settings.general.summarizationAgentId}
+                      projectPath={modelProbePath}
+                      value={settings.general.summarizationModel || null}
+                      onChange={(modelId) =>
+                        setSettings({
+                          ...settings,
+                          general: { ...settings.general, summarizationModel: modelId || undefined }
+                        })
+                      }
+                      emptyLabel="Default model"
+                      className="w-full bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                    />
+                  </div>
                 </SettingsField>
               )}
 

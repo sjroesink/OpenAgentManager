@@ -3,7 +3,7 @@
 // Typed contract between main and renderer processes
 // ============================================================
 
-import type { AcpRegistry, InstalledAgent, AgentConnection } from './agent'
+import type { AcpRegistry, InstalledAgent, AgentConnection, AgentModelCatalog } from './agent'
 import type {
   SessionInfo,
   PersistedThread,
@@ -43,6 +43,7 @@ export interface IpcChannels {
   }
   'agent:logout': { request: { connectionId: string }; response: void }
   'agent:list-connections': { request: void; response: AgentConnection[] }
+  'agent:get-models': { request: { agentId: string; projectPath: string }; response: AgentModelCatalog }
 
   // --- Sessions ---
   'session:create': { request: CreateSessionRequest; response: SessionInfo }
@@ -95,7 +96,10 @@ export interface IpcChannels {
   'workspace:create': { request: { path: string; name?: string }; response: WorkspaceInfo }
   'workspace:remove': { request: { id: string }; response: void }
   'workspace:update': {
-    request: { id: string; updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt'>> }
+    request: {
+      id: string
+      updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>>
+    }
     response: WorkspaceInfo
   }
   'workspace:select-directory': { request: void; response: string | null }

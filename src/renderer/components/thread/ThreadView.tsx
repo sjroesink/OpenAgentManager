@@ -86,7 +86,7 @@ export function ThreadView({ session }: ThreadViewProps) {
       ) : (
         <div className="space-y-4 max-w-3xl mx-auto">
           {session.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble key={message.id} message={message} sessionId={session.sessionId} />
           ))}
 
           {session.status === 'prompting' && (

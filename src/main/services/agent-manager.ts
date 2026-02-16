@@ -1,11 +1,13 @@
 import { BrowserWindow } from 'electron'
+import { v4 as uuid } from 'uuid'
 import type {
   AcpRegistryAgent,
   InstalledAgent,
   AgentConnection,
   AgentStatus,
   BinaryDistribution,
-  AuthMethod
+  AuthMethod,
+  AgentModelCatalog
 } from '@shared/types/agent'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
@@ -375,6 +377,47 @@ export class AgentManagerService {
       capabilities: client.capabilities || undefined,
       authMethods: client.authMethods
     }))
+  }
+
+  async getModels(agentId: string, projectPath: string): Promise<AgentModelCatalog> {
+    let connectedClient = Array.from(this.connections.values()).find(
+      (client) => client.agentId === agentId && client.isRunning
+    )
+
+    if (connectedClient) {
+      const cached = connectedClient.getModelCatalog()
+      if (cached.availableModels.length > 0) return cached
+    }
+
+    let shouldTerminateAfterProbe = false
+    if (!connectedClient) {
+      await this.launch(agentId, projectPath)
+      connectedClient = Array.from(this.connections.values()).find(
+        (client) => client.agentId === agentId && client.isRunning
+      )
+      shouldTerminateAfterProbe = true
+    }
+
+    if (!connectedClient) {
+      return { availableModels: [] }
+    }
+
+    try {
+      await connectedClient.newSession(
+        projectPath,
+        [],
+        `model-probe-${uuid().slice(0, 8)}`,
+        { suppressInitialUpdates: true }
+      )
+      return connectedClient.getModelCatalog()
+    } catch (error) {
+      logger.warn(`Failed to probe models for ${agentId}:`, error)
+      return connectedClient.getModelCatalog()
+    } finally {
+      if (shouldTerminateAfterProbe) {
+        this.terminate(connectedClient.connectionId)
+      }
+    }
   }
 
   // ============================

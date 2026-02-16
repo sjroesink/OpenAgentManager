@@ -23,6 +23,7 @@ export interface DraftThread {
   workspaceId: string
   workspacePath: string
   agentId: string | null
+  modelId: string | null
   useWorktree: boolean
 }
 
@@ -43,6 +44,7 @@ interface SessionState {
     workingDir: string,
     useWorktree: boolean,
     workspaceId: string,
+    modelId?: string,
     title?: string,
     pendingPrompt?: string
   ) => Promise<SessionInfo>
@@ -63,7 +65,9 @@ interface SessionState {
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
-  updateDraftThread: (updates: Partial<Pick<DraftThread, 'agentId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>) => void
+  updateDraftThread: (
+    updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>
+  ) => void
   discardDraftThread: () => void
   commitDraftThread: (prompt?: string) => Promise<void>
   retryInitialization: (sessionId: string) => void
@@ -196,7 +200,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (connectionId, workingDir, useWorktree, workspaceId, title, pendingPrompt?) => {
+  createSession: async (connectionId, workingDir, useWorktree, workspaceId, modelId, title, pendingPrompt?) => {
     // Add a placeholder session immediately so the UI feels responsive
     const placeholderId = `creating-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -224,6 +228,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         workingDir,
         useWorktree,
         workspaceId,
+        modelId,
         title
       })
       // Replace placeholder with actual session
@@ -407,6 +412,7 @@ sendPrompt: async (content, mode) => {
       workspaceId,
       workspacePath,
       agentId: null,
+      modelId: null,
       useWorktree: false
     }
     set({ draftThread: draft, activeDraftId: draft.id, activeSessionId: null })
@@ -479,6 +485,7 @@ sendPrompt: async (content, mode) => {
     // Run the initialization pipeline in the background
     runInitPipeline(set, get, placeholderId, {
       agentId,
+      modelId: draftThread.modelId,
       workspacePath: draftThread.workspacePath,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
@@ -515,6 +522,7 @@ sendPrompt: async (content, mode) => {
 
     runInitPipeline(set, get, sessionId, {
       agentId: session.agentId,
+      modelId: undefined,
       workspacePath: session.workingDir,
       useWorktree: session.useWorktree,
       workspaceId: session.workspaceId,
@@ -539,6 +547,7 @@ sendPrompt: async (content, mode) => {
 
 interface InitPipelineParams {
   agentId: string
+  modelId?: string | null
   workspacePath: string
   useWorktree: boolean
   workspaceId: string
@@ -575,7 +584,7 @@ async function runInitPipeline(
   placeholderId: string,
   params: InitPipelineParams
 ) {
-  const { agentId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
+  const { agentId, modelId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
   const agentStore = useAgentStore.getState()
 
   try {
@@ -598,7 +607,8 @@ async function runInitPipeline(
       connectionId: connection.connectionId,
       workingDir: workspacePath,
       useWorktree,
-      workspaceId
+      workspaceId,
+      modelId: modelId || undefined
     })
     updateInitStep(set, placeholderId, 'Creating session', 'completed')
 

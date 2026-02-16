@@ -19,6 +19,7 @@ export interface AgentProjectConfig {
   }
   defaults?: {
     agentId?: string
+    modelId?: string
     interactionMode?: string
     useWorktree?: boolean
   }

@@ -12,21 +12,40 @@ export function Sidebar() {
   const { workspaces, createWorkspace } = useWorkspaceStore()
   const sessions = useSessionStore((s) => s.sessions)
   const startDraftThread = useSessionStore((s) => s.startDraftThread)
+  const pendingPermissionCount = useSessionStore((s) => s.pendingPermissions.length)
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
-
-  if (!sidebarVisible) return null
 
   const sortedWorkspaces = [...workspaces].sort((a, b) =>
     b.lastAccessedAt.localeCompare(a.lastAccessedAt)
   )
 
   const handleNewThread = async () => {
+    const { updateDraftThread } = useSessionStore.getState()
     if (sortedWorkspaces.length > 0) {
       // Start a draft on the most recently accessed workspace
       const topWorkspace = sortedWorkspaces[0]
       startDraftThread(topWorkspace.id, topWorkspace.path)
+      if (topWorkspace.defaultAgentId || topWorkspace.defaultModelId || topWorkspace.defaultUseWorktree !== undefined) {
+        updateDraftThread({
+          agentId: topWorkspace.defaultAgentId || null,
+          modelId: topWorkspace.defaultModelId || null,
+          useWorktree: !!topWorkspace.defaultUseWorktree
+        })
+      }
+      try {
+        const config = await window.api.invoke('workspace:get-config', { workspacePath: topWorkspace.path })
+        if (config?.defaults) {
+          updateDraftThread({
+            agentId: config.defaults.agentId || topWorkspace.defaultAgentId || null,
+            modelId: config.defaults.modelId || topWorkspace.defaultModelId || null,
+            useWorktree: config.defaults.useWorktree ?? topWorkspace.defaultUseWorktree ?? false
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load workspace defaults from config:', err)
+      }
     } else {
       // No workspaces — pick a directory and create one
       const path = await window.api.invoke('workspace:select-directory', undefined)
@@ -34,6 +53,25 @@ export function Sidebar() {
       try {
         const ws = await createWorkspace(path)
         startDraftThread(ws.id, ws.path)
+        if (ws.defaultAgentId || ws.defaultModelId || ws.defaultUseWorktree !== undefined) {
+          updateDraftThread({
+            agentId: ws.defaultAgentId || null,
+            modelId: ws.defaultModelId || null,
+            useWorktree: !!ws.defaultUseWorktree
+          })
+        }
+        try {
+          const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
+          if (config?.defaults) {
+            updateDraftThread({
+              agentId: config.defaults.agentId || ws.defaultAgentId || null,
+              modelId: config.defaults.modelId || ws.defaultModelId || null,
+              useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+            })
+          }
+        } catch (err) {
+          console.error('Failed to load workspace defaults from config:', err)
+        }
       } catch (err) {
         console.error('Failed to create workspace:', err)
       }
@@ -75,6 +113,8 @@ export function Sidebar() {
     }
   }, [isResizing, setSidebarWidth])
 
+  if (!sidebarVisible) return null
+
   return (
     <div
       className="relative flex flex-col bg-surface-1 border-r border-border shrink-0 h-full"
@@ -82,17 +122,33 @@ export function Sidebar() {
     >
       {/* New thread button */}
       <div className="p-3 border-b border-border">
-        <Button
-          variant="primary"
-          size="sm"
-          className="w-full"
-          onClick={handleNewThread}
-        >
-          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Thread
-        </Button>
+        <div className="relative">
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full"
+            onClick={handleNewThread}
+          >
+            <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Thread
+          </Button>
+
+          {pendingPermissionCount > 0 && (
+            <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1 rounded-full bg-error px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+              {pendingPermissionCount}
+            </div>
+          )}
+        </div>
+
+        {pendingPermissionCount > 0 && (
+          <div className="mt-2 text-[11px] text-error flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-error animate-pulse" />
+            {pendingPermissionCount} open permission {pendingPermissionCount === 1 ? 'question' : 'questions'}
+          </div>
+        )}
       </div>
 
       {/* Workspace sections */}

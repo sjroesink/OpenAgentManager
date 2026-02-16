@@ -25,7 +25,15 @@ export function registerWorkspaceHandlers(): void {
     'workspace:update',
     async (
       _event,
-      { id, updates }: { id: string; updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt'>> }
+      {
+        id,
+        updates
+      }: {
+        id: string
+        updates: Partial<
+          Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultUseWorktree'>
+        >
+      }
     ) => {
       return workspaceService.update(id, updates)
     }

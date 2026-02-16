@@ -57,4 +57,11 @@ export function registerAgentHandlers(): void {
   ipcMain.handle('agent:list-connections', () => {
     return agentManager.listConnections()
   })
+
+  ipcMain.handle(
+    'agent:get-models',
+    async (_event, { agentId, projectPath }: { agentId: string; projectPath: string }) => {
+      return agentManager.getModels(agentId, projectPath)
+    }
+  )
 }

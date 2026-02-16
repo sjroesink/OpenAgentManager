@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AcpRegistry, AcpRegistryAgent, InstalledAgent, AgentConnection } from '@shared/types/agent'
+import type { AcpRegistry, AcpRegistryAgent, InstalledAgent, AgentConnection, AgentModelCatalog } from '@shared/types/agent'
 
 interface AgentState {
   // Registry
@@ -12,6 +12,8 @@ interface AgentState {
 
   // Active connections
   connections: AgentConnection[]
+  modelsByAgent: Record<string, AgentModelCatalog>
+  modelsLoadingByAgent: Record<string, boolean>
 
   // Actions
   fetchRegistry: () => Promise<void>
@@ -23,6 +25,7 @@ interface AgentState {
   logoutAgent: (connectionId: string) => Promise<void>
   authenticateAgent: (connectionId: string, method: string, credentials?: Record<string, string>) => Promise<void>
   updateConnectionStatus: (connectionId: string, status: AgentConnection['status'], error?: string) => void
+  loadAgentModels: (agentId: string, projectPath: string) => Promise<AgentModelCatalog>
 
   // Helpers
   getRegistryAgent: (agentId: string) => AcpRegistryAgent | undefined
@@ -35,6 +38,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   registryError: null,
   installed: [],
   connections: [],
+  modelsByAgent: {},
+  modelsLoadingByAgent: {},
 
   fetchRegistry: async () => {
     set({ registryLoading: true, registryError: null })
@@ -100,6 +105,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         c.connectionId === connectionId ? { ...c, status, error } : c
       )
     }))
+  },
+
+  loadAgentModels: async (agentId, projectPath) => {
+    const cached = get().modelsByAgent[agentId]
+    if (cached && cached.availableModels.length > 0) return cached
+
+    set((state) => ({
+      modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: true }
+    }))
+    try {
+      const catalog = await window.api.invoke('agent:get-models', { agentId, projectPath })
+      set((state) => ({
+        modelsByAgent: { ...state.modelsByAgent, [agentId]: catalog },
+        modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false }
+      }))
+      return catalog
+    } catch (error) {
+      set((state) => ({
+        modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false }
+      }))
+      throw error
+    }
   },
 
   getRegistryAgent: (agentId) => {

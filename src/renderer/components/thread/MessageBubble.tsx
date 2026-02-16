@@ -1,13 +1,22 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
-import type { Message, ContentBlock } from '@shared/types/session'
+import type { Message, ContentBlock, PermissionRequestEvent } from '@shared/types/session'
 import { ToolCallCard } from './ToolCallCard'
+import { useSessionStore } from '../../stores/session-store'
 
 interface MessageBubbleProps {
   message: Message
+  sessionId: string
 }
 
-function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: Map<string, unknown>, index: number): React.ReactNode {
+function renderContentBlock(
+  block: ContentBlock,
+  isUser: boolean,
+  toolCallMap: Map<string, unknown>,
+  pendingPermissionsByToolCallId: Map<string, PermissionRequestEvent>,
+  onPermissionRespond: (requestId: string, optionId: string) => void,
+  index: number
+): React.ReactNode {
   if (block.type === 'text' && block.text) {
     return (
       <div
@@ -62,9 +71,14 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: M
   if (block.type === 'tool_call_ref') {
     const tc = toolCallMap.get(block.toolCallId)
     if (tc) {
+      const permissionRequest = pendingPermissionsByToolCallId.get(block.toolCallId)
       return (
         <div key={index} className="my-1.5">
-          <ToolCallCard toolCall={tc as Parameters<typeof ToolCallCard>[0]['toolCall']} />
+          <ToolCallCard
+            toolCall={tc as Parameters<typeof ToolCallCard>[0]['toolCall']}
+            permissionRequest={permissionRequest}
+            onPermissionRespond={onPermissionRespond}
+          />
         </div>
       )
     }
@@ -73,8 +87,10 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: M
   return null
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, sessionId }: MessageBubbleProps) {
   const isUser = message.role === 'user'
+  const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
+  const respondToPermission = useSessionStore((s) => s.respondToPermission)
 
   const hasVisibleContent =
     message.content.some((b) => (b.type === 'text' || b.type === 'thinking') && b.text) ||
@@ -88,6 +104,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   // Build a lookup map for tool calls by ID
   const toolCallMap = new Map(
     (message.toolCalls || []).map((tc) => [tc.toolCallId, tc])
+  )
+  const pendingPermissionsByToolCallId = new Map(
+    pendingPermissions
+      .filter((permission) => permission.sessionId === sessionId && !!permission.toolCall.toolCallId)
+      .map((permission) => [permission.toolCall.toolCallId, permission])
   )
 
   // Check if content has tool_call_ref blocks (new ordered format)
@@ -115,13 +136,27 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       {/* Content */}
       <div className={`flex-1 min-w-0 ${isUser ? 'flex flex-col items-end' : ''}`}>
         {/* Interleaved content: text, thinking, images, and tool calls in order */}
-        {message.content.map((block, i) => renderContentBlock(block, isUser, toolCallMap, i))}
+        {message.content.map((block, i) =>
+          renderContentBlock(
+            block,
+            isUser,
+            toolCallMap,
+            pendingPermissionsByToolCallId,
+            respondToPermission,
+            i
+          )
+        )}
 
         {/* Fallback: render unreferenced tool calls at the end (legacy messages without refs) */}
         {unreferencedToolCalls.length > 0 && (
           <div className="mt-2 space-y-1.5">
             {unreferencedToolCalls.map((tc) => (
-              <ToolCallCard key={tc.toolCallId} toolCall={tc} />
+              <ToolCallCard
+                key={tc.toolCallId}
+                toolCall={tc}
+                permissionRequest={pendingPermissionsByToolCallId.get(tc.toolCallId)}
+                onPermissionRespond={respondToPermission}
+              />
             ))}
           </div>
         )}

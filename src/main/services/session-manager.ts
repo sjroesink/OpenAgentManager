@@ -120,6 +120,13 @@ export class SessionManagerService {
     // Create ACP session with our stable sessionId for mapping
     const mcpServers = this.getEnabledMcpServers()
     await client.newSession(workingDir, mcpServers, sessionId)
+    if (request.modelId) {
+      try {
+        await client.setModel(sessionId, request.modelId)
+      } catch (error) {
+        logger.warn(`Failed to set model "${request.modelId}" for session ${sessionId}:`, error)
+      }
+    }
 
     const session: SessionInfo = {
       sessionId,
@@ -430,6 +437,7 @@ export class SessionManagerService {
     logger.info(`generateTitle: generating title for session ${sessionId} with ${session.messages.length} messages`)
 
     const titlePrompt = `Generate a very short title (max 6 words) for the following conversation. Reply with ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n${conversationText}`
+    const summarizationModel = settings.general.summarizationModel
 
     try {
       // Find or launch the summarization agent
@@ -447,6 +455,13 @@ export class SessionManagerService {
       // Create a temporary session for the title generation
       const tempSessionId = `title-${uuid().slice(0, 8)}`
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), tempSessionId)
+      if (summarizationModel) {
+        try {
+          await client.setModel(tempSessionId, summarizationModel)
+        } catch (error) {
+          logger.warn(`Failed to set summarization model "${summarizationModel}":`, error)
+        }
+      }
 
       // Collect response text from streaming events
       let responseText = ''

@@ -214,6 +214,7 @@ export interface CreateSessionRequest {
   workingDir: string
   useWorktree: boolean
   workspaceId: string
+  modelId?: string
   title?: string
 }
 

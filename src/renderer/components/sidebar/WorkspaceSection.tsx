@@ -278,9 +278,10 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     const { updateDraftThread } = useSessionStore.getState()
     
     // First apply from metadata (fast)
-    if (workspace.defaultAgentId || workspace.defaultUseWorktree !== undefined) {
+    if (workspace.defaultAgentId || workspace.defaultModelId || workspace.defaultUseWorktree !== undefined) {
       updateDraftThread({
         agentId: workspace.defaultAgentId || null,
+        modelId: workspace.defaultModelId || null,
         useWorktree: !!workspace.defaultUseWorktree
       })
     }
@@ -291,6 +292,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
       if (config?.defaults) {
         updateDraftThread({
           agentId: config.defaults.agentId || workspace.defaultAgentId || null,
+          modelId: config.defaults.modelId || workspace.defaultModelId || null,
           useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
         })
       }
@@ -357,7 +359,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     <div>
       {/* Workspace header */}
       <div
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer"
+        className="group/workspace flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer"
         onClick={() => toggleExpanded(workspace.id)}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -388,6 +390,38 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
         {/* Workspace name */}
         <span className="flex-1 font-medium truncate">{workspace.name}</span>
+
+        <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto">
+          <button
+            onClick={handleNewThread}
+            className="p-1 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+            title="New Thread"
+            aria-label="New Thread"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowSettings(true)
+            }}
+            className="p-1 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+            title="Workspace Settings"
+            aria-label="Workspace Settings"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M11.983 5.5a1.5 1.5 0 012.834 0l.31.93a1.5 1.5 0 001.82.983l.95-.238a1.5 1.5 0 011.417 2.417l-.64.75a1.5 1.5 0 000 1.95l.64.75a1.5 1.5 0 01-1.418 2.417l-.95-.238a1.5 1.5 0 00-1.819.982l-.31.931a1.5 1.5 0 01-2.834 0l-.31-.93a1.5 1.5 0 00-1.82-.983l-.95.238a1.5 1.5 0 01-1.417-2.417l.64-.75a1.5 1.5 0 000-1.95l-.64-.75a1.5 1.5 0 011.418-2.417l.95.238a1.5 1.5 0 001.819-.982l.31-.931z"
+              />
+              <circle cx="13.4" cy="12" r="2.2" strokeWidth={2} />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Thread tree */}
@@ -452,6 +486,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         workspacePath={workspace.path}
         workspaceName={workspace.name}
         defaultAgentId={workspace.defaultAgentId}
+        defaultModelId={workspace.defaultModelId}
         defaultUseWorktree={workspace.defaultUseWorktree}
       />
 
