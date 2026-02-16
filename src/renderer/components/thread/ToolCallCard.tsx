@@ -15,8 +15,51 @@ interface ToolCallCardProps {
   toolCall: ToolCallInfo
 }
 
+function humanStatus(status: ToolCallInfo['status']): string {
+  switch (status) {
+    case 'pending':
+      return 'Waiting'
+    case 'in_progress':
+    case 'running':
+      return 'Working'
+    case 'completed':
+      return 'Done'
+    case 'failed':
+      return 'Failed'
+    default:
+      return status
+  }
+}
+
+function summarizeToolCall(toolCall: ToolCallInfo): string {
+  const target = toolCall.locations?.[0]?.path || toolCall.diff?.path
+  const withTarget = (label: string): string => (target ? `${label}: ${target}` : label)
+
+  switch (toolCall.kind) {
+    case 'read':
+      return withTarget('Reading file')
+    case 'edit':
+      return withTarget('Updating code')
+    case 'delete':
+      return withTarget('Deleting file')
+    case 'move':
+      return withTarget('Moving file')
+    case 'search':
+      return 'Searching project'
+    case 'execute':
+      return 'Running command'
+    case 'fetch':
+      return 'Fetching data'
+    case 'think':
+      return 'Reasoning step'
+    default:
+      return toolCall.title || toolCall.name || 'Tool call'
+  }
+}
+
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const summary = summarizeToolCall(toolCall)
 
   const statusColors: Record<string, 'default' | 'accent' | 'success' | 'error' | 'warning'> = {
     pending: 'default',
@@ -61,10 +104,9 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors"
       >
         {statusIcons[toolCall.status]}
-        <span className="font-mono font-medium text-text-primary">{toolCall.name}</span>
-        <span className="text-text-muted truncate flex-1 text-left">{toolCall.title}</span>
+        <span className="text-text-primary truncate flex-1 text-left">{summary}</span>
         <Badge variant={statusColors[toolCall.status] || 'default'}>
-          {toolCall.status}
+          {humanStatus(toolCall.status)}
         </Badge>
         <svg
           className={`w-3 h-3 transition-transform text-text-muted ${expanded ? 'rotate-180' : ''}`}
@@ -78,6 +120,16 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
 
       {expanded && (
         <div className="border-t border-border px-3 py-2 space-y-2">
+          <div className="text-[10px] text-text-muted uppercase font-medium mb-1">Technical Details</div>
+          <div className="text-xs text-text-secondary">
+            <span className="font-medium text-text-primary">Tool</span>: <span className="font-mono">{toolCall.name}</span>
+            {toolCall.title ? (
+              <>
+                {' · '}
+                <span className="font-medium text-text-primary">Title</span>: {toolCall.title}
+              </>
+            ) : null}
+          </div>
           {toolCall.diff && (
             <div>
               <div className="text-[10px] text-text-muted uppercase font-medium mb-1">

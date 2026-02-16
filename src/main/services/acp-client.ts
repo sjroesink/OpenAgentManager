@@ -806,9 +806,15 @@ export class AcpClient extends EventEmitter {
       case 'tool_call_update': {
         const rawOutput = raw.rawOutput || raw.output
         const locations = raw.locations as ToolCallLocation[] | undefined
+        const toolCallObj = raw.toolCall as Record<string, unknown> | undefined
+        const resolvedToolCallId =
+          (raw.toolCallId as string) ||
+          (toolCallObj?.toolCallId as string) ||
+          (raw.id as string) ||
+          ''
         return {
           type: 'tool_call_update',
-          toolCallId: (raw.toolCallId as string) || '',
+          toolCallId: resolvedToolCallId,
           status: (raw.status as ToolCallStatus) || 'completed',
           output: typeof rawOutput === 'string' ? rawOutput : (rawOutput != null ? JSON.stringify(rawOutput) : undefined),
           locations

@@ -297,12 +297,22 @@ sendPrompt: async (content, mode) => {
     try {
       await window.api.invoke('session:prompt', { sessionId: activeSessionId, content, mode })
 
-      // Prompt completed successfully — mark session as active and finalize streaming message
+      // Prompt completed successfully — mark session as active and force-close any open tool calls.
+      // Some agents do not reliably emit a final tool_call_update/message_complete for every call.
       set((state) => ({
         sessions: state.sessions.map((s) => {
           if (s.sessionId !== activeSessionId) return s
           const messages = s.messages.map((m) =>
-            m.isStreaming ? { ...m, isStreaming: false } : m
+            m.isStreaming
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  toolCalls: m.toolCalls?.map((tc) => ({
+                    ...tc,
+                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+                  }))
+                }
+              : m
           )
           return { ...s, status: 'active' as const, lastError: undefined, messages }
         })
@@ -646,11 +656,10 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
     case 'text_chunk': {
       if (!update.text) return session
       return replaceAgentMessage(session, update.messageId, (msg) => {
-        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'text')
-        if (lastIdx >= 0) {
-          const block = msg.content[lastIdx] as { type: 'text'; text: string }
+        const lastBlock = msg.content.length > 0 ? msg.content[msg.content.length - 1] : null
+        if (lastBlock && lastBlock.type === 'text') {
           const newContent = [...msg.content]
-          newContent[lastIdx] = { type: 'text', text: block.text + update.text }
+          newContent[newContent.length - 1] = { type: 'text', text: lastBlock.text + update.text }
           return { ...msg, content: newContent }
         }
         return { ...msg, content: [...msg.content, { type: 'text', text: update.text }] }
@@ -660,11 +669,10 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
     case 'thinking_chunk': {
       if (!update.text) return session
       return replaceAgentMessage(session, update.messageId, (msg) => {
-        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'thinking')
-        if (lastIdx >= 0) {
-          const block = msg.content[lastIdx] as { type: 'thinking'; text: string }
+        const lastBlock = msg.content.length > 0 ? msg.content[msg.content.length - 1] : null
+        if (lastBlock && lastBlock.type === 'thinking') {
           const newContent = [...msg.content]
-          newContent[lastIdx] = { type: 'thinking', text: block.text + update.text }
+          newContent[newContent.length - 1] = { type: 'thinking', text: lastBlock.text + update.text }
           return { ...msg, content: newContent }
         }
         return { ...msg, content: [...msg.content, { type: 'thinking', text: update.text }] }
@@ -682,18 +690,53 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
           newToolCalls[existing] = { ...newToolCalls[existing], ...update.toolCall }
           return { ...msg, toolCalls: newToolCalls }
         }
-        return { ...msg, toolCalls: [...(msg.toolCalls || []), update.toolCall] }
+        const ref: ContentBlock = { type: 'tool_call_ref', toolCallId: update.toolCall.toolCallId }
+        return {
+          ...msg,
+          content: [...msg.content, ref],
+          toolCalls: [...(msg.toolCalls || []), update.toolCall]
+        }
       })
     }
 
     case 'tool_call_update': {
-      const messages = session.messages.map((msg) => {
+      let didUpdateById = false
+      const updatedById = session.messages.map((msg) => {
         if (!msg.toolCalls) return msg
         const tcIdx = msg.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId)
         if (tcIdx < 0) return msg
+        didUpdateById = true
         const newToolCalls = [...msg.toolCalls]
         newToolCalls[tcIdx] = {
           ...newToolCalls[tcIdx],
+          status: update.status,
+          ...(update.output != null ? { output: update.output } : {}),
+          ...(update.locations ? { locations: update.locations } : {})
+        }
+        return { ...msg, toolCalls: newToolCalls }
+      })
+      if (didUpdateById) return { ...session, messages: updatedById }
+
+      // Fallback for agents that emit tool_call_update with missing/mismatched toolCallId:
+      // if exactly one open tool call exists, apply the update to that call.
+      const openToolCalls: Array<{ messageIndex: number; toolCallIndex: number }> = []
+      for (let mi = 0; mi < session.messages.length; mi++) {
+        const toolCalls = session.messages[mi].toolCalls
+        if (!toolCalls) continue
+        for (let ti = 0; ti < toolCalls.length; ti++) {
+          if (isOpenToolCallStatus(toolCalls[ti].status)) {
+            openToolCalls.push({ messageIndex: mi, toolCallIndex: ti })
+          }
+        }
+      }
+      if (openToolCalls.length !== 1) return session
+
+      const [{ messageIndex, toolCallIndex }] = openToolCalls
+      const messages = session.messages.map((msg, mi) => {
+        if (mi !== messageIndex || !msg.toolCalls) return msg
+        const newToolCalls = [...msg.toolCalls]
+        newToolCalls[toolCallIndex] = {
+          ...newToolCalls[toolCallIndex],
           status: update.status,
           ...(update.output != null ? { output: update.output } : {}),
           ...(update.locations ? { locations: update.locations } : {})
@@ -705,7 +748,21 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
 
     case 'message_complete': {
       const messages = session.messages.map((m) =>
-        (m.id === update.messageId || m.isStreaming) ? { ...m, isStreaming: false } : m
+        (m.id === update.messageId || m.isStreaming)
+          ? {
+              ...m,
+              isStreaming: false,
+              toolCalls: m.toolCalls?.map((tc) =>
+                ({
+                  ...tc,
+                  status:
+                    tc.status === 'pending' || tc.status === 'in_progress' || tc.status === 'running'
+                      ? ('completed' as const)
+                      : tc.status
+                })
+              )
+            }
+          : m
       )
       return { ...session, messages, status: 'active' }
     }
@@ -796,4 +853,8 @@ function replaceAgentMessage(
     isStreaming: true
   }
   return { ...session, messages: [...session.messages, transform(newMsg)] }
+}
+
+function isOpenToolCallStatus(status: 'pending' | 'in_progress' | 'running' | 'completed' | 'failed'): boolean {
+  return status === 'pending' || status === 'in_progress' || status === 'running'
 }

@@ -13,7 +13,7 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: M
       <div
         key={index}
         className={`
-          rounded-xl px-4 py-2.5 text-sm leading-relaxed inline-block max-w-full
+          rounded-xl px-3 py-2 text-sm leading-snug inline-block max-w-full
           ${
             isUser
               ? 'bg-accent text-accent-text rounded-tr-sm'
@@ -21,7 +21,7 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, toolCallMap: M
           }
         `}
       >
-        <div className="whitespace-pre-wrap break-words">
+        <div className="markdown-body break-words">
           <ReactMarkdown>{block.text}</ReactMarkdown>
         </div>
       </div>
