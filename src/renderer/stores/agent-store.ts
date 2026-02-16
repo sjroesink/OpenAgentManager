@@ -20,6 +20,7 @@ interface AgentState {
   loadInstalled: () => Promise<void>
   launchAgent: (agentId: string, projectPath: string, extraEnv?: Record<string, string>) => Promise<AgentConnection>
   terminateAgent: (connectionId: string) => Promise<void>
+  logoutAgent: (connectionId: string) => Promise<void>
   authenticateAgent: (connectionId: string, method: string, credentials?: Record<string, string>) => Promise<void>
   updateConnectionStatus: (connectionId: string, status: AgentConnection['status'], error?: string) => void
 
@@ -78,6 +79,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((state) => ({
       connections: state.connections.filter((c) => c.connectionId !== connectionId)
     }))
+  },
+
+  logoutAgent: async (connectionId: string) => {
+    await window.api.invoke('agent:logout', { connectionId })
   },
 
   authenticateAgent: async (connectionId, method, credentials) => {

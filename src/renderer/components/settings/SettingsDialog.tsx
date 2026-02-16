@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useUiStore } from '../../stores/ui-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
-import type { AppSettings, McpServerConfig } from '@shared/types/settings'
+import type { AppSettings, AgentSettings, McpServerConfig } from '@shared/types/settings'
 import { DEFAULT_SETTINGS } from '@shared/types/settings'
 
 export function SettingsDialog() {
@@ -195,6 +195,35 @@ export function SettingsDialog() {
                   />
                 </SettingsField>
               )}
+
+              <SettingsField label="Terminal Shell" description="Shell to use for integrated terminal (auto-detected if empty)">
+                <select
+                  value={settings.general.terminalShell || ''}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      general: { ...settings.general, terminalShell: e.target.value || undefined }
+                    })
+                  }
+                  className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                >
+                  <option value="">Auto-detect (default)</option>
+                  <optgroup label="Windows">
+                    <option value="powershell.exe">PowerShell</option>
+                    <option value="cmd.exe">Command Prompt</option>
+                    <option value="pwsh.exe">PowerShell Core</option>
+                    <option value="wt.exe">Windows Terminal</option>
+                    <option value="bash.exe">Git Bash</option>
+                  </optgroup>
+                  <optgroup label="macOS / Linux">
+                    <option value="/bin/bash">Bash</option>
+                    <option value="/bin/zsh">Zsh</option>
+                    <option value="/bin/fish">Fish</option>
+                    <option value="/bin/sh">Sh</option>
+                    <option value="/usr/bin/login">Login Shell</option>
+                  </optgroup>
+                </select>
+              </SettingsField>
             </>
           )}
 
@@ -258,99 +287,12 @@ export function SettingsDialog() {
           )}
 
           {activeSection === 'agents' && (
-            <div className="text-sm text-text-muted">
-              Agent-specific settings (API keys, custom arguments) can be configured per agent after installation.
-              <div className="mt-4 space-y-3">
-                {Object.entries(settings.agents).map(([agentId, agentSettings]) => (
-                  <div key={agentId} className="border border-border rounded-lg p-3">
-                    <div className="text-sm font-medium text-text-primary mb-2">{agentId}</div>
-                    <SettingsField label="API Key">
-                      <input
-                        type="password"
-                        value={agentSettings.apiKey || ''}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            agents: {
-                              ...settings.agents,
-                              [agentId]: { ...agentSettings, apiKey: e.target.value || undefined }
-                            }
-                          })
-                        }
-                        placeholder="Enter API key"
-                        className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
-                      />
-                    </SettingsField>
-                    <SettingsField label="Model" description="Model to use (e.g., claude-sonnet-4-20250514)">
-                      <input
-                        type="text"
-                        value={agentSettings.model || ''}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            agents: {
-                              ...settings.agents,
-                              [agentId]: { ...agentSettings, model: e.target.value || undefined }
-                            }
-                          })
-                        }
-                        placeholder="Leave empty for default"
-                        className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
-                      />
-                    </SettingsField>
-                    {wslInfo.available && (
-                      <>
-                        <SettingsField label="Run in WSL" description="Run this agent inside Windows Subsystem for Linux">
-                          <input
-                            type="checkbox"
-                            checked={agentSettings.runInWsl || false}
-                            onChange={(e) =>
-                              setSettings({
-                                ...settings,
-                                agents: {
-                                  ...settings.agents,
-                                  [agentId]: { ...agentSettings, runInWsl: e.target.checked }
-                                }
-                              })
-                            }
-                          />
-                        </SettingsField>
-                        {agentSettings.runInWsl && wslInfo.distributions.length > 0 && (
-                          <SettingsField label="WSL Distribution" description="Leave on default to use your default WSL distro">
-                            <select
-                              value={agentSettings.wslDistribution || ''}
-                              onChange={(e) =>
-                                setSettings({
-                                  ...settings,
-                                  agents: {
-                                    ...settings.agents,
-                                    [agentId]: {
-                                      ...agentSettings,
-                                      wslDistribution: e.target.value || undefined
-                                    }
-                                  }
-                                })
-                              }
-                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
-                            >
-                              <option value="">Default</option>
-                              {wslInfo.distributions.map((distro) => (
-                                <option key={distro} value={distro}>
-                                  {distro}
-                                </option>
-                              ))}
-                            </select>
-                          </SettingsField>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
-                {Object.keys(settings.agents).length === 0 && (
-                  <p className="text-text-muted text-xs">No agent-specific settings configured yet.</p>
-                )}
-              </div>
-            </div>
+            <AgentsSection
+              settings={settings}
+              setSettings={setSettings}
+              installedAgents={installedAgents}
+              wslInfo={wslInfo}
+            />
           )}
 
           {activeSection === 'mcp' && (
@@ -479,6 +421,119 @@ export function SettingsDialog() {
         </div>
       </div>
     </Dialog>
+  )
+}
+
+function AgentsSection({
+  settings,
+  setSettings,
+  installedAgents,
+  wslInfo
+}: {
+  settings: AppSettings
+  setSettings: (s: AppSettings) => void
+  installedAgents: { registryId: string; name: string }[]
+  wslInfo: { available: boolean; distributions: string[] }
+}) {
+  // Merge installed agents with saved settings so all installed agents appear
+  const mergedAgents = useMemo(() => {
+    const result: Array<{ agentId: string; displayName: string; agentSettings: AgentSettings }> = []
+    const seen = new Set<string>()
+
+    for (const agent of installedAgents) {
+      seen.add(agent.registryId)
+      result.push({
+        agentId: agent.registryId,
+        displayName: agent.name,
+        agentSettings: settings.agents[agent.registryId] || {}
+      })
+    }
+
+    // Include settings entries for agents no longer installed (edge case)
+    for (const [agentId, agentSettings] of Object.entries(settings.agents)) {
+      if (!seen.has(agentId)) {
+        result.push({ agentId, displayName: agentId, agentSettings })
+      }
+    }
+
+    return result
+  }, [installedAgents, settings.agents])
+
+  const updateAgentSetting = (agentId: string, updates: Partial<AgentSettings>) => {
+    const current = settings.agents[agentId] || {}
+    setSettings({
+      ...settings,
+      agents: {
+        ...settings.agents,
+        [agentId]: { ...current, ...updates }
+      }
+    })
+  }
+
+  return (
+    <div className="text-sm text-text-muted">
+      Agent-specific settings (API keys, model, custom arguments) can be configured per agent.
+      <div className="mt-4 space-y-3">
+        {mergedAgents.map(({ agentId, displayName, agentSettings }) => (
+          <div key={agentId} className="border border-border rounded-lg p-3">
+            <div className="text-sm font-medium text-text-primary mb-0.5">{displayName}</div>
+            <p className="text-[10px] text-text-muted mb-2 font-mono">{agentId}</p>
+            <SettingsField label="API Key">
+              <input
+                type="password"
+                value={agentSettings.apiKey || ''}
+                onChange={(e) => updateAgentSetting(agentId, { apiKey: e.target.value || undefined })}
+                placeholder="Enter API key"
+                className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+              />
+            </SettingsField>
+            <SettingsField label="Model" description="Model to use (e.g., claude-sonnet-4-20250514)">
+              <input
+                type="text"
+                value={agentSettings.model || ''}
+                onChange={(e) => updateAgentSetting(agentId, { model: e.target.value || undefined })}
+                placeholder="Leave empty for default"
+                className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+              />
+            </SettingsField>
+            {wslInfo.available && (
+              <>
+                <SettingsField label="Run in WSL" description="Run this agent inside Windows Subsystem for Linux">
+                  <input
+                    type="checkbox"
+                    checked={agentSettings.runInWsl || false}
+                    onChange={(e) => updateAgentSetting(agentId, { runInWsl: e.target.checked })}
+                  />
+                </SettingsField>
+                {agentSettings.runInWsl && wslInfo.distributions.length > 0 && (
+                  <SettingsField label="WSL Distribution" description="Leave on default to use your default WSL distro">
+                    <select
+                      value={agentSettings.wslDistribution || ''}
+                      onChange={(e) =>
+                        updateAgentSetting(agentId, { wslDistribution: e.target.value || undefined })
+                      }
+                      className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                    >
+                      <option value="">Default</option>
+                      {wslInfo.distributions.map((distro) => (
+                        <option key={distro} value={distro}>
+                          {distro}
+                        </option>
+                      ))}
+                    </select>
+                  </SettingsField>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+        {mergedAgents.length === 0 && (
+          <p className="text-text-muted text-xs">
+            No agents installed yet. Install agents from the registry to configure them.
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 

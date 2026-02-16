@@ -50,6 +50,10 @@ export function registerAgentHandlers(): void {
     }
   )
 
+  ipcMain.handle('agent:logout', async (_event, { connectionId }: { connectionId: string }) => {
+    await agentManager.logout(connectionId)
+  })
+
   ipcMain.handle('agent:list-connections', () => {
     return agentManager.listConnections()
   })

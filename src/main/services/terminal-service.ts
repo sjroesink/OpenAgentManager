@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { v4 as uuid } from 'uuid'
 import { logger } from '../util/logger'
+import { settingsService } from './settings-service'
 
 // node-pty types - imported dynamically since it's a native module
 type IPty = {
@@ -29,6 +30,17 @@ export class TerminalService {
     this.mainWindow = window
   }
 
+  private getDefaultShell(): string {
+    switch (process.platform) {
+      case 'win32':
+        return 'powershell.exe'
+      case 'darwin':
+        return process.env.SHELL || '/bin/zsh'
+      default:
+        return process.env.SHELL || '/bin/bash'
+    }
+  }
+
   /**
    * Create a new terminal instance
    */
@@ -39,10 +51,9 @@ export class TerminalService {
       // Dynamic import of node-pty
       const pty = require('node-pty')
 
-      const shell =
-        process.platform === 'win32'
-          ? 'powershell.exe'
-          : process.env.SHELL || '/bin/bash'
+      const settings = settingsService.get()
+      const configuredShell = settings.general.terminalShell
+      const shell = configuredShell || this.getDefaultShell()
 
       const ptyProcess: IPty = pty.spawn(shell, [], {
         name: 'xterm-256color',

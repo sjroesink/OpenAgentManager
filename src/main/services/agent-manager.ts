@@ -4,7 +4,8 @@ import type {
   InstalledAgent,
   AgentConnection,
   AgentStatus,
-  BinaryDistribution
+  BinaryDistribution,
+  AuthMethod
 } from '@shared/types/agent'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
@@ -270,6 +271,9 @@ export class AgentManagerService {
 
       this.connections.set(client.connectionId, client)
 
+      // Auto-authenticate if env_var auth method is available and API key was provided
+      await this.autoAuthenticateIfNeeded(client, initResult.authMethods, agentSettings, emitStatus)
+
       // Always mark as connected — authMethods are informational, not blocking.
       // The agent may still accept sessions/prompts; auth errors surface at prompt time.
       emitStatus('connected')
@@ -293,6 +297,39 @@ export class AgentManagerService {
     }
   }
 
+  private async autoAuthenticateIfNeeded(
+    client: AcpClient,
+    authMethods: AuthMethod[],
+    agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
+    emitStatus: (status: AgentStatus, error?: string) => void
+  ): Promise<void> {
+    const apiKey = agentSettings?.apiKey
+    if (!apiKey) return
+
+    const envVarMethod = authMethods.find((m) => m.type === 'env_var' && m.varName)
+    if (!envVarMethod) {
+      logger.debug('No env_var auth method available, skipping auto-authenticate')
+      return
+    }
+
+    const varName = envVarMethod.varName!.toUpperCase()
+    const providedKeys = ['API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY']
+    const hasEnvVar = providedKeys.some((key) => key.toUpperCase() === varName)
+
+    if (!hasEnvVar) {
+      logger.debug(`API key not provided for env_var auth method: ${varName}`)
+      return
+    }
+
+    try {
+      logger.info(`Auto-authenticating with env_var method: ${envVarMethod.id}`)
+      await client.authenticate(envVarMethod.id, { [envVarMethod.varName!]: apiKey })
+    } catch (error) {
+      logger.warn(`Auto-authenticate failed for ${envVarMethod.id}:`, error)
+      emitStatus('error', `Authentication failed: ${(error as Error).message}`)
+    }
+  }
+
   async authenticate(
     connectionId: string,
     method: string,
@@ -309,6 +346,12 @@ export class AgentManagerService {
         status: 'connected'
       })
     }
+  }
+
+  async logout(connectionId: string): Promise<void> {
+    const client = this.connections.get(connectionId)
+    if (!client) throw new Error(`Connection not found: ${connectionId}`)
+    await client.logout()
   }
 
   terminate(connectionId: string): void {

@@ -41,6 +41,7 @@ export interface IpcChannels {
     request: { connectionId: string; method: string; credentials?: Record<string, string> }
     response: void
   }
+  'agent:logout': { request: { connectionId: string }; response: void }
   'agent:list-connections': { request: void; response: AgentConnection[] }
 
   // --- Sessions ---
