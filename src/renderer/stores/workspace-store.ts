@@ -13,9 +13,13 @@ interface WorkspaceState {
   toggleExpanded: (id: string) => void
   openInVSCode: (path: string) => Promise<void>
   touchWorkspace: (id: string) => Promise<void>
+  updateWorkspace: (
+    id: string,
+    updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>>
+  ) => Promise<WorkspaceInfo>
 }
 
-export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   workspaces: [],
   expandedWorkspaceIds: new Set<string>(),
   loading: false,
@@ -74,5 +78,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch {
       // Ignore touch errors
     }
+  },
+
+  updateWorkspace: async (id, updates) => {
+    const updated = await window.api.invoke('workspace:update', { id, updates })
+    set((state) => ({
+      workspaces: state.workspaces.map((w) => (w.id === id ? updated : w))
+    }))
+    return updated
   }
 }))

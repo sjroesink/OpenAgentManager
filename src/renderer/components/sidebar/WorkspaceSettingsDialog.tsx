@@ -3,7 +3,13 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
+import { ModelPicker } from '../common/ModelPicker'
 import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCommand } from '@shared/types/thread-format'
+import type { InteractionMode } from '@shared/types/session'
+
+function isInteractionMode(value: string): value is InteractionMode {
+  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+}
 
 interface WorkspaceSettingsDialogProps {
   open: boolean
@@ -12,6 +18,8 @@ interface WorkspaceSettingsDialogProps {
   workspacePath: string
   workspaceName: string
   defaultAgentId?: string
+  defaultModelId?: string
+  defaultInteractionMode?: InteractionMode
   defaultUseWorktree?: boolean
 }
 
@@ -22,6 +30,8 @@ export function WorkspaceSettingsDialog({
   workspacePath,
   workspaceName,
   defaultAgentId: initialDefaultAgentId,
+  defaultModelId: initialDefaultModelId,
+  defaultInteractionMode: initialDefaultInteractionMode,
   defaultUseWorktree: initialDefaultUseWorktree
 }: WorkspaceSettingsDialogProps) {
   const [loading, setLoading] = useState(true)
@@ -30,6 +40,8 @@ export function WorkspaceSettingsDialog({
   const [commands, setCommands] = useState<PostSetupCommand[]>([])
   const [initialPrompt, setInitialPrompt] = useState('')
   const [defaultAgentId, setDefaultAgentId] = useState(initialDefaultAgentId || '')
+  const [defaultModelId, setDefaultModelId] = useState(initialDefaultModelId || '')
+  const [defaultInteractionMode, setDefaultInteractionMode] = useState<InteractionMode>(initialDefaultInteractionMode || 'ask')
   const [useWorktree, setUseWorktree] = useState(initialDefaultUseWorktree || false)
   const [fullConfig, setFullConfig] = useState<AgentProjectConfig | null>(null)
   const installedAgents = useAgentStore((s) => s.installed)
@@ -49,6 +61,10 @@ export function WorkspaceSettingsDialog({
         
         // If config file has defaults, they override the workspace metadata
         if (config?.defaults?.agentId) setDefaultAgentId(config.defaults.agentId)
+        if (config?.defaults?.modelId) setDefaultModelId(config.defaults.modelId)
+        if (config?.defaults?.interactionMode && isInteractionMode(config.defaults.interactionMode)) {
+          setDefaultInteractionMode(config.defaults.interactionMode)
+        }
         if (config?.defaults?.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
       })
       .catch((err) => console.error('Failed to load workspace config:', err))
@@ -61,6 +77,8 @@ export function WorkspaceSettingsDialog({
       // 1. Update Workspace Metadata (Local)
       await updateWorkspace(workspaceId, {
         defaultAgentId: defaultAgentId || undefined,
+        defaultModelId: defaultModelId || undefined,
+        defaultInteractionMode: defaultInteractionMode || undefined,
         defaultUseWorktree: useWorktree
       })
 
@@ -76,6 +94,8 @@ export function WorkspaceSettingsDialog({
         defaults: {
           ...fullConfig?.defaults,
           agentId: defaultAgentId || undefined,
+          modelId: defaultModelId || undefined,
+          interactionMode: defaultInteractionMode || undefined,
           useWorktree: useWorktree || undefined
         },
         worktreeHooks: Object.keys(hooks).length > 0 ? hooks : undefined
@@ -88,7 +108,7 @@ export function WorkspaceSettingsDialog({
     } finally {
       setSaving(false)
     }
-  }, [symlinks, commands, initialPrompt, defaultAgentId, useWorktree, fullConfig, workspaceId, workspacePath, updateWorkspace, onClose])
+  }, [symlinks, commands, initialPrompt, defaultAgentId, defaultModelId, defaultInteractionMode, useWorktree, fullConfig, workspaceId, workspacePath, updateWorkspace, onClose])
 
   // Symlink helpers
   const addSymlink = () => setSymlinks([...symlinks, { source: '' }])
@@ -123,7 +143,10 @@ export function WorkspaceSettingsDialog({
                 </label>
                 <select
                   value={defaultAgentId}
-                  onChange={(e) => setDefaultAgentId(e.target.value)}
+                  onChange={(e) => {
+                    setDefaultAgentId(e.target.value)
+                    setDefaultModelId('')
+                  }}
                   className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
                 >
                   <option value="">No default agent</option>
@@ -132,6 +155,29 @@ export function WorkspaceSettingsDialog({
                       {agent.name}
                     </option>
                   ))}
+                </select>
+              </div>
+              <ModelPicker
+                agentId={defaultAgentId || null}
+                projectPath={workspacePath}
+                value={defaultModelId}
+                onChange={(modelId) => setDefaultModelId(modelId || '')}
+                emptyLabel="Default model"
+                className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+              />
+              <div>
+                <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                  Default Mode
+                </label>
+                <select
+                  value={defaultInteractionMode}
+                  onChange={(e) => setDefaultInteractionMode(e.target.value as InteractionMode)}
+                  className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="ask">Ask</option>
+                  <option value="code">Code</option>
+                  <option value="plan">Plan</option>
+                  <option value="act">Act</option>
                 </select>
               </div>
               <div className="flex items-center gap-2">

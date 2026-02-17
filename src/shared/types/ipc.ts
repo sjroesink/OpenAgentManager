@@ -3,7 +3,7 @@
 // Typed contract between main and renderer processes
 // ============================================================
 
-import type { AcpRegistry, InstalledAgent, AgentConnection } from './agent'
+import type { AcpRegistry, InstalledAgent, AgentConnection, AgentModelCatalog } from './agent'
 import type {
   SessionInfo,
   PersistedThread,
@@ -41,7 +41,9 @@ export interface IpcChannels {
     request: { connectionId: string; method: string; credentials?: Record<string, string> }
     response: void
   }
+  'agent:logout': { request: { connectionId: string }; response: void }
   'agent:list-connections': { request: void; response: AgentConnection[] }
+  'agent:get-models': { request: { agentId: string; projectPath: string }; response: AgentModelCatalog }
 
   // --- Sessions ---
   'session:create': { request: CreateSessionRequest; response: SessionInfo }
@@ -53,6 +55,7 @@ export interface IpcChannels {
   'session:permission-response': { request: PermissionResponse; response: void }
   'session:rebuild-cache': { request: void; response: { threadCount: number } }
   'session:set-mode': { request: { sessionId: string; modeId: string }; response: void }
+  'session:set-interaction-mode': { request: { sessionId: string; mode: InteractionMode }; response: void }
   'session:rename': { request: { sessionId: string; title: string }; response: void }
   'session:set-model': { request: { sessionId: string; modelId: string }; response: void }
   'session:set-config-option': { request: { sessionId: string; configId: string; value: string }; response: ConfigOption[] }
@@ -94,7 +97,10 @@ export interface IpcChannels {
   'workspace:create': { request: { path: string; name?: string }; response: WorkspaceInfo }
   'workspace:remove': { request: { id: string }; response: void }
   'workspace:update': {
-    request: { id: string; updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt'>> }
+    request: {
+        id: string
+        updates: Partial<Pick<WorkspaceInfo, 'name' | 'lastAccessedAt' | 'defaultAgentId' | 'defaultModelId' | 'defaultInteractionMode' | 'defaultUseWorktree'>>
+      }
     response: WorkspaceInfo
   }
   'workspace:select-directory': { request: void; response: string | null }

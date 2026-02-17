@@ -11,7 +11,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"electron.vite.config.ts\" \"vite.mcp.config.ts\" \"tailwind.config.ts\"",
     "postinstall": "electron-builder install-app-deps",
     "install:node-pty": "npm install node-pty && electron-builder install-app-deps",
     "build:win": "electron-vite build && electron-builder --win",
@@ -26,6 +26,7 @@
     "@xterm/xterm": "^5.5.0",
     "electron-store": "^8.2.0",
     "monaco-editor": "^0.52.2",
+    "node-pty": "^1.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.3",
@@ -36,6 +37,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/node": "^22.13.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -45,9 +47,14 @@
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^15.15.0",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.56.0",
     "vite": "^5.4.0"
   }
 }

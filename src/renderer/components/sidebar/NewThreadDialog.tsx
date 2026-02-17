@@ -4,10 +4,10 @@ import { useSessionStore } from '../../stores/session-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useUiStore } from '../../stores/ui-store'
 import { AgentSelector } from './AgentSelector'
+import { ModelPicker } from '../common/ModelPicker'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
 import type { InstalledAgent } from '@shared/types/agent'
-import type { WorkspaceInfo } from '@shared/types/workspace'
 
 export function NewThreadDialog() {
   const open = useUiStore((s) => s.newThreadDialogOpen)
@@ -18,6 +18,7 @@ export function NewThreadDialog() {
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
 
@@ -29,16 +30,19 @@ export function NewThreadDialog() {
       if (selectedWorkspace.defaultAgentId) {
         setSelectedAgentId(selectedWorkspace.defaultAgentId)
       }
+      if (selectedWorkspace.defaultModelId) {
+        setSelectedModelId(selectedWorkspace.defaultModelId)
+      }
       if (selectedWorkspace.defaultUseWorktree !== undefined) {
         setUseWorktree(selectedWorkspace.defaultUseWorktree)
       }
-
       // Then try to fetch from config file (shared)
       window.api
         .invoke('workspace:get-config', { workspacePath: selectedWorkspace.path })
         .then((config) => {
           if (config?.defaults) {
             if (config.defaults.agentId) setSelectedAgentId(config.defaults.agentId)
+            if (config.defaults.modelId) setSelectedModelId(config.defaults.modelId)
             if (config.defaults.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
           }
         })
@@ -60,6 +64,7 @@ export function NewThreadDialog() {
 
   const handleAgentSelect = useCallback((agent: InstalledAgent) => {
     setSelectedAgentId(agent.registryId)
+    setSelectedModelId(null)
   }, [])
 
   const handleCreate = useCallback(async () => {
@@ -68,6 +73,7 @@ export function NewThreadDialog() {
 
     // Close dialog immediately for faster perceived performance
     const agentId = selectedAgentId
+    const modelId = selectedModelId
     const workspace = selectedWorkspace
     const workspaceId = selectedWorkspaceId
     const worktree = useWorktree
@@ -75,6 +81,7 @@ export function NewThreadDialog() {
     setOpen(false)
     setSelectedWorkspaceId(null)
     setSelectedAgentId(null)
+    setSelectedModelId(null)
     setUseWorktree(false)
 
     try {
@@ -90,7 +97,9 @@ export function NewThreadDialog() {
         connection.connectionId,
         workspace.path,
         worktree,
-        workspaceId
+        workspaceId,
+        undefined,
+        modelId || undefined
       )
     } catch (error) {
       console.error('Failed to create thread:', error)
@@ -104,6 +113,7 @@ export function NewThreadDialog() {
     connections,
     launchAgent,
     createSession,
+    selectedModelId,
     useWorktree,
     setOpen
   ])
@@ -158,6 +168,14 @@ export function NewThreadDialog() {
           </label>
           <AgentSelector selectedAgentId={selectedAgentId} onSelect={handleAgentSelect} />
         </div>
+
+        <ModelPicker
+          agentId={selectedAgentId}
+          projectPath={selectedWorkspace?.path || ''}
+          value={selectedModelId}
+          onChange={setSelectedModelId}
+          emptyLabel="Default model"
+        />
 
         {/* Worktree toggle */}
         {selectedWorkspace?.isGitRepo && (

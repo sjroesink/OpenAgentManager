@@ -1,10 +1,13 @@
 import { BrowserWindow } from 'electron'
+import { v4 as uuid } from 'uuid'
 import type {
   AcpRegistryAgent,
   InstalledAgent,
   AgentConnection,
   AgentStatus,
-  BinaryDistribution
+  BinaryDistribution,
+  AuthMethod,
+  AgentModelCatalog
 } from '@shared/types/agent'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
@@ -270,11 +273,14 @@ export class AgentManagerService {
 
       this.connections.set(client.connectionId, client)
 
+      // Auto-authenticate if env_var auth method is available and API key was provided
+      await this.autoAuthenticateIfNeeded(client, initResult.authMethods, agentSettings, emitStatus)
+
       // Always mark as connected — authMethods are informational, not blocking.
       // The agent may still accept sessions/prompts; auth errors surface at prompt time.
       emitStatus('connected')
 
-      const connection: AgentConnection = {
+      return {
         connectionId: client.connectionId,
         agentId,
         agentName: initResult.agentName,
@@ -284,12 +290,43 @@ export class AgentManagerService {
         capabilities: initResult.capabilities,
         authMethods: initResult.authMethods
       }
-
-      return connection
     } catch (error) {
       client.terminate()
       emitStatus('error', (error as Error).message)
       throw error
+    }
+  }
+
+  private async autoAuthenticateIfNeeded(
+    client: AcpClient,
+    authMethods: AuthMethod[],
+    agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
+    emitStatus: (status: AgentStatus, error?: string) => void
+  ): Promise<void> {
+    const apiKey = agentSettings?.apiKey
+    if (!apiKey) return
+
+    const envVarMethod = authMethods.find((m) => m.type === 'env_var' && m.varName)
+    if (!envVarMethod) {
+      logger.debug('No env_var auth method available, skipping auto-authenticate')
+      return
+    }
+
+    const varName = envVarMethod.varName!.toUpperCase()
+    const providedKeys = ['API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY']
+    const hasEnvVar = providedKeys.some((key) => key.toUpperCase() === varName)
+
+    if (!hasEnvVar) {
+      logger.debug(`API key not provided for env_var auth method: ${varName}`)
+      return
+    }
+
+    try {
+      logger.info(`Auto-authenticating with env_var method: ${envVarMethod.id}`)
+      await client.authenticate(envVarMethod.id, { [envVarMethod.varName!]: apiKey })
+    } catch (error) {
+      logger.warn(`Auto-authenticate failed for ${envVarMethod.id}:`, error)
+      emitStatus('error', `Authentication failed: ${(error as Error).message}`)
     }
   }
 
@@ -309,6 +346,12 @@ export class AgentManagerService {
         status: 'connected'
       })
     }
+  }
+
+  async logout(connectionId: string): Promise<void> {
+    const client = this.connections.get(connectionId)
+    if (!client) throw new Error(`Connection not found: ${connectionId}`)
+    await client.logout()
   }
 
   terminate(connectionId: string): void {
@@ -334,6 +377,47 @@ export class AgentManagerService {
       capabilities: client.capabilities || undefined,
       authMethods: client.authMethods
     }))
+  }
+
+  async getModels(agentId: string, projectPath: string): Promise<AgentModelCatalog> {
+    let connectedClient = Array.from(this.connections.values()).find(
+      (client) => client.agentId === agentId && client.isRunning
+    )
+
+    if (connectedClient) {
+      const cached = connectedClient.getModelCatalog()
+      if (cached.availableModels.length > 0) return cached
+    }
+
+    let shouldTerminateAfterProbe = false
+    if (!connectedClient) {
+      await this.launch(agentId, projectPath)
+      connectedClient = Array.from(this.connections.values()).find(
+        (client) => client.agentId === agentId && client.isRunning
+      )
+      shouldTerminateAfterProbe = true
+    }
+
+    if (!connectedClient) {
+      return { availableModels: [] }
+    }
+
+    try {
+      await connectedClient.newSession(
+        projectPath,
+        [],
+        `model-probe-${uuid().slice(0, 8)}`,
+        { suppressInitialUpdates: true }
+      )
+      return connectedClient.getModelCatalog()
+    } catch (error) {
+      logger.warn(`Failed to probe models for ${agentId}:`, error)
+      return connectedClient.getModelCatalog()
+    } finally {
+      if (shouldTerminateAfterProbe) {
+        this.terminate(connectedClient.connectionId)
+      }
+    }
   }
 
   // ============================
@@ -379,7 +463,6 @@ export class AgentManagerService {
 
   private loadInstalled(): void {
     try {
-      const settings = settingsService.get()
       // Installed agents are stored separately in electron-store
       const store = new (require('electron-store'))({ name: 'installed-agents' })
       const agents = store.get('agents', {}) as Record<string, InstalledAgent>

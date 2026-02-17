@@ -53,7 +53,7 @@ function collapseTree(node: TreeNode): TreeNode {
     const collapsed = collapseTree(child)
     // If this is a directory with exactly one child directory (no file), merge names
     if (!collapsed.change && collapsed.children.size === 1) {
-      const [grandchildName, grandchild] = [...collapsed.children.entries()][0]
+      const [, grandchild] = [...collapsed.children.entries()][0]
       if (!grandchild.change) {
         const merged: TreeNode = {
           name: `${collapsed.name}/${grandchild.name}`,

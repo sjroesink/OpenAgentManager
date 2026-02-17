@@ -1,17 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../../stores/session-store'
-import { useUiStore } from '../../stores/ui-store'
 import { useAcpFeaturesStore } from '../../stores/acp-features-store'
 import { Button } from '../common/Button'
-import type { InteractionMode, SlashCommand, ContentBlock, ImageContent, ConfigOption } from '@shared/types/session'
-
-const FALLBACK_MODE_CONFIG: Record<InteractionMode, { label: string; description: string }> = {
-  ask: { label: 'Ask', description: 'Asks for approval for each action.' },
-  code: { label: 'Code', description: 'Starts immediately.' },
-  plan: { label: 'Plan', description: 'Defines a plan before acting.' },
-  act: { label: 'Act', description: 'Takes all actions without asking.' }
-}
-const FALLBACK_MODES: InteractionMode[] = ['ask', 'code', 'plan', 'act']
+import type { SlashCommand, ContentBlock, ImageContent, ConfigOption } from '@shared/types/session'
 
 /** Generic config option dropdown used for mode, model, and other selectors */
 function ConfigOptionSelector({
@@ -139,30 +130,27 @@ function ConfigOptionSelector({
 export function PromptInput() {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<ImageContent[]>([])
-  const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
   const [commandQuery, setCommandQuery] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
   const commandMenuRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const { activeSessionId, sendPrompt, getActiveSession } = useSessionStore()
-  const { interactionMode, setInteractionMode } = useUiStore()
   const { getSessionState, setConfigOption } = useAcpFeaturesStore()
 
   const session = getActiveSession()
   const isInitializing = session?.status === 'initializing'
   const isCreating = session?.status === 'creating'
   const isPrompting = session?.status === 'prompting'
-  const isBusy = isPrompting || isCreating || isInitializing
+  const isBusy = isCreating || isInitializing
+  const isModeChangeDisabled = isInitializing || isCreating
 
   // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
-  const availableCommands = acpState?.commands || []
-  const configOptions = acpState?.configOptions || []
+  const availableCommands = useMemo(() => acpState?.commands ?? [], [acpState])
+  const configOptions = useMemo(() => acpState?.configOptions ?? [], [acpState])
 
   // Derive mode and model config options from ACP state
   const modeConfig = useMemo(
@@ -178,9 +166,6 @@ export function PromptInput() {
     () => configOptions.filter((o) => o.category !== 'mode' && o.category !== 'model'),
     [configOptions]
   )
-
-  const hasAcpModes = !!modeConfig
-  const currentFallbackMode = FALLBACK_MODE_CONFIG[interactionMode]
 
   const filteredCommands = useMemo(() => {
     if (!commandQuery) return availableCommands
@@ -202,21 +187,6 @@ export function PromptInput() {
       })
     }
   }, [])
-
-  // Close fallback mode menu on outside click
-  useEffect(() => {
-    if (!modeMenuOpen) return
-    const handleClick = (e: MouseEvent) => {
-      if (
-        menuRef.current && !menuRef.current.contains(e.target as Node) &&
-        buttonRef.current && !buttonRef.current.contains(e.target as Node)
-      ) {
-        setModeMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [modeMenuOpen])
 
   // Close command menu on outside click
   useEffect(() => {
@@ -253,8 +223,8 @@ export function PromptInput() {
       textareaRef.current.style.height = 'auto'
     }
 
-    await sendPrompt(content, interactionMode)
-  }, [text, attachments, activeSessionId, isBusy, sendPrompt, interactionMode])
+    await sendPrompt(content)
+  }, [text, attachments, activeSessionId, isBusy, sendPrompt])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commandMenuOpen && filteredCommands.length > 0) {
@@ -303,11 +273,6 @@ export function PromptInput() {
     } else {
       setCommandMenuOpen(false)
     }
-  }
-
-  const selectFallbackMode = (mode: InteractionMode) => {
-    setInteractionMode(mode)
-    setModeMenuOpen(false)
   }
 
   const handleConfigOptionChange = useCallback(
@@ -483,7 +448,7 @@ export function PromptInput() {
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'}
+            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working. Queue your next message...' : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'}
             disabled={isBusy}
             readOnly={isInitializing || isCreating}
             rows={1}
@@ -511,57 +476,13 @@ export function PromptInput() {
 
       {/* Bottom bar: config selectors */}
       <div className="flex items-center gap-1 max-w-3xl mx-auto mt-1.5">
-        {/* Mode selector: ACP dynamic or fallback */}
-        {hasAcpModes ? (
+        {/* Mode selector: only when provided by ACP */}
+        {modeConfig && (
           <ConfigOptionSelector
-            configOption={modeConfig!}
-            onSelect={(value) => handleConfigOptionChange(modeConfig!.id, value)}
-            disabled={isBusy}
+            configOption={modeConfig}
+            onSelect={(value) => handleConfigOptionChange(modeConfig.id, value)}
+            disabled={isModeChangeDisabled}
           />
-        ) : (
-          <div className="relative">
-            <button
-              ref={buttonRef}
-              onClick={() => setModeMenuOpen(!modeMenuOpen)}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors"
-            >
-              <span>{currentFallbackMode.label}</span>
-              <svg className={`w-3 h-3 opacity-60 transition-transform ${modeMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
-
-            {modeMenuOpen && (
-              <div
-                ref={menuRef}
-                className="absolute bottom-full left-0 mb-1 w-64 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50"
-              >
-                {FALLBACK_MODES.map((mode) => {
-                  const config = FALLBACK_MODE_CONFIG[mode]
-                  const isActive = mode === interactionMode
-                  return (
-                    <button
-                      key={mode}
-                      onClick={() => selectFallbackMode(mode)}
-                      className={`w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-surface-3 transition-colors ${
-                        isActive ? 'text-text-primary' : 'text-text-secondary'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium">{config.label}</div>
-                        <div className="text-xs text-text-muted">{config.description}</div>
-                      </div>
-                      {isActive && (
-                        <svg className="w-4 h-4 text-accent shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
         )}
 
         {/* Model selector (if agent provides models) */}
@@ -569,7 +490,7 @@ export function PromptInput() {
           <ConfigOptionSelector
             configOption={modelConfig}
             onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
-            disabled={isBusy}
+            disabled={isInitializing || isCreating}
           />
         )}
 
@@ -579,7 +500,7 @@ export function PromptInput() {
             key={config.id}
             configOption={config}
             onSelect={(value) => handleConfigOptionChange(config.id, value)}
-            disabled={isBusy}
+            disabled={isInitializing || isCreating}
           />
         ))}
       </div>

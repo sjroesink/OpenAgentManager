@@ -40,7 +40,7 @@ export function DiffView() {
       })
       .catch(() => setChanges([]))
       .finally(() => setLoading(false))
-  }, [workingDir])
+  }, [workingDir, diffViewSelectedFile, setDiffViewSelectedFile])
 
   // Fetch diff when selected file changes
   useEffect(() => {
@@ -91,7 +91,7 @@ export function DiffView() {
     } finally {
       setCommitting(false)
     }
-  }, [commitMessage, workingDir])
+  }, [commitMessage, workingDir, setDiffViewSelectedFile])
 
   const fileDiff = diff?.files[0]
 

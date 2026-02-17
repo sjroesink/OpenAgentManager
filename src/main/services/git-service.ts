@@ -1,4 +1,4 @@
-import simpleGit, { type SimpleGit } from 'simple-git'
+import simpleGit from 'simple-git'
 import path from 'path'
 import fs from 'fs'
 import type { GitStatus, WorktreeInfo, CommitResult } from '@shared/types/git'

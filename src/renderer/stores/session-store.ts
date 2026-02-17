@@ -11,12 +11,15 @@ import type {
   HookStep,
   Message,
   ContentBlock,
-  ToolCallInfo,
   InteractionMode
 } from '@shared/types/session'
 import { useWorkspaceStore } from './workspace-store'
 import { useProjectStore } from './project-store'
 import { useAgentStore } from './agent-store'
+
+function isInteractionMode(value: string): value is InteractionMode {
+  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+}
 
 /** A draft thread that hasn't been created yet — lives only in UI state. */
 export interface DraftThread {
@@ -24,6 +27,8 @@ export interface DraftThread {
   workspaceId: string
   workspacePath: string
   agentId: string | null
+  modelId: string | null
+  interactionMode: InteractionMode | null
   useWorktree: boolean
 }
 
@@ -44,9 +49,12 @@ interface SessionState {
     workingDir: string,
     useWorktree: boolean,
     workspaceId: string,
+    interactionMode?: InteractionMode,
+    modelId?: string,
     title?: string,
     pendingPrompt?: string
   ) => Promise<SessionInfo>
+  setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
   setActiveSession: (sessionId: string | null) => void
   sendPrompt: (content: ContentBlock[], mode?: InteractionMode) => Promise<void>
   cancelPrompt: () => Promise<void>
@@ -64,9 +72,11 @@ interface SessionState {
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
-  updateDraftThread: (updates: Partial<Pick<DraftThread, 'agentId' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>) => void
+  updateDraftThread: (
+    updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'interactionMode' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>
+  ) => void
   discardDraftThread: () => void
-  commitDraftThread: (prompt: string) => Promise<void>
+  commitDraftThread: (prompt?: string) => Promise<void>
   retryInitialization: (sessionId: string) => void
 
   // Helpers
@@ -76,6 +86,8 @@ interface SessionState {
 
 /** Guard to prevent duplicate reconnect attempts for the same session. */
 const reconnectingIds = new Set<string>()
+const promptQueueBySession = new Map<string, Array<{ content: ContentBlock[]; mode?: InteractionMode }>>()
+const processingPromptSessions = new Set<string>()
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -103,6 +115,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         workingDir: t.workingDir,
         status: 'idle' as const,
         messages: t.messages,
+        interactionMode: t.interactionMode,
         useWorktree: t.useWorktree,
         workspaceId: t.workspaceId,
         parentSessionId: t.parentSessionId
@@ -197,7 +210,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (connectionId, workingDir, useWorktree, workspaceId, title, pendingPrompt?) => {
+  createSession: async (connectionId, workingDir, useWorktree, workspaceId, interactionMode, modelId, title, pendingPrompt?) => {
     // Add a placeholder session immediately so the UI feels responsive
     const placeholderId = `creating-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -210,6 +223,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       workingDir,
       status: 'creating',
       messages: [],
+      interactionMode: interactionMode,
       useWorktree,
       workspaceId,
       pendingPrompt
@@ -225,6 +239,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         workingDir,
         useWorktree,
         workspaceId,
+        interactionMode,
+        modelId,
         title
       })
       // Replace placeholder with actual session
@@ -242,6 +258,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeSessionId: state.activeSessionId === placeholderId ? null : state.activeSessionId
       }))
       throw error
+    }
+  },
+
+  setSessionInteractionMode: async (sessionId, mode) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === sessionId ? { ...s, interactionMode: mode } : s
+      )
+    }))
+    try {
+      await window.api.invoke('session:set-interaction-mode', { sessionId, mode })
+    } catch (error) {
+      console.error('Failed to persist interaction mode:', error)
     }
   },
 
@@ -295,40 +324,83 @@ sendPrompt: async (content, mode) => {
       )
     }))
 
+    const queue = promptQueueBySession.get(activeSessionId) ?? []
+    queue.push({ content, mode })
+    promptQueueBySession.set(activeSessionId, queue)
+
+    if (processingPromptSessions.has(activeSessionId)) {
+      return
+    }
+
+    processingPromptSessions.add(activeSessionId)
+
     try {
-      await window.api.invoke('session:prompt', { sessionId: activeSessionId, content, mode })
+      while ((promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0) {
+        const next = promptQueueBySession.get(activeSessionId)?.shift()
+        if (!next) continue
 
-      // Prompt completed successfully — mark session as active and finalize streaming message
-      set((state) => ({
-        sessions: state.sessions.map((s) => {
-          if (s.sessionId !== activeSessionId) return s
-          const messages = s.messages.map((m) =>
-            m.isStreaming ? { ...m, isStreaming: false } : m
-          )
-          return { ...s, status: 'active' as const, lastError: undefined, messages }
-        })
-      }))
+        const currentSession = get().sessions.find((s) => s.sessionId === activeSessionId)
+        const effectiveMode = next.mode ?? currentSession?.interactionMode
 
-      // Auto-generate title after first agent response if title is still default
-      const session = get().sessions.find((s) => s.sessionId === activeSessionId)
-      if (session) {
-        const isDefaultTitle =
-          session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
-        const userMessages = session.messages.filter((m) => m.role === 'user')
-        if (isDefaultTitle && userMessages.length === 1) {
-          // Fire-and-forget: title comes back via session_info_update event
-          window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
+        try {
+          await window.api.invoke('session:prompt', {
+            sessionId: activeSessionId,
+            content: next.content,
+            mode: effectiveMode
+          })
+
+          const hasPendingItems = (promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0
+          // Prompt completed successfully. Treat this as a hard turn boundary:
+          // if an agent failed to emit terminal tool updates, close remaining open calls.
+          set((state) => ({
+            sessions: state.sessions.map((s) => {
+              if (s.sessionId !== activeSessionId) return s
+              const messages = s.messages.map((m) => {
+                const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
+                if (!m.isStreaming && !hasOpenToolCalls) return m
+                return {
+                  ...m,
+                  isStreaming: false,
+                  toolCalls: m.toolCalls?.map((tc) => ({
+                    ...tc,
+                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+                  }))
+                }
+              })
+              return {
+                ...s,
+                status: hasPendingItems ? ('prompting' as const) : ('active' as const),
+                lastError: undefined,
+                messages
+              }
+            })
+          }))
+
+          // Auto-generate title after first agent response if title is still default
+          const session = get().sessions.find((s) => s.sessionId === activeSessionId)
+          if (session) {
+            const isDefaultTitle =
+              session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
+            const userMessages = session.messages.filter((m) => m.role === 'user')
+            if (isDefaultTitle && userMessages.length === 1) {
+              // Fire-and-forget: title comes back via session_info_update event
+              window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
+            }
+          }
+        } catch (error) {
+          const errorMessage = (error as Error).message || 'Prompt failed'
+          set((state) => ({
+            sessions: state.sessions.map((s) =>
+              s.sessionId === activeSessionId
+                ? { ...s, status: 'error' as const, lastError: errorMessage }
+                : s
+            )
+          }))
         }
       }
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Prompt failed'
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.sessionId === activeSessionId
-            ? { ...s, status: 'error' as const, lastError: errorMessage }
-            : s
-        )
-      }))
+    } finally {
+      processingPromptSessions.delete(activeSessionId)
+      promptQueueBySession.delete(activeSessionId)
     }
   },
 
@@ -398,6 +470,8 @@ sendPrompt: async (content, mode) => {
       workspaceId,
       workspacePath,
       agentId: null,
+      modelId: null,
+      interactionMode: null,
       useWorktree: false
     }
     set({ draftThread: draft, activeDraftId: draft.id, activeSessionId: null })
@@ -414,7 +488,7 @@ sendPrompt: async (content, mode) => {
     set({ draftThread: null, activeDraftId: null })
   },
 
-  commitDraftThread: async (prompt: string) => {
+  commitDraftThread: async (prompt?: string) => {
     const { draftThread } = get()
     if (!draftThread || !draftThread.agentId) return
 
@@ -453,6 +527,7 @@ sendPrompt: async (content, mode) => {
       workingDir: draftThread.workspacePath,
       status: 'initializing',
       messages: [],
+      interactionMode: draftThread.interactionMode || undefined,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
       pendingPrompt: prompt,
@@ -470,6 +545,7 @@ sendPrompt: async (content, mode) => {
     // Run the initialization pipeline in the background
     runInitPipeline(set, get, placeholderId, {
       agentId,
+      modelId: draftThread.modelId,
       workspacePath: draftThread.workspacePath,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
@@ -506,6 +582,7 @@ sendPrompt: async (content, mode) => {
 
     runInitPipeline(set, get, sessionId, {
       agentId: session.agentId,
+      modelId: undefined,
       workspacePath: session.workingDir,
       useWorktree: session.useWorktree,
       workspaceId: session.workspaceId,
@@ -530,10 +607,12 @@ sendPrompt: async (content, mode) => {
 
 interface InitPipelineParams {
   agentId: string
+  modelId?: string | null
+  interactionMode?: InteractionMode
   workspacePath: string
   useWorktree: boolean
   workspaceId: string
-  prompt: string
+  prompt?: string
   existingConnection: { connectionId: string } | null
 }
 
@@ -566,7 +645,7 @@ async function runInitPipeline(
   placeholderId: string,
   params: InitPipelineParams
 ) {
-  const { agentId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
+  const { agentId, modelId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
   const agentStore = useAgentStore.getState()
 
   try {
@@ -589,7 +668,9 @@ async function runInitPipeline(
       connectionId: connection.connectionId,
       workingDir: workspacePath,
       useWorktree,
-      workspaceId
+      workspaceId,
+      interactionMode: params.interactionMode,
+      modelId: modelId || undefined
     })
     updateInitStep(set, placeholderId, 'Creating session', 'completed')
 
@@ -602,8 +683,10 @@ async function runInitPipeline(
         state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
     }))
 
-    // Send the first prompt
-    await get().sendPrompt([{ type: 'text', text: prompt }])
+    // Send the first prompt if one was provided.
+    if (prompt && prompt.trim().length > 0) {
+      await get().sendPrompt([{ type: 'text', text: prompt }])
+    }
   } catch (error) {
     // Mark the running step as failed and set error status
     set((state) => ({
@@ -634,6 +717,7 @@ async function runInitPipeline(
 function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   switch (update.type) {
     case 'message_start': {
+      const normalizedSession = finalizeOpenToolCalls(session)
       const newMsg: Message = {
         id: update.messageId,
         role: 'agent',
@@ -641,34 +725,40 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
         timestamp: new Date().toISOString(),
         isStreaming: true
       }
-      return { ...session, messages: [...session.messages, newMsg] }
+      return { ...normalizedSession, messages: [...normalizedSession.messages, newMsg] }
     }
 
     case 'text_chunk': {
       if (!update.text) return session
       return replaceAgentMessage(session, update.messageId, (msg) => {
-        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'text')
-        if (lastIdx >= 0) {
-          const block = msg.content[lastIdx] as { type: 'text'; text: string }
-          const newContent = [...msg.content]
-          newContent[lastIdx] = { type: 'text', text: block.text + update.text }
-          return { ...msg, content: newContent }
+        const normalizedMessage = finalizeOpenToolCallsInMessage(msg)
+        const lastBlock =
+          normalizedMessage.content.length > 0
+            ? normalizedMessage.content[normalizedMessage.content.length - 1]
+            : null
+        if (lastBlock && lastBlock.type === 'text') {
+          const newContent = [...normalizedMessage.content]
+          newContent[newContent.length - 1] = { type: 'text', text: lastBlock.text + update.text }
+          return { ...normalizedMessage, content: newContent }
         }
-        return { ...msg, content: [...msg.content, { type: 'text', text: update.text }] }
+        return { ...normalizedMessage, content: [...normalizedMessage.content, { type: 'text', text: update.text }] }
       })
     }
 
     case 'thinking_chunk': {
       if (!update.text) return session
       return replaceAgentMessage(session, update.messageId, (msg) => {
-        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'thinking')
-        if (lastIdx >= 0) {
-          const block = msg.content[lastIdx] as { type: 'thinking'; text: string }
-          const newContent = [...msg.content]
-          newContent[lastIdx] = { type: 'thinking', text: block.text + update.text }
-          return { ...msg, content: newContent }
+        const normalizedMessage = finalizeOpenToolCallsInMessage(msg)
+        const lastBlock =
+          normalizedMessage.content.length > 0
+            ? normalizedMessage.content[normalizedMessage.content.length - 1]
+            : null
+        if (lastBlock && lastBlock.type === 'thinking') {
+          const newContent = [...normalizedMessage.content]
+          newContent[newContent.length - 1] = { type: 'thinking', text: lastBlock.text + update.text }
+          return { ...normalizedMessage, content: newContent }
         }
-        return { ...msg, content: [...msg.content, { type: 'thinking', text: update.text }] }
+        return { ...normalizedMessage, content: [...normalizedMessage.content, { type: 'thinking', text: update.text }] }
       })
     }
 
@@ -683,18 +773,53 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
           newToolCalls[existing] = { ...newToolCalls[existing], ...update.toolCall }
           return { ...msg, toolCalls: newToolCalls }
         }
-        return { ...msg, toolCalls: [...(msg.toolCalls || []), update.toolCall] }
+        const ref: ContentBlock = { type: 'tool_call_ref', toolCallId: update.toolCall.toolCallId }
+        return {
+          ...msg,
+          content: [...msg.content, ref],
+          toolCalls: [...(msg.toolCalls || []), update.toolCall]
+        }
       })
     }
 
     case 'tool_call_update': {
-      const messages = session.messages.map((msg) => {
+      let didUpdateById = false
+      const updatedById = session.messages.map((msg) => {
         if (!msg.toolCalls) return msg
         const tcIdx = msg.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId)
         if (tcIdx < 0) return msg
+        didUpdateById = true
         const newToolCalls = [...msg.toolCalls]
         newToolCalls[tcIdx] = {
           ...newToolCalls[tcIdx],
+          status: update.status,
+          ...(update.output != null ? { output: update.output } : {}),
+          ...(update.locations ? { locations: update.locations } : {})
+        }
+        return { ...msg, toolCalls: newToolCalls }
+      })
+      if (didUpdateById) return { ...session, messages: updatedById }
+
+      // Fallback for agents that emit tool_call_update with missing/mismatched toolCallId:
+      // if exactly one open tool call exists, apply the update to that call.
+      const openToolCalls: Array<{ messageIndex: number; toolCallIndex: number }> = []
+      for (let mi = 0; mi < session.messages.length; mi++) {
+        const toolCalls = session.messages[mi].toolCalls
+        if (!toolCalls) continue
+        for (let ti = 0; ti < toolCalls.length; ti++) {
+          if (isOpenToolCallStatus(toolCalls[ti].status)) {
+            openToolCalls.push({ messageIndex: mi, toolCallIndex: ti })
+          }
+        }
+      }
+      if (openToolCalls.length !== 1) return session
+
+      const [{ messageIndex, toolCallIndex }] = openToolCalls
+      const messages = session.messages.map((msg, mi) => {
+        if (mi !== messageIndex || !msg.toolCalls) return msg
+        const newToolCalls = [...msg.toolCalls]
+        newToolCalls[toolCallIndex] = {
+          ...newToolCalls[toolCallIndex],
           status: update.status,
           ...(update.output != null ? { output: update.output } : {}),
           ...(update.locations ? { locations: update.locations } : {})
@@ -706,19 +831,39 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
 
     case 'message_complete': {
       const messages = session.messages.map((m) =>
-        (m.id === update.messageId || m.isStreaming) ? { ...m, isStreaming: false } : m
+        (m.id === update.messageId || m.isStreaming)
+          ? {
+              ...m,
+              isStreaming: false,
+              toolCalls: m.toolCalls?.map((tc) =>
+                ({
+                  ...tc,
+                  status:
+                    tc.status === 'pending' || tc.status === 'in_progress' || tc.status === 'running'
+                      ? ('completed' as const)
+                      : tc.status
+                })
+              )
+            }
+          : m
       )
       return { ...session, messages, status: 'active' }
     }
 
-    case 'status_change':
-      return { ...session, status: update.status }
+    case 'status_change': {
+      const nextSession = update.status === 'active' ? finalizeOpenToolCalls(session) : session
+      return { ...nextSession, status: update.status }
+    }
 
     case 'error':
       return { ...session, status: 'error' }
 
     // ACP spec: mode/config/command/plan/usage updates — consumed by acp-features-store
     case 'current_mode_update':
+      return isInteractionMode(update.modeId)
+        ? { ...session, interactionMode: update.modeId }
+        : session
+
     case 'config_options_update':
     case 'available_commands_update':
     case 'plan_update':
@@ -797,4 +942,33 @@ function replaceAgentMessage(
     isStreaming: true
   }
   return { ...session, messages: [...session.messages, transform(newMsg)] }
+}
+
+function isOpenToolCallStatus(status: 'pending' | 'in_progress' | 'running' | 'completed' | 'failed'): boolean {
+  return status === 'pending' || status === 'in_progress' || status === 'running'
+}
+
+function finalizeOpenToolCallsInMessage(message: Message): Message {
+  const toolCalls = message.toolCalls
+  if (!toolCalls || toolCalls.length === 0) return message
+
+  let didChange = false
+  const normalizedToolCalls = toolCalls.map((toolCall) => {
+    if (!isOpenToolCallStatus(toolCall.status)) return toolCall
+    didChange = true
+    return { ...toolCall, status: 'completed' as const }
+  })
+
+  if (!didChange && !message.isStreaming) return message
+  return { ...message, toolCalls: normalizedToolCalls, isStreaming: false }
+}
+
+function finalizeOpenToolCalls(session: SessionInfo): SessionInfo {
+  let didChange = false
+  const messages = session.messages.map((message) => {
+    const normalized = finalizeOpenToolCallsInMessage(message)
+    if (normalized !== message) didChange = true
+    return normalized
+  })
+  return didChange ? { ...session, messages } : session
 }

@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import type { InteractionMode } from '@shared/types/session'
 
 type ReviewTab = 'changes' | 'diff'
 
@@ -26,8 +25,10 @@ interface UiState {
   // Selected file in full-page diff view
   diffViewSelectedFile: string | null
 
-  // Interaction mode
-  interactionMode: InteractionMode
+  // Threads overview
+  threadsOverviewOpen: boolean
+  threadsOverviewSearchQuery: string
+  threadsOverviewFocusSearch: boolean
 
   // Actions
   toggleSidebar: () => void
@@ -40,7 +41,9 @@ interface UiState {
   setNewThreadDialogOpen: (open: boolean) => void
   setSelectedDiffFile: (path: string | null) => void
   setDiffViewSelectedFile: (path: string | null) => void
-  setInteractionMode: (mode: InteractionMode) => void
+  openThreadsOverview: (searchQuery?: string, focusSearch?: boolean) => void
+  closeThreadsOverview: () => void
+  setThreadsOverviewSearchQuery: (query: string) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -60,7 +63,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   diffViewSelectedFile: null,
 
-  interactionMode: 'ask',
+  threadsOverviewOpen: false,
+  threadsOverviewSearchQuery: '',
+  threadsOverviewFocusSearch: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
@@ -72,5 +77,17 @@ export const useUiStore = create<UiState>((set) => ({
   setNewThreadDialogOpen: (open) => set({ newThreadDialogOpen: open }),
   setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
   setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
-  setInteractionMode: (mode) => set({ interactionMode: mode })
+  openThreadsOverview: (searchQuery, focusSearch = false) =>
+    set({
+      threadsOverviewOpen: true,
+      threadsOverviewSearchQuery: searchQuery ?? '',
+      threadsOverviewFocusSearch: focusSearch
+    }),
+  closeThreadsOverview: () =>
+    set({
+      threadsOverviewOpen: false,
+      threadsOverviewSearchQuery: '',
+      threadsOverviewFocusSearch: false
+    }),
+  setThreadsOverviewSearchQuery: (query) => set({ threadsOverviewSearchQuery: query })
 }))

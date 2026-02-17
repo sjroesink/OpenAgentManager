@@ -1,35 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
+import { AgentIcon } from '../common/AgentIcon'
 import type { InstalledAgent } from '@shared/types/agent'
-
-const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
-
-function AgentIcon({ agentId, name }: { agentId: string; name: string }) {
-  const [svgContent, setSvgContent] = useState<string | null>(null)
-  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
-
-  useEffect(() => {
-    fetch(iconUrl)
-      .then((res) => res.text())
-      .then((svg) => setSvgContent(svg))
-      .catch(() => setSvgContent(null))
-  }, [iconUrl])
-
-  if (svgContent) {
-    return (
-      <span
-        className="w-4 h-4 shrink-0"
-        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-4 h-4"') }}
-      />
-    )
-  }
-
-  return (
-    <span className="w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0">
-      {name[0]}
-    </span>
-  )
-}
 
 interface AgentSelectorProps {
   selectedAgentId: string | null
@@ -69,7 +41,9 @@ export function AgentSelector({ selectedAgentId, onSelect }: AgentSelectorProps)
       >
         <AgentIcon
           agentId={selectedAgent?.registryId || ''}
+          icon={selectedAgent?.icon}
           name={selectedAgent?.name || 'A'}
+          size="sm"
         />
         <span className="flex-1 text-left truncate">
           {selectedAgent?.name || 'Select Agent'}
@@ -96,7 +70,9 @@ export function AgentSelector({ selectedAgentId, onSelect }: AgentSelectorProps)
             >
               <AgentIcon
                 agentId={agent.registryId}
+                icon={agent.icon}
                 name={agent.name}
+                size="sm"
               />
               <div className="flex-1 min-w-0">
                 <div className="truncate font-medium">{agent.name}</div>

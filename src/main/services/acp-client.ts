@@ -7,7 +7,9 @@ import { BrowserWindow } from 'electron'
 import { ACP_PROTOCOL_VERSION, CLIENT_INFO } from '@shared/constants'
 import type {
   AgentCapabilities,
-  AuthMethod
+  AuthMethod,
+  AgentModelCatalog,
+  AgentModelInfo
 } from '@shared/types/agent'
 import type {
   SessionUpdateEvent,
@@ -84,6 +86,7 @@ export class AcpClient extends EventEmitter {
   authMethods: AuthMethod[] = []
   agentName = 'Unknown Agent'
   agentVersion = ''
+  private modelCatalog: AgentModelCatalog = { availableModels: [] }
 
   constructor(
     public readonly agentId: string,
@@ -198,7 +201,12 @@ export class AcpClient extends EventEmitter {
   }
 
   /** Create a new session */
-  async newSession(cwd: string, mcpServers: unknown[] = [], internalSessionId?: string): Promise<string> {
+  async newSession(
+    cwd: string,
+    mcpServers: unknown[] = [],
+    internalSessionId?: string,
+    options?: { suppressInitialUpdates?: boolean }
+  ): Promise<string> {
     const result = (await this.sendRequest('session/new', {
       cwd,
       mcpServers
@@ -215,6 +223,8 @@ export class AcpClient extends EventEmitter {
       configOptions?: Array<Record<string, unknown>>
     }
     const remoteId = result.sessionId
+    const suppressInitialUpdates = options?.suppressInitialUpdates === true
+    this.updateModelCatalogFromSessionNewResult(result)
 
     if (internalSessionId) {
       this.remoteToInternal.set(remoteId, internalSessionId)
@@ -224,7 +234,7 @@ export class AcpClient extends EventEmitter {
     const sessionId = internalSessionId || remoteId
 
     // Forward initial modes and configOptions from session/new response as updates
-    if (result.modes) {
+    if (!suppressInitialUpdates && result.modes) {
       const modes = result.modes
       // Build configOptions from legacy modes field for backward compat
       if (modes.availableModes && modes.availableModes.length > 0) {
@@ -271,7 +281,7 @@ export class AcpClient extends EventEmitter {
     }
 
     // Forward initial models from session/new response as config option
-    if (result.models) {
+    if (!suppressInitialUpdates && result.models) {
       const models = result.models
       if (models.availableModels && models.availableModels.length > 0) {
         const existingModelConfig = result.configOptions?.find(
@@ -302,7 +312,7 @@ export class AcpClient extends EventEmitter {
       }
     }
 
-    if (result.configOptions && result.configOptions.length > 0) {
+    if (!suppressInitialUpdates && result.configOptions && result.configOptions.length > 0) {
       const options = result.configOptions.map((opt) => ({
         id: (opt.id as string) || '',
         name: (opt.name as string) || '',
@@ -329,6 +339,56 @@ export class AcpClient extends EventEmitter {
     }
 
     return sessionId
+  }
+
+  getModelCatalog(): AgentModelCatalog {
+    return {
+      currentModelId: this.modelCatalog.currentModelId,
+      availableModels: [...this.modelCatalog.availableModels]
+    }
+  }
+
+  private updateModelCatalogFromSessionNewResult(result: {
+    models?: {
+      currentModelId?: string
+      availableModels?: Array<{ modelId: string; name: string; description?: string }>
+    }
+    configOptions?: Array<Record<string, unknown>>
+  }): void {
+    if (result.models?.availableModels && result.models.availableModels.length > 0) {
+      this.modelCatalog = {
+        currentModelId: result.models.currentModelId,
+        availableModels: result.models.availableModels.map((m) => ({
+          modelId: m.modelId,
+          name: m.name,
+          description: m.description
+        }))
+      }
+      return
+    }
+
+    const modelConfig = result.configOptions?.find((opt) => (opt.category as string) === 'model')
+    if (!modelConfig) return
+
+    const configOptions = ((modelConfig.options as Array<Record<string, unknown>>) || [])
+      .map((option): AgentModelInfo | null => {
+        const modelId = option.value as string | undefined
+        const name = option.name as string | undefined
+        if (!modelId || !name) return null
+        return {
+          modelId,
+          name,
+          description: option.description as string | undefined
+        }
+      })
+      .filter((option): option is AgentModelInfo => option !== null)
+
+    if (configOptions.length > 0) {
+      this.modelCatalog = {
+        currentModelId: modelConfig.currentValue as string | undefined,
+        availableModels: configOptions
+      }
+    }
   }
 
   /** Fork an existing session (RFD: session/fork) */
@@ -570,7 +630,7 @@ export class AcpClient extends EventEmitter {
       try {
         const msg = JSON.parse(trimmed) as JsonRpcResponse
         this.handleMessage(msg)
-      } catch (err) {
+      } catch {
         logger.debug(`[${this.agentId}] Non-JSON output: ${trimmed}`)
       }
     }
@@ -806,9 +866,15 @@ export class AcpClient extends EventEmitter {
       case 'tool_call_update': {
         const rawOutput = raw.rawOutput || raw.output
         const locations = raw.locations as ToolCallLocation[] | undefined
+        const toolCallObj = raw.toolCall as Record<string, unknown> | undefined
+        const resolvedToolCallId =
+          (raw.toolCallId as string) ||
+          (toolCallObj?.toolCallId as string) ||
+          (raw.id as string) ||
+          ''
         return {
           type: 'tool_call_update',
-          toolCallId: (raw.toolCallId as string) || '',
+          toolCallId: resolvedToolCallId,
           status: (raw.status as ToolCallStatus) || 'completed',
           output: typeof rawOutput === 'string' ? rawOutput : (rawOutput != null ? JSON.stringify(rawOutput) : undefined),
           locations
@@ -1015,7 +1081,7 @@ export class AcpClient extends EventEmitter {
       }
 
       this.sendResponse(id, { content })
-    } catch (err) {
+    } catch {
       this.sendError(id, -32002, `File not found: ${filePath}`)
     }
   }

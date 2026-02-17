@@ -84,6 +84,17 @@ export interface AgentConnection {
   error?: string
 }
 
+export interface AgentModelInfo {
+  modelId: string
+  name: string
+  description?: string
+}
+
+export interface AgentModelCatalog {
+  currentModelId?: string
+  availableModels: AgentModelInfo[]
+}
+
 /** ACP agent capabilities (spec-aligned naming) */
 export interface AgentCapabilities {
   // Spec: top-level boolean for session loading

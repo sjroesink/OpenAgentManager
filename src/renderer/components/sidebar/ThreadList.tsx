@@ -1,55 +1,51 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useProjectStore } from '../../stores/project-store'
 import { AgentSelector } from './AgentSelector'
 import { Button } from '../common/Button'
 import { Badge } from '../common/Badge'
+import { AgentIcon } from '../common/AgentIcon'
 import type { InstalledAgent } from '@shared/types/agent'
 
-const AGENT_ICON_BASE = 'https://cdn.agentclientprotocol.com/registry/v1/latest'
-
-const statusColors: Record<string, string> = {
-  active: 'text-success',
-  prompting: 'text-accent animate-pulse',
-  idle: 'text-text-muted',
-  error: 'text-error',
-  creating: 'text-warning animate-pulse',
-  initializing: 'text-warning animate-pulse',
-  cancelled: 'text-text-muted'
+const statusDotColors: Record<string, string> = {
+  active: 'bg-success',
+  prompting: 'bg-accent animate-pulse',
+  idle: 'bg-text-muted/60',
+  error: 'bg-error',
+  creating: 'bg-warning animate-pulse',
+  initializing: 'bg-warning animate-pulse',
+  cancelled: 'bg-text-muted/60'
 }
 
-function SessionIcon({ agentId, name, status = 'idle' }: { agentId: string; name: string; status?: string }) {
-  const [svgContent, setSvgContent] = useState<string | null>(null)
-  const iconUrl = `${AGENT_ICON_BASE}/${agentId}.svg`
-  const colorClass = statusColors[status] || statusColors.idle
-
-  useEffect(() => {
-    fetch(iconUrl)
-      .then((res) => res.text())
-      .then((svg) => setSvgContent(svg))
-      .catch(() => setSvgContent(null))
-  }, [iconUrl])
-
-  if (svgContent) {
-    return (
-      <span
-        className={`w-4 h-4 shrink-0 ${colorClass}`}
-        dangerouslySetInnerHTML={{ __html: svgContent.replace(/<svg/, '<svg class="w-4 h-4"') }}
-      />
-    )
-  }
-
+function SessionIcon({
+  agentId,
+  icon,
+  name,
+  status = 'idle'
+}: {
+  agentId: string
+  icon?: string
+  name: string
+  status?: string
+}) {
+  const dotColor = statusDotColors[status] || statusDotColors.idle
   return (
-    <span className={`w-4 h-4 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent shrink-0 ${colorClass}`}>
-      {name[0]}
-    </span>
+    <div className="relative w-4 h-4 shrink-0">
+      <AgentIcon
+        agentId={agentId}
+        icon={icon}
+        name={name}
+        size="sm"
+      />
+      <span className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-surface-0 ${dotColor}`} />
+    </div>
   )
 }
 
 export function ThreadList() {
   const { sessions, activeSessionId, setActiveSession, createSession } = useSessionStore()
-  const { connections, launchAgent } = useAgentStore()
+  const { connections, launchAgent, installed } = useAgentStore()
   const project = useProjectStore((s) => s.project)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [useWorktree, setUseWorktree] = useState(false)
@@ -70,7 +66,7 @@ export function ThreadList() {
       }
 
       // Create session
-      await createSession(connection.connectionId, project.path, useWorktree, '')
+      await createSession(connection.connectionId, project.path, useWorktree, '', undefined, undefined)
     } catch (error) {
       console.error('Failed to create thread:', error)
     } finally {
@@ -120,7 +116,9 @@ export function ThreadList() {
           </div>
         ) : (
           <div className="py-1">
-            {sessions.map((session) => (
+            {sessions.map((session) => {
+              const sessionIcon = installed.find((a) => a.registryId === session.agentId)?.icon
+              return (
                 <button
                   key={session.sessionId}
                   onClick={() => setActiveSession(session.sessionId)}
@@ -133,7 +131,12 @@ export function ThreadList() {
                     }
                   `}
                 >
-                  <SessionIcon agentId={session.agentId} name={session.agentName} status={session.status} />
+                  <SessionIcon
+                    agentId={session.agentId}
+                    icon={sessionIcon}
+                    name={session.agentName}
+                    status={session.status}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{session.title}</div>
                     <div className="text-xs text-text-muted truncate">{session.agentName}</div>
@@ -144,7 +147,8 @@ export function ThreadList() {
                     )}
                   </div>
                 </button>
-              ))}
+              )
+            })}
           </div>
         )}
       </div>

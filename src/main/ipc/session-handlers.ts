@@ -60,6 +60,13 @@ export function registerSessionHandlers(): void {
   )
 
   ipcMain.handle(
+    'session:set-interaction-mode',
+    async (_event, { sessionId, mode }: { sessionId: string; mode: InteractionMode }) => {
+      await sessionManager.setInteractionMode(sessionId, mode)
+    }
+  )
+
+  ipcMain.handle(
     'session:set-model',
     async (_event, { sessionId, modelId }: { sessionId: string; modelId: string }) => {
       await sessionManager.setModel(sessionId, modelId)

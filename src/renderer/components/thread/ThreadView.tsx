@@ -13,13 +13,49 @@ interface ThreadViewProps {
 
 export function ThreadView({ session }: ThreadViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef<boolean>(true)
+  const lastScrollTopRef = useRef<number>(0)
 
-  // Auto-scroll to bottom when new messages arrive or errors change
+  const isScrolledToBottom = (element: HTMLDivElement): boolean => {
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    return distanceFromBottom <= 2
+  }
+
+  // Always scroll to bottom when switching sessions.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const element = scrollRef.current
+
+    if (!element) {
+      return
     }
-  }, [session.messages, session.lastError])
+
+    element.scrollTop = element.scrollHeight
+    shouldStickToBottomRef.current = true
+    lastScrollTopRef.current = element.scrollTop
+  }, [session.sessionId])
+
+  // Auto-scroll to bottom when content changes, but only if user was already at the bottom.
+  useEffect(() => {
+    if (scrollRef.current && shouldStickToBottomRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      lastScrollTopRef.current = scrollRef.current.scrollTop
+    }
+  }, [session.messages, session.lastError, session.status])
+
+  const handleScroll = (): void => {
+    if (!scrollRef.current) return
+    const element = scrollRef.current
+    const currentScrollTop = element.scrollTop
+    const wasScrollingUp = currentScrollTop < lastScrollTopRef.current
+
+    if (isScrolledToBottom(element)) {
+      shouldStickToBottomRef.current = true
+    } else if (wasScrollingUp) {
+      shouldStickToBottomRef.current = false
+    }
+
+    lastScrollTopRef.current = currentScrollTop
+  }
 
   const isInitializing = session.status === 'initializing'
   const isInitError = session.status === 'error' && !!session.initError
@@ -34,7 +70,7 @@ export function ThreadView({ session }: ThreadViewProps) {
     session.status === 'error' && !!session.lastError && !session.initError
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
       {isInitializing || isInitError ? (
         <div className="flex flex-col items-center justify-center h-full">
           <InitializationProgress session={session} />
@@ -46,7 +82,12 @@ export function ThreadView({ session }: ThreadViewProps) {
       ) : (
         <div className="space-y-4 max-w-3xl mx-auto">
           {session.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              sessionId={session.sessionId}
+              workingDir={session.workingDir}
+            />
           ))}
 
           {session.status === 'prompting' && (

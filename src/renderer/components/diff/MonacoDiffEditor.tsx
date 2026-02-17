@@ -74,7 +74,7 @@ export function MonacoDiffEditor({
     const editor = monaco.editor.createDiffEditor(containerRef.current, {
       theme: 'agent-manager-dark',
       readOnly: true,
-      renderSideBySide: sideBySide,
+      renderSideBySide: true,
       automaticLayout: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,

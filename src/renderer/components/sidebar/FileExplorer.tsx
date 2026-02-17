@@ -10,7 +10,7 @@ export function FileExplorer() {
     if (project && fileTree.length === 0) {
       loadFileTree()
     }
-  }, [project])
+  }, [project, fileTree.length, loadFileTree])
 
   if (!project) {
     return (

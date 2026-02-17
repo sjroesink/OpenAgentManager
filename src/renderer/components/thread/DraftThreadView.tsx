@@ -1,9 +1,15 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useSessionStore, type DraftThread } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { AgentSelector } from '../sidebar/AgentSelector'
+import { ModelPicker } from '../common/ModelPicker'
 import { Button } from '../common/Button'
 import type { InstalledAgent } from '@shared/types/agent'
+import type { InteractionMode } from '@shared/types/session'
+
+function isInteractionMode(value: string): value is InteractionMode {
+  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+}
 
 interface DraftThreadViewProps {
   draft: DraftThread
@@ -14,12 +20,9 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
   const { workspaces, createWorkspace } = useWorkspaceStore()
   const workspace = workspaces.find((w) => w.id === draft.workspaceId)
 
-  const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const canSend = !!draft.agentId && text.trim().length > 0 && !sending
+  const canCreate = !!draft.agentId && !creating
 
   const handleWorkspaceChange = useCallback(
     async (value: string) => {
@@ -31,9 +34,16 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
           
           // Apply defaults for new workspace
-          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+          if (
+            ws.defaultAgentId ||
+            ws.defaultModelId ||
+            ws.defaultInteractionMode ||
+            ws.defaultUseWorktree !== undefined
+          ) {
             updateDraftThread({
               agentId: ws.defaultAgentId || null,
+              modelId: ws.defaultModelId || null,
+              interactionMode: ws.defaultInteractionMode || null,
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -44,6 +54,11 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             if (config?.defaults) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                modelId: config.defaults.modelId || ws.defaultModelId || null,
+                interactionMode:
+                  (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
+                    ? config.defaults.interactionMode
+                    : ws.defaultInteractionMode) || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }
@@ -59,9 +74,16 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
           updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
           
           // Apply defaults from metadata
-          if (ws.defaultAgentId || ws.defaultUseWorktree !== undefined) {
+          if (
+            ws.defaultAgentId ||
+            ws.defaultModelId ||
+            ws.defaultInteractionMode ||
+            ws.defaultUseWorktree !== undefined
+          ) {
             updateDraftThread({
               agentId: ws.defaultAgentId || null,
+              modelId: ws.defaultModelId || null,
+              interactionMode: ws.defaultInteractionMode || null,
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -72,6 +94,11 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             if (config?.defaults) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
+                modelId: config.defaults.modelId || ws.defaultModelId || null,
+                interactionMode:
+                  (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
+                    ? config.defaults.interactionMode
+                    : ws.defaultInteractionMode) || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }
@@ -86,36 +113,22 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
 
   const handleAgentSelect = useCallback(
     (agent: InstalledAgent) => {
-      updateDraftThread({ agentId: agent.registryId })
+      updateDraftThread({ agentId: agent.registryId, modelId: null })
     },
     [updateDraftThread]
   )
 
-  const handleSubmit = useCallback(async () => {
-    if (!canSend) return
-    setSending(true)
+  const handleCreateThread = useCallback(async () => {
+    if (!canCreate) return
+    setCreating(true)
     setError(null)
     try {
-      await commitDraftThread(text.trim())
+      await commitDraftThread()
     } catch (err) {
       setError((err as Error).message || 'Failed to create thread')
-      setSending(false)
+      setCreating(false)
     }
-  }, [canSend, text, commitDraftThread])
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit()
-    }
-  }
-
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value)
-    const textarea = e.target
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
-  }
+  }, [canCreate, commitDraftThread])
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
@@ -171,6 +184,14 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             <AgentSelector selectedAgentId={draft.agentId} onSelect={handleAgentSelect} />
           </div>
 
+          <ModelPicker
+            agentId={draft.agentId}
+            projectPath={draft.workspacePath}
+            value={draft.modelId}
+            onChange={(modelId) => updateDraftThread({ modelId })}
+            emptyLabel="Default model"
+          />
+
           {/* Worktree toggle */}
           {workspace?.isGitRepo && (
             <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
@@ -184,45 +205,25 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             </label>
           )}
 
-          {/* Prompt */}
+          {/* Thread creation */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              First message
+              Start chat
             </label>
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={handleInput}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  draft.agentId
-                    ? 'Type your message and press Enter to create the thread...'
-                    : 'Select an agent first...'
-                }
-                disabled={!draft.agentId || sending}
-                rows={2}
-                className="w-full bg-surface-1 border border-border rounded-xl px-4 py-2.5 pr-14 text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors disabled:opacity-50"
-                style={{ minHeight: '60px', maxHeight: '200px' }}
-              />
+            <div className="bg-surface-1 border border-border rounded-xl p-4">
+              <p className="text-xs text-text-muted mb-3">
+                Create the thread first. Then you can use the full chat input to select a model
+                and attach images before sending your first message.
+              </p>
               <Button
                 variant="primary"
                 size="md"
-                disabled={!canSend}
-                loading={sending}
-                onClick={handleSubmit}
-                className="absolute right-2 top-1/2 -translate-y-1/2 shrink-0 rounded-xl h-[40px] w-[40px] !p-0"
+                disabled={!canCreate}
+                loading={creating}
+                onClick={handleCreateThread}
+                className="w-full"
               >
-                {!sending && (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                    />
-                  </svg>
-                )}
+                Create Thread
               </Button>
             </div>
 

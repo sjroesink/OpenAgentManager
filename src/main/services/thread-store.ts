@@ -70,7 +70,8 @@ export class ThreadStore {
     if (idx < 0) return
 
     const strippedMessages = messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       return rest
     })
 
@@ -100,6 +101,31 @@ export class ThreadStore {
     // Update electron-store cache (secondary)
     store.set('threads', all)
     logger.info(`Thread renamed: ${sessionId} → ${title}`)
+  }
+
+  /** Update a thread interaction mode — updates BOTH folder and cache. */
+  updateInteractionMode(
+    sessionId: string,
+    interactionMode: import('@shared/types/session').InteractionMode
+  ): void {
+    const all = this.loadAll()
+    const idx = all.findIndex((t) => t.sessionId === sessionId)
+    if (idx < 0) return
+
+    all[idx].interactionMode = interactionMode
+
+    // Rewrite thread manifest to persist metadata (primary)
+    this.writeToFolder(all[idx], (storagePath) => {
+      const sessionLike: SessionInfo = {
+        ...all[idx],
+        connectionId: '',
+        status: 'idle'
+      }
+      folderThreadStore.saveThread(storagePath, sessionLike)
+    })
+
+    // Update electron-store cache (secondary)
+    store.set('threads', all)
   }
 
   /** Load all persisted threads from cache. */
@@ -302,9 +328,11 @@ function toPersistedThread(session: SessionInfo): PersistedThread {
     worktreeBranch: session.worktreeBranch,
     workingDir: session.workingDir,
     messages: session.messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       return rest
     }),
+    interactionMode: session.interactionMode,
     useWorktree: session.useWorktree,
     workspaceId: session.workspaceId,
     parentSessionId: session.parentSessionId

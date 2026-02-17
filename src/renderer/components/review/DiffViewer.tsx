@@ -75,7 +75,6 @@ function SimpleDiffView({ oldContent, newContent }: { oldContent: string; newCon
 
   // Simple diff: show added and removed lines
   // For a real implementation, use a diff algorithm
-  const maxLines = Math.max(oldLines.length, newLines.length)
   const lines: Array<{ type: 'same' | 'add' | 'remove'; text: string; lineNo: number }> = []
 
   // Very basic diff - in production, use a proper diff library

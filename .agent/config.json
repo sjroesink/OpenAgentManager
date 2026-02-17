@@ -1,0 +1,12 @@
+{
+  "specVersion": "1.1",
+  "createdBy": {
+    "name": "AgentManager",
+    "version": "1.0.0"
+  },
+  "defaults": {
+    "agentId": "codex-acp",
+    "modelId": "gpt-5.3-codex/medium",
+    "interactionMode": "act"
+  }
+}

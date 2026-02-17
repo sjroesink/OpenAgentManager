@@ -17,8 +17,10 @@ import {
   MESSAGES_FILE,
   ASSETS_DIR_NAME
 } from '@shared/types/thread-format'
-import { APP_NAME, CLIENT_INFO } from '../../shared/constants'
+import { APP_NAME, CLIENT_INFO } from '@shared/constants'
 import { logger } from '../util/logger'
+
+const INTERACTION_MODE_METADATA_KEY = 'interactionMode'
 
 const DEFAULT_GITIGNORE = `# Agent Thread Storage Format - default .gitignore
 # Conversation threads are not committed by default.
@@ -106,7 +108,8 @@ export class FolderThreadStore {
     // Rewrite messages.jsonl
     const messagesPath = path.join(threadDir, MESSAGES_FILE)
     const lines = messages.map((m) => {
-      const { isStreaming, ...rest } = m
+      const rest = { ...m }
+      delete rest.isStreaming
       const stored = this.messageToStored(rest as Message, threadDir)
       return JSON.stringify(stored)
     })
@@ -283,7 +286,10 @@ export class FolderThreadStore {
           : {})
       },
       stats,
-      parentThreadId: session.parentSessionId
+      parentThreadId: session.parentSessionId,
+      metadata: session.interactionMode
+        ? { [INTERACTION_MODE_METADATA_KEY]: session.interactionMode }
+        : undefined
     }
   }
 
@@ -302,6 +308,10 @@ export class FolderThreadStore {
       worktreeBranch: manifest.context.worktree?.branch,
       workingDir: manifest.context.workingDir,
       messages,
+      interactionMode:
+        typeof manifest.metadata?.[INTERACTION_MODE_METADATA_KEY] === 'string'
+          ? (manifest.metadata?.[INTERACTION_MODE_METADATA_KEY] as import('@shared/types/session').InteractionMode)
+          : undefined,
       useWorktree: !!manifest.context.worktree,
       workspaceId,
       parentSessionId: manifest.parentThreadId
@@ -380,6 +390,7 @@ export class FolderThreadStore {
           workingDir: thread.workingDir,
           status: 'idle',
           messages: thread.messages,
+          interactionMode: thread.interactionMode,
           useWorktree: thread.useWorktree,
           workspaceId: thread.workspaceId
         }

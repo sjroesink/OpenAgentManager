@@ -16,6 +16,10 @@ export interface GeneralSettings {
   showToolCallDetails: boolean
   /** Agent used for auto-generating thread titles from conversation content */
   summarizationAgentId?: string
+  /** Model to use for title generation */
+  summarizationModel?: string
+  /** Terminal shell to use (auto-detected by default based on OS) */
+  terminalShell?: string
 }
 
 export interface GitSettings {
@@ -28,6 +32,7 @@ export interface GitSettings {
 
 export interface AgentSettings {
   apiKey?: string
+  model?: string
   customArgs?: string[]
   customEnv?: Record<string, string>
   autoApproveRead?: boolean

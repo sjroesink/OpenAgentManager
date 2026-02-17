@@ -14,9 +14,9 @@ interface AuthMethodPromptProps {
 /**
  * Renders actionable auth method cards based on the ACP auth method type.
  *
- * - `agent` / untyped: Show description text (user handles auth externally).
+ * - `agent` / untyped: Show description + "Re-authenticate" button (logout + restart).
  * - `env_var`: Show input for the env variable value + restart button.
- * - `terminal`: Show description (terminal integration is future work).
+ * - `terminal`: Show description + "Log in" button (logout + restart).
  */
 export function AuthMethodPrompt({
   authMethods,
@@ -66,11 +66,90 @@ function AuthMethodCard({
     )
   }
 
-  // agent / terminal / fallback: show description
+  if (type === 'terminal') {
+    return (
+      <RelaunchAuthCard
+        method={method}
+        connectionId={connectionId}
+        agentId={agentId}
+        projectPath={projectPath}
+        buttonLabel="Log in"
+      />
+    )
+  }
+
+  // agent type (default): agent handles auth itself (e.g. OAuth)
   return (
-    <div className="text-xs text-text-muted">
-      <span className="font-medium text-text-secondary">{method.name}</span>
-      {method.description && <span className="ml-1">&mdash; {method.description}</span>}
+    <RelaunchAuthCard
+      method={method}
+      connectionId={connectionId}
+      agentId={agentId}
+      projectPath={projectPath}
+      buttonLabel="Re-authenticate"
+    />
+  )
+}
+
+/**
+ * Auth card for `agent` and `terminal` types.
+ * Sends a logout request to clear stale tokens, then terminates and relaunches
+ * the agent so it can re-run its authentication flow.
+ */
+function RelaunchAuthCard({
+  method,
+  connectionId,
+  agentId,
+  projectPath,
+  buttonLabel
+}: {
+  method: AuthMethod
+  connectionId: string
+  agentId: string
+  projectPath: string
+  buttonLabel: string
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { logoutAgent, terminateAgent, launchAgent } = useAgentStore()
+
+  const handleReauth = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      // Try to send logout so the agent can clear stale tokens/sessions
+      try {
+        await logoutAgent(connectionId)
+      } catch {
+        // Agent may already be in a bad state — continue with terminate
+      }
+      await terminateAgent(connectionId)
+      await launchAgent(agentId, projectPath)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="bg-surface-1 rounded-lg px-3 py-2 border border-border">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className="text-xs font-medium text-text-secondary">{method.name}</span>
+          {method.description && (
+            <p className="text-[10px] text-text-muted mt-0.5">{method.description}</p>
+          )}
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={loading}
+          onClick={handleReauth}
+        >
+          {buttonLabel}
+        </Button>
+      </div>
+      {error && <p className="text-[10px] text-error mt-1">{error}</p>}
     </div>
   )
 }

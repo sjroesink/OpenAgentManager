@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { spawn } from 'child_process'
-import type { AgentProjectConfig, WorktreeHooksConfig } from '@shared/types/thread-format'
+import type { AgentProjectConfig } from '@shared/types/thread-format'
 import { AGENT_DIR_NAME } from '@shared/types/thread-format'
 import type { WorktreeHookProgressEvent, HookStep } from '@shared/types/session'
 import { logger } from '../util/logger'

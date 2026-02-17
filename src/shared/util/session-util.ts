@@ -1,4 +1,4 @@
-﻿import type { Message, SessionUpdate, ContentBlock, ToolCallInfo } from '../types/session'
+import type { ContentBlock, Message, SessionUpdate, ToolCallStatus } from '@shared/types/session'
 import { v4 as uuid } from 'uuid'
 
 /**
@@ -37,11 +37,10 @@ export function applyUpdateToMessages(messages: Message[], update: SessionUpdate
     case 'thinking_chunk': {
       if (!update.text) return messages
       return replaceAgentMessage(messages, update.messageId, (msg) => {
-        const lastIdx = findLastIndex(msg.content, (b) => b.type === 'thinking')
-        if (lastIdx >= 0) {
-          const block = msg.content[lastIdx] as { type: 'thinking'; text: string }
+        const lastBlock = msg.content.length > 0 ? msg.content[msg.content.length - 1] : null
+        if (lastBlock && lastBlock.type === 'thinking') {
           const newContent = [...msg.content]
-          newContent[lastIdx] = { type: 'thinking', text: block.text + update.text }
+          newContent[newContent.length - 1] = { type: 'thinking', text: lastBlock.text + update.text }
           return { ...msg, content: newContent }
         }
         return { ...msg, content: [...msg.content, { type: 'thinking', text: update.text }] }
@@ -69,13 +68,43 @@ export function applyUpdateToMessages(messages: Message[], update: SessionUpdate
     }
 
     case 'tool_call_update': {
-      return messages.map((msg) => {
+      let didUpdateById = false
+      const updatedById = messages.map((msg) => {
         if (!msg.toolCalls) return msg
         const tcIdx = msg.toolCalls.findIndex((t) => t.toolCallId === update.toolCallId)
         if (tcIdx < 0) return msg
+        didUpdateById = true
         const newToolCalls = [...msg.toolCalls]
         newToolCalls[tcIdx] = {
           ...newToolCalls[tcIdx],
+          status: update.status,
+          ...(update.output != null ? { output: update.output } : {}),
+          ...(update.locations ? { locations: update.locations } : {})
+        }
+        return { ...msg, toolCalls: newToolCalls }
+      })
+      if (didUpdateById) return updatedById
+
+      // Some agents emit tool_call_update without a stable toolCallId.
+      // Fallback: if we can uniquely identify a single open tool call, update that one.
+      const openToolCalls: Array<{ messageIndex: number; toolCallIndex: number }> = []
+      for (let mi = 0; mi < messages.length; mi++) {
+        const toolCalls = messages[mi].toolCalls
+        if (!toolCalls) continue
+        for (let ti = 0; ti < toolCalls.length; ti++) {
+          if (isOpenToolCallStatus(toolCalls[ti].status)) {
+            openToolCalls.push({ messageIndex: mi, toolCallIndex: ti })
+          }
+        }
+      }
+      if (openToolCalls.length !== 1) return messages
+
+      const [{ messageIndex, toolCallIndex }] = openToolCalls
+      return messages.map((msg, mi) => {
+        if (mi !== messageIndex || !msg.toolCalls) return msg
+        const newToolCalls = [...msg.toolCalls]
+        newToolCalls[toolCallIndex] = {
+          ...newToolCalls[toolCallIndex],
           status: update.status,
           ...(update.output != null ? { output: update.output } : {}),
           ...(update.locations ? { locations: update.locations } : {})
@@ -86,7 +115,21 @@ export function applyUpdateToMessages(messages: Message[], update: SessionUpdate
 
     case 'message_complete': {
       return messages.map((m) =>
-        (m.id === update.messageId || m.isStreaming) ? { ...m, isStreaming: false } : m
+        (m.id === update.messageId || m.isStreaming)
+          ? {
+              ...m,
+              isStreaming: false,
+              toolCalls: m.toolCalls?.map((tc) =>
+                ({
+                  ...tc,
+                  status:
+                    tc.status === 'pending' || tc.status === 'in_progress' || tc.status === 'running'
+                      ? ('completed' as const)
+                      : tc.status
+                })
+              )
+            }
+          : m
       )
     }
 
@@ -125,7 +168,13 @@ function replaceAgentMessage(
     id: messageId === 'current' ? uuid() : messageId,
     role: 'agent',
     content: [],
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    isStreaming: true
   })
   return [...messages, newMsg]
 }
+
+function isOpenToolCallStatus(status: ToolCallStatus): boolean {
+  return status === 'pending' || status === 'in_progress' || status === 'running'
+}
+

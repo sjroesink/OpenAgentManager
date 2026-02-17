@@ -8,6 +8,7 @@ import { TerminalPanel } from '../terminal/TerminalPanel'
 import { DiffView } from '../diff/DiffView'
 import { SettingsView } from '../settings/SettingsView'
 import { AgentBrowserView } from '../registry/AgentBrowserView'
+import { ThreadsOverview } from '../threads/ThreadsOverview'
 import { useUiStore } from '../../stores/ui-store'
 import { useRouteStore } from '../../stores/route-store'
 
@@ -15,6 +16,7 @@ export function AppLayout() {
   const terminalVisible = useUiStore((s) => s.terminalVisible)
   const terminalHeight = useUiStore((s) => s.terminalHeight)
   const currentRoute = useRouteStore((s) => s.current.route)
+  const threadsOverviewOpen = useUiStore((s) => s.threadsOverviewOpen)
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -35,8 +37,14 @@ export function AppLayout() {
             {currentRoute === 'agents' && <AgentBrowserView />}
             {currentRoute === 'home' && (
               <>
-                <MainPanel />
-                <ReviewPanel />
+                {threadsOverviewOpen ? (
+                  <ThreadsOverview />
+                ) : (
+                  <>
+                    <MainPanel />
+                    <ReviewPanel />
+                  </>
+                )}
               </>
             )}
           </div>

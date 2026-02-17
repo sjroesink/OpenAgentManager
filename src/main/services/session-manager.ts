@@ -60,6 +60,9 @@ export class SessionManagerService {
             session.status = 'active'
           } else if (event.update.type === 'error') {
             session.status = 'error'
+          } else if (event.update.type === 'current_mode_update') {
+            session.interactionMode = event.update.modeId as InteractionMode
+            threadStore.updateInteractionMode(event.sessionId, event.update.modeId as InteractionMode)
           }
         }
       })
@@ -120,6 +123,13 @@ export class SessionManagerService {
     // Create ACP session with our stable sessionId for mapping
     const mcpServers = this.getEnabledMcpServers()
     await client.newSession(workingDir, mcpServers, sessionId)
+    if (request.modelId) {
+      try {
+        await client.setModel(sessionId, request.modelId)
+      } catch (error) {
+        logger.warn(`Failed to set model "${request.modelId}" for session ${sessionId}:`, error)
+      }
+    }
 
     const session: SessionInfo = {
       sessionId,
@@ -133,6 +143,7 @@ export class SessionManagerService {
       workingDir,
       status: 'active',
       messages: [],
+      interactionMode: request.interactionMode,
       useWorktree: request.useWorktree,
       workspaceId: request.workspaceId
     }
@@ -231,6 +242,7 @@ export class SessionManagerService {
       workingDir: source.workingDir,
       status: 'active',
       messages: forkedMessages,
+      interactionMode: source.interactionMode,
       useWorktree: source.useWorktree,
       workspaceId: source.workspaceId,
       parentSessionId: sourceSessionId
@@ -299,6 +311,11 @@ export class SessionManagerService {
     }
     client.on('session-update', promptListener)
 
+    if (mode) {
+      session.interactionMode = mode
+      threadStore.updateInteractionMode(sessionId, mode)
+    }
+
     try {
       const result = await client.prompt(sessionId, content, mode)
 
@@ -357,6 +374,32 @@ export class SessionManagerService {
     const client = agentManager.getClient(session.connectionId)
     if (!client) throw new Error(`Agent connection not found: ${session.connectionId}`)
     await client.setMode(sessionId, modeId)
+  }
+
+  async setInteractionMode(sessionId: string, mode: InteractionMode): Promise<void> {
+    let session = this.sessions.get(sessionId)
+    if (!session) {
+      const persisted = threadStore.loadAll().find((t) => t.sessionId === sessionId)
+      if (persisted) {
+        session = {
+          ...persisted,
+          connectionId: '',
+          status: 'idle'
+        }
+        this.sessions.set(sessionId, session)
+      }
+    }
+    if (!session) throw new Error(`Session not found: ${sessionId}`)
+    session.interactionMode = mode
+    threadStore.updateInteractionMode(sessionId, mode)
+
+    const client = agentManager.getClient(session.connectionId)
+    if (!client) return
+    try {
+      await client.setMode(sessionId, mode)
+    } catch (error) {
+      logger.warn(`Failed to apply interaction mode "${mode}" to session ${sessionId}:`, error)
+    }
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {
@@ -430,6 +473,7 @@ export class SessionManagerService {
     logger.info(`generateTitle: generating title for session ${sessionId} with ${session.messages.length} messages`)
 
     const titlePrompt = `Generate a very short title (max 6 words) for the following conversation. Reply with ONLY the title, nothing else. No quotes, no punctuation at the end.\n\n${conversationText}`
+    const summarizationModel = settings.general.summarizationModel
 
     try {
       // Find or launch the summarization agent
@@ -447,6 +491,13 @@ export class SessionManagerService {
       // Create a temporary session for the title generation
       const tempSessionId = `title-${uuid().slice(0, 8)}`
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), tempSessionId)
+      if (summarizationModel) {
+        try {
+          await client.setModel(tempSessionId, summarizationModel)
+        } catch (error) {
+          logger.warn(`Failed to set summarization model "${summarizationModel}":`, error)
+        }
+      }
 
       // Collect response text from streaming events
       let responseText = ''

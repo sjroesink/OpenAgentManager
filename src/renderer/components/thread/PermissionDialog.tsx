@@ -25,9 +25,20 @@ function formatToolDetails(rawInput: unknown): string | null {
 }
 
 export function PermissionDialog() {
-  const { pendingPermissions, respondToPermission } = useSessionStore()
+  const { pendingPermissions, sessions, respondToPermission } = useSessionStore()
 
-  const currentPermission = pendingPermissions[0]
+  const currentPermission = pendingPermissions.find((permission) => {
+    const toolCallId = permission.toolCall.toolCallId
+    if (!toolCallId) return true
+
+    const session = sessions.find((s) => s.sessionId === permission.sessionId)
+    if (!session) return true
+
+    return !session.messages.some((message) =>
+      message.toolCalls?.some((toolCall) => toolCall.toolCallId === toolCallId)
+    )
+  })
+
   if (!currentPermission) return null
 
   const safeToolCall = currentPermission.toolCall
