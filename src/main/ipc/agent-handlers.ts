@@ -77,4 +77,9 @@ export function registerAgentHandlers(): void {
       return agentManager.getModes(agentId, projectPath)
     }
   )
+
+  // --- CLI Detection ---
+  ipcMain.handle('agent:detect-cli', async (_event, { commands }: { commands: string[] }) => {
+    return agentManager.detectCliCommands(commands)
+  })
 }
