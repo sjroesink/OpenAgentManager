@@ -9,7 +9,9 @@ import type {
   AgentCapabilities,
   AuthMethod,
   AgentModelCatalog,
-  AgentModelInfo
+  AgentModelInfo,
+  AgentModeCatalog,
+  AgentModeInfo
 } from '@shared/types/agent'
 import type {
   SessionUpdateEvent,
@@ -54,6 +56,11 @@ interface PendingRequest {
   reject: (error: Error) => void
 }
 
+interface RequestMetadata {
+  method: string
+  internalSessionId?: string
+}
+
 type PermissionResolver = (response: PermissionResponse) => void
 
 interface TerminalProcess {
@@ -72,6 +79,7 @@ export class AcpClient extends EventEmitter {
   private childProcess: ChildProcess | null = null
   private nextId = 1
   private pendingRequests = new Map<number, PendingRequest>()
+  private requestMetadata = new Map<number, RequestMetadata>()
   private buffer = ''
   private mainWindow: BrowserWindow | null = null
   private permissionResolvers = new Map<string, PermissionResolver>()
@@ -87,6 +95,7 @@ export class AcpClient extends EventEmitter {
   agentName = 'Unknown Agent'
   agentVersion = ''
   private modelCatalog: AgentModelCatalog = { availableModels: [] }
+  private modeCatalog: AgentModeCatalog = { availableModes: [] }
 
   constructor(
     public readonly agentId: string,
@@ -207,10 +216,14 @@ export class AcpClient extends EventEmitter {
     internalSessionId?: string,
     options?: { suppressInitialUpdates?: boolean }
   ): Promise<string> {
-    const result = (await this.sendRequest('session/new', {
-      cwd,
-      mcpServers
-    })) as {
+    const result = (await this.sendRequest(
+      'session/new',
+      {
+        cwd,
+        mcpServers
+      },
+      { internalSessionId }
+    )) as {
       sessionId: string
       modes?: {
         currentModeId?: string
@@ -225,10 +238,10 @@ export class AcpClient extends EventEmitter {
     const remoteId = result.sessionId
     const suppressInitialUpdates = options?.suppressInitialUpdates === true
     this.updateModelCatalogFromSessionNewResult(result)
+    this.updateModeCatalogFromSessionNewResult(result)
 
     if (internalSessionId) {
-      this.remoteToInternal.set(remoteId, internalSessionId)
-      this.internalToRemote.set(internalSessionId, remoteId)
+      this.registerSessionMapping(remoteId, internalSessionId)
     }
 
     const sessionId = internalSessionId || remoteId
@@ -348,6 +361,13 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  getModeCatalog(): AgentModeCatalog {
+    return {
+      currentModeId: this.modeCatalog.currentModeId,
+      availableModes: [...this.modeCatalog.availableModes]
+    }
+  }
+
   private updateModelCatalogFromSessionNewResult(result: {
     models?: {
       currentModelId?: string
@@ -387,6 +407,49 @@ export class AcpClient extends EventEmitter {
       this.modelCatalog = {
         currentModelId: modelConfig.currentValue as string | undefined,
         availableModels: configOptions
+      }
+    }
+  }
+
+  private updateModeCatalogFromSessionNewResult(result: {
+    modes?: {
+      currentModeId?: string
+      availableModes?: Array<{ id: string; name: string; description?: string }>
+    }
+    configOptions?: Array<Record<string, unknown>>
+  }): void {
+    if (result.modes?.availableModes && result.modes.availableModes.length > 0) {
+      this.modeCatalog = {
+        currentModeId: result.modes.currentModeId,
+        availableModes: result.modes.availableModes.map((m) => ({
+          modeId: m.id,
+          name: m.name,
+          description: m.description
+        }))
+      }
+      return
+    }
+
+    const modeConfig = result.configOptions?.find((opt) => (opt.category as string) === 'mode')
+    if (!modeConfig) return
+
+    const configOptions = ((modeConfig.options as Array<Record<string, unknown>>) || [])
+      .map((option): AgentModeInfo | null => {
+        const modeId = option.value as string | undefined
+        const name = option.name as string | undefined
+        if (!modeId || !name) return null
+        return {
+          modeId,
+          name,
+          description: option.description as string | undefined
+        }
+      })
+      .filter((option): option is AgentModeInfo => option !== null)
+
+    if (configOptions.length > 0) {
+      this.modeCatalog = {
+        currentModeId: modeConfig.currentValue as string | undefined,
+        availableModes: configOptions
       }
     }
   }
@@ -526,7 +589,11 @@ export class AcpClient extends EventEmitter {
   // Private: JSON-RPC transport
   // ============================
 
-  private async sendRequest(method: string, params?: unknown): Promise<unknown> {
+  private async sendRequest(
+    method: string,
+    params?: unknown,
+    metadata?: { internalSessionId?: string }
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.childProcess || !this.childProcess.stdin) {
         return reject(new Error('Agent process not running'))
@@ -541,6 +608,10 @@ export class AcpClient extends EventEmitter {
       }
 
       this.pendingRequests.set(id, { resolve, reject })
+      this.requestMetadata.set(id, {
+        method,
+        internalSessionId: metadata?.internalSessionId
+      })
 
       const json = JSON.stringify(request) + '\n'
       logger.info(`[${this.agentId}:send] ${json.trim()}`)
@@ -564,6 +635,7 @@ export class AcpClient extends EventEmitter {
 
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id)
+        this.requestMetadata.delete(id)
         reject(new Error(`Request '${method}' timed out after ${timeoutMs}ms`))
       }, timeoutMs)
 
@@ -577,6 +649,7 @@ export class AcpClient extends EventEmitter {
           reject(error)
         }
       })
+      this.requestMetadata.set(id, { method })
 
       const json = JSON.stringify(request) + '\n'
       logger.info(`[${this.agentId}:send] ${json.trim()}`)
@@ -642,9 +715,19 @@ export class AcpClient extends EventEmitter {
 
     // Response to our request
     if (msg.id !== undefined && msg.method === undefined) {
-      const pending = this.pendingRequests.get(Number(msg.id))
+      const responseId = Number(msg.id)
+      const pending = this.pendingRequests.get(responseId)
+      const metadata = this.requestMetadata.get(responseId)
       if (pending) {
-        this.pendingRequests.delete(Number(msg.id))
+        if (!msg.error && metadata?.method === 'session/new' && metadata.internalSessionId) {
+          const result = msg.result as { sessionId?: unknown } | undefined
+          const remoteId = typeof result?.sessionId === 'string' ? result.sessionId : ''
+          if (remoteId) {
+            this.registerSessionMapping(remoteId, metadata.internalSessionId)
+          }
+        }
+        this.pendingRequests.delete(responseId)
+        this.requestMetadata.delete(responseId)
         if (msg.error) {
           pending.reject(new Error(`ACP error ${msg.error.code}: ${msg.error.message}${msg.error.data ? ' | data: ' + JSON.stringify(msg.error.data) : ''}`))
         } else {
@@ -708,6 +791,7 @@ export class AcpClient extends EventEmitter {
         const pending = this.pendingRequests.get(requestId)
         if (pending) {
           this.pendingRequests.delete(requestId)
+          this.requestMetadata.delete(requestId)
           pending.reject(new Error('Request cancelled by agent (code -32800)'))
         }
         break
@@ -1244,6 +1328,7 @@ export class AcpClient extends EventEmitter {
       pending.reject(error)
     }
     this.pendingRequests.clear()
+    this.requestMetadata.clear()
     // Clean up terminals
     for (const [, terminal] of this.terminals) {
       if (!terminal.exited) {
@@ -1251,5 +1336,10 @@ export class AcpClient extends EventEmitter {
       }
     }
     this.terminals.clear()
+  }
+
+  private registerSessionMapping(remoteId: string, internalSessionId: string): void {
+    this.remoteToInternal.set(remoteId, internalSessionId)
+    this.internalToRemote.set(internalSessionId, remoteId)
   }
 }

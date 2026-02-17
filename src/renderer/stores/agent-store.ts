@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { AcpRegistry, AcpRegistryAgent, InstalledAgent, AgentConnection, AgentModelCatalog } from '@shared/types/agent'
+import type {
+  AcpRegistry,
+  AcpRegistryAgent,
+  InstalledAgent,
+  AgentConnection,
+  AgentModelCatalog,
+  AgentModeCatalog
+} from '@shared/types/agent'
 
 interface AgentState {
   // Registry
@@ -14,6 +21,8 @@ interface AgentState {
   connections: AgentConnection[]
   modelsByAgent: Record<string, AgentModelCatalog>
   modelsLoadingByAgent: Record<string, boolean>
+  modesByAgent: Record<string, AgentModeCatalog>
+  modesLoadingByAgent: Record<string, boolean>
 
   // Actions
   fetchRegistry: () => Promise<void>
@@ -26,6 +35,7 @@ interface AgentState {
   authenticateAgent: (connectionId: string, method: string, credentials?: Record<string, string>) => Promise<void>
   updateConnectionStatus: (connectionId: string, status: AgentConnection['status'], error?: string) => void
   loadAgentModels: (agentId: string, projectPath: string) => Promise<AgentModelCatalog>
+  loadAgentModes: (agentId: string, projectPath: string) => Promise<AgentModeCatalog>
 
   // Helpers
   getRegistryAgent: (agentId: string) => AcpRegistryAgent | undefined
@@ -40,6 +50,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   connections: [],
   modelsByAgent: {},
   modelsLoadingByAgent: {},
+  modesByAgent: {},
+  modesLoadingByAgent: {},
 
   fetchRegistry: async () => {
     set({ registryLoading: true, registryError: null })
@@ -124,6 +136,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     } catch (error) {
       set((state) => ({
         modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false }
+      }))
+      throw error
+    }
+  },
+
+  loadAgentModes: async (agentId, projectPath) => {
+    const cached = get().modesByAgent[agentId]
+    if (cached && cached.availableModes.length > 0) return cached
+
+    set((state) => ({
+      modesLoadingByAgent: { ...state.modesLoadingByAgent, [agentId]: true }
+    }))
+    try {
+      const catalog = await window.api.invoke('agent:get-modes', { agentId, projectPath })
+      set((state) => ({
+        modesByAgent: { ...state.modesByAgent, [agentId]: catalog },
+        modesLoadingByAgent: { ...state.modesLoadingByAgent, [agentId]: false }
+      }))
+      return catalog
+    } catch (error) {
+      set((state) => ({
+        modesLoadingByAgent: { ...state.modesLoadingByAgent, [agentId]: false }
       }))
       throw error
     }

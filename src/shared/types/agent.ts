@@ -95,6 +95,17 @@ export interface AgentModelCatalog {
   availableModels: AgentModelInfo[]
 }
 
+export interface AgentModeInfo {
+  modeId: string
+  name: string
+  description?: string
+}
+
+export interface AgentModeCatalog {
+  currentModeId?: string
+  availableModes: AgentModeInfo[]
+}
+
 /** ACP agent capabilities (spec-aligned naming) */
 export interface AgentCapabilities {
   // Spec: top-level boolean for session loading

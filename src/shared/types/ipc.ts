@@ -3,7 +3,13 @@
 // Typed contract between main and renderer processes
 // ============================================================
 
-import type { AcpRegistry, InstalledAgent, AgentConnection, AgentModelCatalog } from './agent'
+import type {
+  AcpRegistry,
+  InstalledAgent,
+  AgentConnection,
+  AgentModelCatalog,
+  AgentModeCatalog
+} from './agent'
 import type {
   SessionInfo,
   PersistedThread,
@@ -44,6 +50,7 @@ export interface IpcChannels {
   'agent:logout': { request: { connectionId: string }; response: void }
   'agent:list-connections': { request: void; response: AgentConnection[] }
   'agent:get-models': { request: { agentId: string; projectPath: string }; response: AgentModelCatalog }
+  'agent:get-modes': { request: { agentId: string; projectPath: string }; response: AgentModeCatalog }
 
   // --- Sessions ---
   'session:create': { request: CreateSessionRequest; response: SessionInfo }

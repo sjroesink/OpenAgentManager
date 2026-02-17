@@ -35,7 +35,7 @@ export function AppLayout() {
             {currentRoute === 'settings' && <SettingsView />}
             {currentRoute === 'agents' && <AgentBrowserView />}
             {currentRoute === 'threads' && <ThreadsOverview />}
-            {currentRoute === 'home' && (
+            {(currentRoute === 'home' || currentRoute === 'new-thread') && (
               <>
                 <MainPanel />
                 <ReviewPanel />

@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 
-export type Route = 'home' | 'settings' | 'agents' | 'diff' | 'threads'
+export type Route = 'home' | 'new-thread' | 'settings' | 'agents' | 'diff' | 'threads'
 
 export interface RouteParams {
   diffFile?: string
+  sessionId?: string
+  draftId?: string
 }
 
 interface RouteEntry {
@@ -34,7 +36,11 @@ export const useRouteStore = create<RouteState>((set, get) => ({
 
   navigate: (route, params) => {
     const state = get()
-    if (state.current.route === route) return
+    const currentParams = state.current.params ?? {}
+    const nextParams = params ?? {}
+    const isSameRoute = state.current.route === route
+    const isSameParams = JSON.stringify(currentParams) === JSON.stringify(nextParams)
+    if (isSameRoute && isSameParams) return
     const newBackStack = [...state.backStack, state.current]
     if (newBackStack.length > MAX_HISTORY) newBackStack.shift()
     set({

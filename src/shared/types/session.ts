@@ -31,7 +31,7 @@ export interface SessionInfo {
 
 export type SessionStatus = 'initializing' | 'creating' | 'active' | 'prompting' | 'idle' | 'cancelled' | 'error'
 
-export type InteractionMode = 'ask' | 'code' | 'plan' | 'act'
+export type InteractionMode = 'ask' | 'code' | 'plan' | 'act' | string
 
 export interface Message {
   id: string

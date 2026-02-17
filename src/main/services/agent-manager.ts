@@ -7,7 +7,8 @@ import type {
   AgentStatus,
   BinaryDistribution,
   AuthMethod,
-  AgentModelCatalog
+  AgentModelCatalog,
+  AgentModeCatalog
 } from '@shared/types/agent'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
@@ -426,6 +427,47 @@ export class AgentManagerService {
     } catch (error) {
       logger.warn(`Failed to probe models for ${agentId}:`, error)
       return connectedClient.getModelCatalog()
+    } finally {
+      if (shouldTerminateAfterProbe) {
+        this.terminate(connectedClient.connectionId)
+      }
+    }
+  }
+
+  async getModes(agentId: string, projectPath: string): Promise<AgentModeCatalog> {
+    let connectedClient = Array.from(this.connections.values()).find(
+      (client) => client.agentId === agentId && client.isRunning
+    )
+
+    if (connectedClient) {
+      const cached = connectedClient.getModeCatalog()
+      if (cached.availableModes.length > 0) return cached
+    }
+
+    let shouldTerminateAfterProbe = false
+    if (!connectedClient) {
+      await this.launch(agentId, projectPath)
+      connectedClient = Array.from(this.connections.values()).find(
+        (client) => client.agentId === agentId && client.isRunning
+      )
+      shouldTerminateAfterProbe = true
+    }
+
+    if (!connectedClient) {
+      return { availableModes: [] }
+    }
+
+    try {
+      await connectedClient.newSession(
+        projectPath,
+        [],
+        `mode-probe-${uuid().slice(0, 8)}`,
+        { suppressInitialUpdates: true }
+      )
+      return connectedClient.getModeCatalog()
+    } catch (error) {
+      logger.warn(`Failed to probe modes for ${agentId}:`, error)
+      return connectedClient.getModeCatalog()
     } finally {
       if (shouldTerminateAfterProbe) {
         this.terminate(connectedClient.connectionId)

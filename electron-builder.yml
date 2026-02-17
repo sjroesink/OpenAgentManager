@@ -17,6 +17,7 @@ extraMetadata:
 
 asar: true
 compression: maximum
+npmRebuild: false
 
 win:
   target:

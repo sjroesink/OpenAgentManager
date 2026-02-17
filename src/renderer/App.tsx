@@ -12,10 +12,21 @@ import { useTheme } from './hooks/useTheme'
 import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
 export default function App() {
-  const { handleSessionUpdate, handlePermissionRequest, handleHookProgress, loadPersistedSessions } = useSessionStore()
+  const {
+    handleSessionUpdate,
+    handlePermissionRequest,
+    handleHookProgress,
+    loadPersistedSessions,
+    setActiveSession,
+    setActiveDraft,
+    activeSessionId,
+    activeDraftId,
+    draftThread
+  } = useSessionStore()
   const { updateConnectionStatus, loadInstalled, fetchRegistry } = useAgentStore()
   const { loadWorkspaces } = useWorkspaceStore()
   const { applyUpdate: applyAcpUpdate } = useAcpFeaturesStore()
+  const currentRoute = useRouteStore((s) => s.current)
 
   // Apply theme from settings (dark/light/system)
   useTheme()
@@ -91,6 +102,39 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Mouse XButton1 / XButton2 navigation (browser-style back/forward)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault()
+        useRouteStore.getState().goBack()
+      }
+      if (e.button === 4) {
+        e.preventDefault()
+        useRouteStore.getState().goForward()
+      }
+    }
+    window.addEventListener('mouseup', handler)
+    return () => window.removeEventListener('mouseup', handler)
+  }, [])
+
+  // Sync history route entry -> active session selection
+  useEffect(() => {
+    if (currentRoute.route !== 'home') return
+    const routeSessionId = currentRoute.params?.sessionId
+    if (!routeSessionId || routeSessionId === activeSessionId) return
+    setActiveSession(routeSessionId)
+  }, [currentRoute, activeSessionId, setActiveSession])
+
+  // Sync history route entry -> active draft selection
+  useEffect(() => {
+    if (currentRoute.route !== 'new-thread') return
+    const routeDraftId = currentRoute.params?.draftId
+    if (!routeDraftId || !draftThread || draftThread.id !== routeDraftId) return
+    if (activeDraftId === routeDraftId && activeSessionId === null) return
+    setActiveDraft(routeDraftId)
+  }, [currentRoute, draftThread, activeDraftId, activeSessionId, setActiveDraft])
 
   return (
     <ErrorBoundary>

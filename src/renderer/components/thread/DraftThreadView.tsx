@@ -5,11 +5,6 @@ import { AgentSelector } from '../sidebar/AgentSelector'
 import { ModelPicker } from '../common/ModelPicker'
 import { Button } from '../common/Button'
 import type { InstalledAgent } from '@shared/types/agent'
-import type { InteractionMode } from '@shared/types/session'
-
-function isInteractionMode(value: string): value is InteractionMode {
-  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
-}
 
 interface DraftThreadViewProps {
   draft: DraftThread
@@ -55,10 +50,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
                 modelId: config.defaults.modelId || ws.defaultModelId || null,
-                interactionMode:
-                  (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
-                    ? config.defaults.interactionMode
-                    : ws.defaultInteractionMode) || null,
+                interactionMode: config.defaults.interactionMode || ws.defaultInteractionMode || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }
@@ -95,10 +87,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               updateDraftThread({
                 agentId: config.defaults.agentId || ws.defaultAgentId || null,
                 modelId: config.defaults.modelId || ws.defaultModelId || null,
-                interactionMode:
-                  (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
-                    ? config.defaults.interactionMode
-                    : ws.defaultInteractionMode) || null,
+                interactionMode: config.defaults.interactionMode || ws.defaultInteractionMode || null,
                 useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
               })
             }

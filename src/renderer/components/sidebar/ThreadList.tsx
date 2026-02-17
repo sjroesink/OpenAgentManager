@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useProjectStore } from '../../stores/project-store'
+import { useRouteStore } from '../../stores/route-store'
 import { AgentSelector } from './AgentSelector'
 import { Button } from '../common/Button'
 import { Badge } from '../common/Badge'
@@ -46,6 +47,7 @@ function SessionIcon({
 export function ThreadList() {
   const { sessions, activeSessionId, setActiveSession, createSession } = useSessionStore()
   const { connections, launchAgent, installed } = useAgentStore()
+  const navigate = useRouteStore((s) => s.navigate)
   const project = useProjectStore((s) => s.project)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [useWorktree, setUseWorktree] = useState(false)
@@ -121,7 +123,10 @@ export function ThreadList() {
               return (
                 <button
                   key={session.sessionId}
-                  onClick={() => setActiveSession(session.sessionId)}
+                  onClick={() => {
+                    setActiveSession(session.sessionId)
+                    navigate('home', { sessionId: session.sessionId })
+                  }}
                   className={`
                     w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition-colors
                     ${

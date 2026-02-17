@@ -6,10 +6,12 @@ import { useRouteStore } from '../../stores/route-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import { AgentIcon } from '../common/AgentIcon'
 import type { WorkspaceInfo } from '@shared/types/workspace'
-import type { SessionInfo, InteractionMode } from '@shared/types/session'
+import type { SessionInfo } from '@shared/types/session'
 
-function isInteractionMode(value: string): value is InteractionMode {
-  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
+function sortSessionsByCreatedAtDesc(a: SessionInfo, b: SessionInfo): number {
+  const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  if (timeDiff !== 0) return timeDiff
+  return b.sessionId.localeCompare(a.sessionId)
 }
 
 const statusDotColors: Record<string, string> = {
@@ -254,7 +256,7 @@ function ThreadItem({
 // ---- Main WorkspaceSection ----
 
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -270,10 +272,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const handleSelectSession = useCallback(
     (sessionId: string | null) => {
       setActiveSession(sessionId)
-      // Navigate home when selecting a thread from a non-home route
-      if (useRouteStore.getState().current.route !== 'home') {
-        navigate('home')
-      }
+      navigate('home', sessionId ? { sessionId } : undefined)
     },
     [setActiveSession, navigate]
   )
@@ -293,14 +292,17 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         map.set(s.parentSessionId, children)
       }
     }
+    for (const children of map.values()) {
+      children.sort(sortSessionsByCreatedAtDesc)
+    }
     return map
   }, [sessions])
 
   const rootSessions = useMemo(() => {
     const sessionIds = new Set(sessions.map((s) => s.sessionId))
-    return sessions.filter(
-      (s) => !s.parentSessionId || !sessionIds.has(s.parentSessionId)
-    )
+    return sessions
+      .filter((s) => !s.parentSessionId || !sessionIds.has(s.parentSessionId))
+      .sort(sortSessionsByCreatedAtDesc)
   }, [sessions])
 
   const pendingPermissionCountBySession = useMemo(() => {
@@ -315,6 +317,10 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
     startDraftThread(workspace.id, workspace.path)
+    const draftId = useSessionStore.getState().draftThread?.id
+    if (draftId) {
+      navigate('new-thread', { draftId })
+    }
 
     // Apply defaults from workspace metadata or config file
     const { updateDraftThread } = useSessionStore.getState()
@@ -341,10 +347,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         updateDraftThread({
           agentId: config.defaults.agentId || workspace.defaultAgentId || null,
           modelId: config.defaults.modelId || workspace.defaultModelId || null,
-          interactionMode:
-            (config.defaults.interactionMode && isInteractionMode(config.defaults.interactionMode)
-              ? config.defaults.interactionMode
-              : workspace.defaultInteractionMode) || null,
+          interactionMode: config.defaults.interactionMode || workspace.defaultInteractionMode || null,
           useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
         })
       }
@@ -482,9 +485,10 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
           {/* Draft thread item */}
           {hasDraftForThis && (
             <button
-              onClick={() =>
-                useSessionStore.setState({ activeDraftId: draftThread!.id, activeSessionId: null })
-              }
+              onClick={() => {
+                setActiveDraft(draftThread!.id)
+                navigate('new-thread', { draftId: draftThread!.id })
+              }}
               className={`
                 w-full text-left pl-8 pr-3 py-1 flex items-start gap-2 transition-colors
                 ${activeDraftId === draftThread!.id

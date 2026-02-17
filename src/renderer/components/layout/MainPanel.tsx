@@ -7,6 +7,7 @@ import { PromptInput } from '../thread/PromptInput'
 import { DraftThreadView } from '../thread/DraftThreadView'
 import { Button } from '../common/Button'
 import { AgentIcon } from '../common/AgentIcon'
+import { useRouteStore } from '../../stores/route-store'
 
 /**
  * Shows worktree hook progress during session creation as a checklist.
@@ -79,6 +80,7 @@ export function MainPanel() {
     deleteSession
   } = useSessionStore()
   const { workspaces, createWorkspace, openInVSCode } = useWorkspaceStore()
+  const navigate = useRouteStore((s) => s.navigate)
   const installedAgents = useAgentStore((s) => s.installed)
   const activeSession = getActiveSession()
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
@@ -127,12 +129,20 @@ export function MainPanel() {
           const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
           if (sorted.length > 0) {
             startDraftThread(sorted[0].id, sorted[0].path)
+            const draftId = useSessionStore.getState().draftThread?.id
+            if (draftId) {
+              navigate('new-thread', { draftId })
+            }
           } else {
             const path = await window.api.invoke('workspace:select-directory', undefined)
             if (!path) return
             try {
               const ws = await createWorkspace(path)
               startDraftThread(ws.id, ws.path)
+              const draftId = useSessionStore.getState().draftThread?.id
+              if (draftId) {
+                navigate('new-thread', { draftId })
+              }
             } catch (err) {
               console.error('Failed to create workspace:', err)
             }

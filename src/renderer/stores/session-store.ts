@@ -17,10 +17,6 @@ import { useWorkspaceStore } from './workspace-store'
 import { useProjectStore } from './project-store'
 import { useAgentStore } from './agent-store'
 
-function isInteractionMode(value: string): value is InteractionMode {
-  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
-}
-
 /** A draft thread that hasn't been created yet — lives only in UI state. */
 export interface DraftThread {
   id: string
@@ -56,6 +52,7 @@ interface SessionState {
   ) => Promise<SessionInfo>
   setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
   setActiveSession: (sessionId: string | null) => void
+  setActiveDraft: (draftId: string | null) => void
   sendPrompt: (content: ContentBlock[], mode?: InteractionMode) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
@@ -301,7 +298,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         )
         if (workspace) {
           useProjectStore.getState().openProject(workspace.path)
-          useWorkspaceStore.getState().touchWorkspace(workspace.id)
         }
 
         // Proactively reconnect idle/disconnected sessions so the agent is ready
@@ -317,6 +313,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
       }
     }
+  },
+
+  setActiveDraft: (draftId) => {
+    set({ activeDraftId: draftId, activeSessionId: null })
   },
 
 sendPrompt: async (content, mode) => {
@@ -875,9 +875,7 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
 
     // ACP spec: mode/config/command/plan/usage updates — consumed by acp-features-store
     case 'current_mode_update':
-      return isInteractionMode(update.modeId)
-        ? { ...session, interactionMode: update.modeId }
-        : session
+      return { ...session, interactionMode: update.modeId }
 
     case 'config_options_update':
     case 'available_commands_update':

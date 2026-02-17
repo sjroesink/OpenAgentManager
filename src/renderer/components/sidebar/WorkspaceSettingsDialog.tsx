@@ -1,15 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { Dialog } from '../common/Dialog'
 import { Button } from '../common/Button'
 import { ModelPicker } from '../common/ModelPicker'
 import type { AgentProjectConfig, WorktreeHooksConfig, SymlinkEntry, PostSetupCommand } from '@shared/types/thread-format'
-import type { InteractionMode } from '@shared/types/session'
-
-function isInteractionMode(value: string): value is InteractionMode {
-  return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
-}
 
 interface WorkspaceSettingsDialogProps {
   open: boolean
@@ -19,7 +14,7 @@ interface WorkspaceSettingsDialogProps {
   workspaceName: string
   defaultAgentId?: string
   defaultModelId?: string
-  defaultInteractionMode?: InteractionMode
+  defaultInteractionMode?: string
   defaultUseWorktree?: boolean
 }
 
@@ -41,11 +36,17 @@ export function WorkspaceSettingsDialog({
   const [initialPrompt, setInitialPrompt] = useState('')
   const [defaultAgentId, setDefaultAgentId] = useState(initialDefaultAgentId || '')
   const [defaultModelId, setDefaultModelId] = useState(initialDefaultModelId || '')
-  const [defaultInteractionMode, setDefaultInteractionMode] = useState<InteractionMode>(initialDefaultInteractionMode || 'ask')
+  const [defaultInteractionMode, setDefaultInteractionMode] = useState(initialDefaultInteractionMode || '')
   const [useWorktree, setUseWorktree] = useState(initialDefaultUseWorktree || false)
   const [fullConfig, setFullConfig] = useState<AgentProjectConfig | null>(null)
   const installedAgents = useAgentStore((s) => s.installed)
+  const loadAgentModes = useAgentStore((s) => s.loadAgentModes)
+  const modesByAgent = useAgentStore((s) => s.modesByAgent)
+  const modesLoadingByAgent = useAgentStore((s) => s.modesLoadingByAgent)
   const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace)
+  const modeCatalog = defaultAgentId ? modesByAgent[defaultAgentId] : undefined
+  const modeOptions = useMemo(() => modeCatalog?.availableModes || [], [modeCatalog])
+  const isLoadingModes = defaultAgentId ? modesLoadingByAgent[defaultAgentId] === true : false
 
   useEffect(() => {
     if (!open) return
@@ -62,7 +63,7 @@ export function WorkspaceSettingsDialog({
         // If config file has defaults, they override the workspace metadata
         if (config?.defaults?.agentId) setDefaultAgentId(config.defaults.agentId)
         if (config?.defaults?.modelId) setDefaultModelId(config.defaults.modelId)
-        if (config?.defaults?.interactionMode && isInteractionMode(config.defaults.interactionMode)) {
+        if (config?.defaults?.interactionMode) {
           setDefaultInteractionMode(config.defaults.interactionMode)
         }
         if (config?.defaults?.useWorktree !== undefined) setUseWorktree(config.defaults.useWorktree)
@@ -70,6 +71,30 @@ export function WorkspaceSettingsDialog({
       .catch((err) => console.error('Failed to load workspace config:', err))
       .finally(() => setLoading(false))
   }, [open, workspacePath])
+
+  useEffect(() => {
+    if (!defaultAgentId) {
+      setDefaultInteractionMode('')
+      return
+    }
+
+    loadAgentModes(defaultAgentId, workspacePath)
+      .then((catalog) => {
+        if (catalog.availableModes.length === 0) {
+          setDefaultInteractionMode('')
+          return
+        }
+
+        setDefaultInteractionMode((prev) => {
+          if (prev && catalog.availableModes.some((mode) => mode.modeId === prev)) return prev
+          return catalog.currentModeId || catalog.availableModes[0].modeId
+        })
+      })
+      .catch((err) => {
+        console.error('Failed to load agent modes:', err)
+        setDefaultInteractionMode('')
+      })
+  }, [defaultAgentId, workspacePath, loadAgentModes])
 
   const handleSave = useCallback(async () => {
     setSaving(true)
@@ -146,6 +171,7 @@ export function WorkspaceSettingsDialog({
                   onChange={(e) => {
                     setDefaultAgentId(e.target.value)
                     setDefaultModelId('')
+                    setDefaultInteractionMode('')
                   }}
                   className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
                 >
@@ -171,13 +197,24 @@ export function WorkspaceSettingsDialog({
                 </label>
                 <select
                   value={defaultInteractionMode}
-                  onChange={(e) => setDefaultInteractionMode(e.target.value as InteractionMode)}
+                  onChange={(e) => setDefaultInteractionMode(e.target.value)}
+                  disabled={!defaultAgentId || isLoadingModes || modeOptions.length === 0}
                   className="w-full px-2.5 py-1.5 text-xs bg-surface-2 border border-border rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
                 >
-                  <option value="ask">Ask</option>
-                  <option value="code">Code</option>
-                  <option value="plan">Plan</option>
-                  <option value="act">Act</option>
+                  <option value="">
+                    {!defaultAgentId
+                      ? 'Select an agent first'
+                      : isLoadingModes
+                        ? 'Loading modes...'
+                        : modeOptions.length === 0
+                          ? 'No modes reported by agent'
+                          : 'No default mode'}
+                  </option>
+                  {modeOptions.map((mode) => (
+                    <option key={mode.modeId} value={mode.modeId}>
+                      {mode.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-center gap-2">

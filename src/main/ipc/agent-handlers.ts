@@ -66,4 +66,11 @@ export function registerAgentHandlers(): void {
       return agentManager.getModels(agentId, projectPath)
     }
   )
+
+  ipcMain.handle(
+    'agent:get-modes',
+    async (_event, { agentId, projectPath }: { agentId: string; projectPath: string }) => {
+      return agentManager.getModes(agentId, projectPath)
+    }
+  )
 }
