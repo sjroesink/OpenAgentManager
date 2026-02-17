@@ -412,38 +412,39 @@ export function PromptInput() {
         </div>
       )}
 
-      <div className="flex items-end gap-2 max-w-3xl mx-auto">
-        <div className="flex-1 relative">
-          {/* Slash command autocomplete menu */}
-          {commandMenuOpen && (
-            <div
-              ref={commandMenuRef}
-              className="absolute bottom-full left-0 mb-1 w-80 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
-            >
-              {filteredCommands.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-text-muted">No matching commands</div>
-              ) : (
-                filteredCommands.map((command, index) => (
-                  <button
-                    key={command.name}
-                    onClick={() => selectCommand(command)}
-                    onMouseEnter={() => setSelectedCommandIndex(index)}
-                    className={`w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
-                      index === selectedCommandIndex ? 'bg-surface-3' : 'hover:bg-surface-3'
-                    }`}
-                  >
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium text-accent">/{command.name}</span>
-                      {command.input?.hint && (
-                        <span className="text-xs text-text-muted italic">{command.input.hint}</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-text-secondary">{command.description}</div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
+      <div className="max-w-3xl mx-auto relative">
+        {/* Slash command autocomplete menu */}
+        {commandMenuOpen && (
+          <div
+            ref={commandMenuRef}
+            className="absolute bottom-full left-0 mb-1 w-80 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
+          >
+            {filteredCommands.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-text-muted">No matching commands</div>
+            ) : (
+              filteredCommands.map((command, index) => (
+                <button
+                  key={command.name}
+                  onClick={() => selectCommand(command)}
+                  onMouseEnter={() => setSelectedCommandIndex(index)}
+                  className={`w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
+                    index === selectedCommandIndex ? 'bg-surface-3' : 'hover:bg-surface-3'
+                  }`}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-medium text-accent">/{command.name}</span>
+                    {command.input?.hint && (
+                      <span className="text-xs text-text-muted italic">{command.input.hint}</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-text-secondary">{command.description}</div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-border bg-surface-1/80 px-3 py-2">
           <textarea
             ref={textareaRef}
             value={isCreating && session?.pendingPrompt ? session.pendingPrompt : text}
@@ -454,57 +455,57 @@ export function PromptInput() {
             disabled={isBusy}
             readOnly={isInitializing || isCreating}
             rows={1}
-            className="w-full bg-surface-1 border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors disabled:opacity-50"
+            className="w-full bg-transparent border-0 rounded-xl px-1 py-2 text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:ring-0 disabled:opacity-50 pr-12"
             style={{ minHeight: '40px', maxHeight: '200px' }}
           />
+
+          <div className="flex items-center gap-1 mt-1 pr-12">
+            {/* Mode selector: only when provided by ACP */}
+            {modeConfig && (
+              <ConfigOptionSelector
+                configOption={modeConfig}
+                onSelect={(value) => handleConfigOptionChange(modeConfig.id, value)}
+                disabled={isModeChangeDisabled}
+              />
+            )}
+
+            {/* Model selector (if agent provides models) */}
+            {modelConfig && (
+              <ConfigOptionSelector
+                configOption={modelConfig}
+                onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
+                disabled={isInitializing || isCreating}
+              />
+            )}
+
+            {/* Other config option selectors */}
+            {otherConfigs.map((config) => (
+              <ConfigOptionSelector
+                key={config.id}
+                configOption={config}
+                onSelect={(value) => handleConfigOptionChange(config.id, value)}
+                disabled={isInitializing || isCreating}
+              />
+            ))}
+          </div>
+
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+            className="absolute bottom-2 right-2 shrink-0 rounded-lg h-[30px] w-[30px] !p-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+              />
+            </svg>
+          </Button>
         </div>
-        <Button
-          variant="primary"
-          size="md"
-          disabled={!canSubmit}
-          onClick={handleSubmit}
-          className="shrink-0 rounded-xl h-[40px] w-[40px] !p-0"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-            />
-          </svg>
-        </Button>
-      </div>
-
-      {/* Bottom bar: config selectors */}
-      <div className="flex items-center gap-1 max-w-3xl mx-auto mt-1.5">
-        {/* Mode selector: only when provided by ACP */}
-        {modeConfig && (
-          <ConfigOptionSelector
-            configOption={modeConfig}
-            onSelect={(value) => handleConfigOptionChange(modeConfig.id, value)}
-            disabled={isModeChangeDisabled}
-          />
-        )}
-
-        {/* Model selector (if agent provides models) */}
-        {modelConfig && (
-          <ConfigOptionSelector
-            configOption={modelConfig}
-            onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
-            disabled={isInitializing || isCreating}
-          />
-        )}
-
-        {/* Other config option selectors */}
-        {otherConfigs.map((config) => (
-          <ConfigOptionSelector
-            key={config.id}
-            configOption={config}
-            onSelect={(value) => handleConfigOptionChange(config.id, value)}
-            disabled={isInitializing || isCreating}
-          />
-        ))}
       </div>
     </div>
   )
