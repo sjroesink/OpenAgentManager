@@ -133,6 +133,22 @@ export class FolderThreadStore {
     }
   }
 
+  updateManifestWorktreeBranch(workspacePath: string, threadId: string, newBranch: string): void {
+    const threadDir = this.getThreadDir(workspacePath, threadId)
+    const manifestPath = path.join(threadDir, THREAD_MANIFEST_FILE)
+    if (!fs.existsSync(manifestPath)) return
+
+    try {
+      const manifest: ThreadManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
+      if (manifest.context.worktree) {
+        manifest.context.worktree.branch = newBranch
+      }
+      this.writeJsonAtomic(manifestPath, manifest)
+    } catch (err) {
+      logger.warn(`Failed to update manifest worktree branch: ${manifestPath}`, err)
+    }
+  }
+
   removeThread(workspacePath: string, threadId: string): void {
     const threadDir = this.getThreadDir(workspacePath, threadId)
     if (fs.existsSync(threadDir)) {
