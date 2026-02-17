@@ -152,6 +152,7 @@ export class SessionManagerService {
 
     this.sessions.set(sessionId, session)
     this.ensureListener(request.connectionId)
+    client.setSessionContext(sessionId, request.workspaceId)
     threadStore.save(session)
     logger.info(`Session created: ${sessionId} on agent ${client.agentName}`)
 
@@ -212,6 +213,7 @@ export class SessionManagerService {
       this.sessions.set(sourceSessionId, source)
       client = agentManager.getClient(source.connectionId)!
       await client.newSession(source.workingDir, this.getEnabledMcpServers(), sourceSessionId)
+      client.setSessionContext(sourceSessionId, source.workspaceId)
     }
 
     // Verify agent connection
@@ -252,6 +254,7 @@ export class SessionManagerService {
 
     this.sessions.set(newSessionId, session)
     this.ensureListener(source.connectionId)
+    client.setSessionContext(newSessionId, source.workspaceId)
     threadStore.save(session)
     logger.info(`Session forked: ${newSessionId} from ${sourceSessionId}`)
 
@@ -288,6 +291,7 @@ export class SessionManagerService {
       
       // Re-create ACP session
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      client.setSessionContext(sessionId, session.workspaceId)
     }
 
     this.ensureListener(session.connectionId)
@@ -590,6 +594,7 @@ export class SessionManagerService {
       const client = agentManager.getClient(session.connectionId)!
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
       this.ensureListener(session.connectionId)
+      client.setSessionContext(sessionId, session.workspaceId)
 
       session.status = 'active'
 

@@ -35,7 +35,6 @@ export interface AgentSettings {
   model?: string
   customArgs?: string[]
   customEnv?: Record<string, string>
-  autoApproveRead?: boolean
   runInWsl?: boolean
   wslDistribution?: string
 }

@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../common/Button'
 import type { AppSettings, McpServerConfig } from '@shared/types/settings'
 import { DEFAULT_SETTINGS } from '@shared/types/settings'
+import type { PermissionRule } from '@shared/types/session'
 
 function SettingsField({
   label,
@@ -29,7 +30,8 @@ export function SettingsView() {
   const navigate = useRouteStore((s) => s.navigate)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [saving, setSaving] = useState(false)
-  const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp'>('general')
+  const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp' | 'permissions'>('general')
+  const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([])
   const [wslInfo, setWslInfo] = useState<{ available: boolean; distributions: string[] }>({
     available: false,
     distributions: []
@@ -39,6 +41,7 @@ export function SettingsView() {
   useEffect(() => {
     window.api.invoke('settings:get', undefined).then(setSettings)
     window.api.invoke('system:wsl-info', undefined).then(setWslInfo).catch(() => {})
+    window.api.invoke('permission:list-rules', {}).then(setPermissionRules).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -64,8 +67,18 @@ export function SettingsView() {
     { id: 'general' as const, label: 'General' },
     { id: 'git' as const, label: 'Git & Worktrees' },
     { id: 'agents' as const, label: 'Agents' },
-    { id: 'mcp' as const, label: 'MCP Servers' }
+    { id: 'mcp' as const, label: 'MCP Servers' },
+    { id: 'permissions' as const, label: 'Permissions' }
   ]
+
+  const removePermissionRule = async (ruleId: string) => {
+    try {
+      await window.api.invoke('permission:remove-rule', { ruleId })
+      setPermissionRules((prev) => prev.filter((r) => r.id !== ruleId))
+    } catch (err) {
+      console.error('[SettingsView] Failed to remove permission rule:', err)
+    }
+  }
 
   const addMcpServer = () => {
     const id = crypto.randomUUID()
@@ -471,6 +484,55 @@ export function SettingsView() {
                   ))}
                   {settings.mcp.servers.length === 0 && (
                     <p className="text-text-muted text-xs">No MCP servers configured yet.</p>
+                  )}
+                </div>
+              )}
+
+              {activeSection === 'permissions' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-text-muted">
+                    When you click &quot;Always&quot; on a permission request, a rule is saved here.
+                    Matching future requests are auto-approved or auto-rejected without prompting.
+                  </p>
+                  {permissionRules.length === 0 ? (
+                    <p className="text-text-muted text-xs">No permission rules saved yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {permissionRules.map((rule) => (
+                        <div key={rule.id} className="border border-border rounded-lg p-3 flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                                  rule.ruleKind === 'allow_always'
+                                    ? 'bg-success/10 text-success'
+                                    : 'bg-error/10 text-error'
+                                }`}
+                              >
+                                {rule.ruleKind === 'allow_always' ? 'Allow' : 'Reject'}
+                              </span>
+                              <span className="text-sm font-medium text-text-primary font-mono">{rule.matchKey}</span>
+                            </div>
+                            <div className="text-xs text-text-muted mt-1">
+                              Scope: <span className="font-medium text-text-secondary">{rule.scope}</span>
+                              {rule.scope === 'thread' && rule.threadId && (
+                                <span> · Thread {rule.threadId.slice(0, 8)}</span>
+                              )}
+                              <span> · Created {new Date(rule.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => removePermissionRule(rule.id)}
+                            className="text-text-muted hover:text-error text-sm px-2 py-1 rounded hover:bg-surface-2 transition-colors shrink-0"
+                            title="Remove rule"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

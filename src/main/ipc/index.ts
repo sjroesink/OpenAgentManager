@@ -7,6 +7,7 @@ import { registerSettingsHandlers } from './settings-handlers'
 import { registerWorkspaceHandlers } from './workspace-handlers'
 import { registerWindowHandlers } from './window-handlers'
 import { registerSystemHandlers } from './system-handlers'
+import { registerPermissionHandlers } from './permission-handlers'
 
 /**
  * Register all IPC handlers.
@@ -22,4 +23,5 @@ export function registerAllIpcHandlers(): void {
   registerWorkspaceHandlers()
   registerWindowHandlers()
   registerSystemHandlers()
+  registerPermissionHandlers()
 }

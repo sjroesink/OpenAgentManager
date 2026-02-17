@@ -210,6 +210,17 @@ export interface PermissionResponse {
   optionId: string
 }
 
+export interface PermissionRule {
+  id: string
+  optionId: string
+  ruleKind: 'allow_always' | 'reject_always'
+  matchKey: string
+  scope: 'thread' | 'workspace'
+  threadId?: string
+  workspaceId: string
+  createdAt: string
+}
+
 export interface CreateSessionRequest {
   connectionId: string
   workingDir: string

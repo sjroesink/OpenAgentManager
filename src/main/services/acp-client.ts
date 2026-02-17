@@ -26,6 +26,7 @@ import type {
   StopReason
 } from '@shared/types/session'
 import { logger } from '../util/logger'
+import { permissionRuleService } from './permission-rule-service'
 
 // ============================================================
 // ACP Client - Wraps a child process agent via ACP protocol
@@ -89,6 +90,9 @@ export class AcpClient extends EventEmitter {
   private remoteToInternal = new Map<string, string>()
   private internalToRemote = new Map<string, string>()
 
+  // Session context: internalSessionId -> { workspaceId }
+  private sessionContext = new Map<string, { workspaceId: string }>()
+
   // Public state
   capabilities: AgentCapabilities | null = null
   authMethods: AuthMethod[] = []
@@ -111,6 +115,11 @@ export class AcpClient extends EventEmitter {
 
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window
+  }
+
+  /** Register session context for permission rule matching */
+  setSessionContext(internalSessionId: string, workspaceId: string): void {
+    this.sessionContext.set(internalSessionId, { workspaceId })
   }
 
   /** Spawn the agent and connect via stdio */
@@ -1088,6 +1097,30 @@ export class AcpClient extends EventEmitter {
           { optionId: 'deny', name: 'Deny', kind: 'reject_once' },
           { optionId: 'allow', name: 'Allow', kind: 'allow_once' }
         )
+      }
+
+      // Check for saved "always" permission rules before prompting the user
+      const ctx = this.sessionContext.get(internalSessionId)
+      if (ctx) {
+        const matchKey = toolCall.kind || toolCall.title || ''
+        if (matchKey) {
+          const rule = permissionRuleService.findMatchingRule(
+            ctx.workspaceId,
+            internalSessionId,
+            matchKey
+          )
+          if (rule) {
+            logger.info(
+              `[${this.agentId}] Auto-resolved permission ${requestId} via rule ${rule.id} (${rule.ruleKind})`
+            )
+            if (id !== undefined) {
+              this.sendResponse(id, {
+                outcome: { outcome: 'selected', optionId: rule.optionId }
+              })
+            }
+            return
+          }
+        }
       }
 
       const event: PermissionRequestEvent = {
