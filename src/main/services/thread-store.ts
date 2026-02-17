@@ -103,6 +103,24 @@ export class ThreadStore {
     logger.info(`Thread renamed: ${sessionId} → ${title}`)
   }
 
+  /** Update a thread's worktree branch name — updates BOTH folder and cache. */
+  updateWorktreeBranch(sessionId: string, newBranch: string): void {
+    const all = this.loadAll()
+    const idx = all.findIndex((t) => t.sessionId === sessionId)
+    if (idx < 0) return
+
+    all[idx].worktreeBranch = newBranch
+
+    // Rewrite thread manifest to persist the new branch name (primary)
+    this.writeToFolder(all[idx], (storagePath) => {
+      folderThreadStore.updateManifestWorktreeBranch(storagePath, sessionId, newBranch)
+    })
+
+    // Update electron-store cache (secondary)
+    store.set('threads', all)
+    logger.info(`Thread branch renamed: ${sessionId} → ${newBranch}`)
+  }
+
   /** Update a thread interaction mode — updates BOTH folder and cache. */
   updateInteractionMode(
     sessionId: string,

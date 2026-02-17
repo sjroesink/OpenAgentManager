@@ -67,6 +67,7 @@ interface SessionState {
   loadPersistedSessions: () => Promise<void>
   deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+  renameWorktreeBranch: (sessionId: string, newBranch: string) => Promise<void>
   generateTitle: (sessionId: string) => Promise<string | null>
   forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
 
@@ -174,6 +175,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await window.api.invoke('session:rename', { sessionId, title })
     } catch (error) {
       console.error('Failed to rename session:', error)
+    }
+  },
+
+  renameWorktreeBranch: async (sessionId, newBranch) => {
+    try {
+      const result = await window.api.invoke('session:rename-branch', { sessionId, newBranch })
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === sessionId ? { ...s, worktreeBranch: result } : s
+        )
+      }))
+    } catch (error) {
+      console.error('Failed to rename worktree branch:', error)
+      throw error
     }
   },
 

@@ -218,6 +218,7 @@ export interface CreateSessionRequest {
   interactionMode?: InteractionMode
   modelId?: string
   title?: string
+  branchName?: string
 }
 
 export interface HookStep {
