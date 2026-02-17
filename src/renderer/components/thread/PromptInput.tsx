@@ -545,7 +545,7 @@ export function PromptInput({
     setCommitResult(null)
     try {
       await sendPrompt([{ type: 'text', text: COMMIT_ALL_PROMPT }])
-      setCommitResult('Commit request sent to agent')
+      setCommitResult(null)
     } catch (error) {
       setCommitResult(
         `Error: ${error instanceof Error ? error.message : 'Failed to send commit request'}`
@@ -734,12 +734,8 @@ export function PromptInput({
               {committing ? 'Sending...' : 'Commit changes'}
             </Button>
           </div>
-          {commitResult && (
-            <div
-              className={`text-[11px] mt-1 px-1 ${
-                commitResult.startsWith('Error') ? 'text-error' : 'text-success'
-              }`}
-            >
+          {commitResult?.startsWith('Error') && (
+            <div className="text-[11px] mt-1 px-1 text-error">
               {commitResult}
             </div>
           )}

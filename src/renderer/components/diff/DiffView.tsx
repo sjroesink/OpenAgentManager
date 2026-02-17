@@ -87,7 +87,7 @@ export function DiffView() {
 
     try {
       await sendPrompt([{ type: 'text', text: COMMIT_ALL_PROMPT }])
-      setCommitResult('Commit request sent to agent')
+      setCommitResult(null)
     } catch (error) {
       setCommitResult(
         `Error: ${error instanceof Error ? error.message : 'Failed to send commit request'}`
@@ -221,11 +221,9 @@ export function DiffView() {
         <div className="flex-1" />
 
         {/* Commit result */}
-        {commitResult && (
+        {commitResult?.startsWith('Error') && (
           <span
-            className={`text-[11px] ${
-              commitResult.startsWith('Error') ? 'text-error' : 'text-success'
-            }`}
+            className="text-[11px] text-error"
           >
             {commitResult}
           </span>

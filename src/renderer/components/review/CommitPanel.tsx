@@ -10,15 +10,43 @@ export function CommitPanel() {
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const [committing, setCommitting] = useState(false)
   const [result, setResult] = useState<string | null>(null)
+  const [hasChanges, setHasChanges] = useState(false)
 
   useEffect(() => {
     setCommitting(false)
     setResult(null)
   }, [activeSession?.sessionId])
 
+  useEffect(() => {
+    const workingDir = activeSession?.workingDir
+    if (!workingDir) {
+      setHasChanges(false)
+      return
+    }
+
+    let cancelled = false
+    window.api
+      .invoke('file:get-changes', { workingDir })
+      .then((changes) => {
+        if (!cancelled) {
+          setHasChanges(changes.length > 0)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasChanges(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSession?.sessionId, activeSession?.workingDir, activeSession?.status])
+
   if (!activeSession) return null
 
   const canCommit =
+    hasChanges &&
     !committing &&
     (activeSession.interactionMode || '').toLowerCase() !== 'read' &&
     activeSession.status !== 'creating' &&
@@ -32,7 +60,7 @@ export function CommitPanel() {
 
     try {
       await sendPrompt([{ type: 'text', text: COMMIT_ALL_PROMPT }])
-      setResult('Commit request sent to agent')
+      setResult(null)
     } catch (error) {
       setResult(`Error: ${error instanceof Error ? error.message : 'Failed to send commit request'}`)
     } finally {
@@ -54,8 +82,8 @@ export function CommitPanel() {
           Commit changes
         </Button>
       </div>
-      {result && (
-        <div className={`text-[11px] ${result.startsWith('Error') ? 'text-error' : 'text-success'}`}>
+      {result?.startsWith('Error') && (
+        <div className="text-[11px] text-error">
           {result}
         </div>
       )}
