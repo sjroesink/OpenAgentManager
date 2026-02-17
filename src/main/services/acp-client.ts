@@ -494,8 +494,8 @@ export class AcpClient extends EventEmitter {
     logger.info(`[${this.agentId}] resolvePermission: requestId=${response.requestId}, optionId=${response.optionId}, hasPending=${this.permissionResolvers.has(response.requestId)}`)
     const resolver = this.permissionResolvers.get(response.requestId)
     if (resolver) {
+      // safeResolve handles deletion and double-call protection
       resolver(response)
-      this.permissionResolvers.delete(response.requestId)
     } else {
       logger.warn(`[${this.agentId}] No pending resolver for requestId=${response.requestId}`)
     }
@@ -1015,15 +1015,19 @@ export class AcpClient extends EventEmitter {
 
       // Setup resolver BEFORE sending to renderer to avoid race conditions
       const responsePromise = new Promise<PermissionResponse>((resolve) => {
-        this.permissionResolvers.set(requestId, resolve)
+        let settled = false
+        const safeResolve = (response: PermissionResponse): void => {
+          if (settled) return
+          settled = true
+          this.permissionResolvers.delete(requestId)
+          resolve(response)
+        }
+        this.permissionResolvers.set(requestId, safeResolve)
 
         // Timeout after 5 minutes - cancel by default
         setTimeout(() => {
-          if (this.permissionResolvers.has(requestId)) {
-            logger.warn(`[${this.agentId}] Permission request ${requestId} timed out.`)
-            this.permissionResolvers.delete(requestId)
-            resolve({ requestId, optionId: '__cancelled__' })
-          }
+          logger.warn(`[${this.agentId}] Permission request ${requestId} timed out.`)
+          safeResolve({ requestId, optionId: '__cancelled__' })
         }, 5 * 60 * 1000)
       })
 

@@ -154,10 +154,20 @@ const routes: Record<string, RouteHandler> = {
   },
 
   '/api/session/permission-response': async (body) => {
-    sessionManager.resolvePermission({
-      requestId: body.requestId as string,
-      optionId: body.optionId as string
-    })
+    const requestId = body.requestId as string
+    const optionId = body.optionId as string
+    // Validate that the request ID is actually pending
+    const pending = sessionManager.listPendingPermissions()
+    const match = pending.find((p) => p.requestId === requestId)
+    if (!match) {
+      throw new Error('No pending permission with that requestId')
+    }
+    // Validate that the option ID is valid for this request
+    const validOption = match.options.some((o) => o.optionId === optionId)
+    if (!validOption) {
+      throw new Error('Invalid optionId for this permission request')
+    }
+    sessionManager.resolvePermission({ requestId, optionId })
     return { success: true }
   },
 
@@ -251,8 +261,8 @@ export function startInternalApi(): void {
   fs.writeFileSync(path.join(dataDir, 'mcp-token'), authToken, 'utf-8')
 
   server = http.createServer(async (req, res) => {
-    // CORS headers for local use
-    res.setHeader('Access-Control-Allow-Origin', '127.0.0.1')
+    // CORS headers for local use — full origin with protocol and port
+    res.setHeader('Access-Control-Allow-Origin', `http://127.0.0.1:${port}`)
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
@@ -287,7 +297,8 @@ export function startInternalApi(): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       logger.error(`MCP API error [${req.url}]:`, message)
-      sendJson(res, 500, { error: message })
+      // Return generic error to client, keep details server-side
+      sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' })
     }
   })
 

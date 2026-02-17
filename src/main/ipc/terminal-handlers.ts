@@ -22,7 +22,9 @@ export function registerTerminalHandlers(): void {
       _event,
       { terminalId, cols, rows }: { terminalId: string; cols: number; rows: number }
     ) => {
-      terminalService.resize(terminalId, cols, rows)
+      const safeCols = Math.max(1, Math.min(500, Math.floor(cols)))
+      const safeRows = Math.max(1, Math.min(200, Math.floor(rows)))
+      terminalService.resize(terminalId, safeCols, safeRows)
     }
   )
 

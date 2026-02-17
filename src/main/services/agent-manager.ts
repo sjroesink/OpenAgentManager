@@ -199,9 +199,20 @@ export class AgentManagerService {
       Object.assign(finalEnv, agentSettings.customEnv)
     }
 
-    // Merge extra env (e.g. from env_var auth method)
+    // Merge extra env (e.g. from env_var auth method) with blocklist
     if (extraEnv) {
-      Object.assign(finalEnv, extraEnv)
+      const ENV_BLOCKLIST = new Set([
+        'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
+        'NODE_OPTIONS', 'NODE_DEBUG', 'PATH', 'HOME', 'SHELL',
+        'ELECTRON_RUN_AS_NODE', 'ELECTRON_ENABLE_LOGGING',
+      ])
+      for (const [key, value] of Object.entries(extraEnv)) {
+        if (ENV_BLOCKLIST.has(key.toUpperCase())) {
+          logger.warn(`Blocked dangerous environment variable: ${key}`)
+          continue
+        }
+        finalEnv[key] = value
+      }
     }
 
     // Add custom args
@@ -220,23 +231,25 @@ export class AgentManagerService {
 
     if (process.platform === 'win32' && agentSettings?.runInWsl) {
       useWsl = true
-      const wslDistroArgs = agentSettings.wslDistribution
-        ? ['-d', agentSettings.wslDistribution]
-        : []
       const wslCwd = toWslPath(projectPath)
 
-      // Build env export string for WSL
-      const envExports = Object.entries(finalEnv)
-        .map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`)
-        .join(' && ')
-
-      const innerCmd = [command, ...finalArgs].join(' ')
-      const fullCmd = envExports
-        ? `${envExports} && cd '${wslCwd}' && ${innerCmd}`
-        : `cd '${wslCwd}' && ${innerCmd}`
+      // Use wsl.exe --env flags to pass env vars safely (no shell interpolation)
+      const wslArgs: string[] = []
+      if (agentSettings.wslDistribution) {
+        wslArgs.push('--distribution', agentSettings.wslDistribution)
+      }
+      for (const [k, v] of Object.entries(finalEnv)) {
+        // Validate key is alphanumeric + underscore only
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+          logger.warn(`Skipping invalid environment variable name: ${k}`)
+          continue
+        }
+        wslArgs.push('--env', `${k}=${v}`)
+      }
+      wslArgs.push('--cd', wslCwd, '--', command, ...finalArgs)
 
       spawnCommand = 'wsl'
-      spawnArgs = [...wslDistroArgs, '--', 'bash', '-ic', fullCmd]
+      spawnArgs = wslArgs
       // cwd doesn't matter for wsl.exe, but keep a valid Windows dir
       spawnCwd = projectPath
 

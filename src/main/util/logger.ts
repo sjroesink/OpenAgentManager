@@ -1,18 +1,22 @@
 const PREFIX = '[AgentManager]'
 
+function timestamp(): string {
+  return new Date().toISOString()
+}
+
 export const logger = {
   info: (msg: string, ...args: unknown[]) => {
-    console.log(`${PREFIX} ${msg}`, ...args)
+    console.log(`${timestamp()} ${PREFIX} [INFO] ${msg}`, ...args)
   },
   warn: (msg: string, ...args: unknown[]) => {
-    console.warn(`${PREFIX} ${msg}`, ...args)
+    console.warn(`${timestamp()} ${PREFIX} [WARN] ${msg}`, ...args)
   },
   error: (msg: string, ...args: unknown[]) => {
-    console.error(`${PREFIX} ${msg}`, ...args)
+    console.error(`${timestamp()} ${PREFIX} [ERROR] ${msg}`, ...args)
   },
   debug: (msg: string, ...args: unknown[]) => {
     if (process.env.DEBUG) {
-      console.debug(`${PREFIX} ${msg}`, ...args)
+      console.debug(`${timestamp()} ${PREFIX} [DEBUG] ${msg}`, ...args)
     }
   }
 }

@@ -83,8 +83,9 @@ export class GitService {
           'code' in error &&
           ((error as NodeJS.ErrnoException).code === 'EBUSY' || (error as NodeJS.ErrnoException).code === 'EPERM')
         if (isRetryable && attempt < maxRetries) {
-          logger.info(`Retry ${attempt}/${maxRetries} removing ${dirPath} after ${delayMs}ms...`)
-          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          const backoff = delayMs * Math.pow(2, attempt - 1)
+          logger.info(`Retry ${attempt}/${maxRetries} removing ${dirPath} after ${backoff}ms...`)
+          await new Promise((resolve) => setTimeout(resolve, backoff))
         } else {
           throw error
         }

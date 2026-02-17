@@ -3,13 +3,13 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import { createWriteStream } from 'fs'
 import { Readable } from 'stream'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { BinaryTarget } from '@shared/types/agent'
 import { getDownloadsDir, getAgentInstallDir } from '../util/paths'
 import { logger } from '../util/logger'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export class DownloadService {
   /**
@@ -72,17 +72,22 @@ export class DownloadService {
   private async extract(archivePath: string, destDir: string): Promise<void> {
     const ext = archivePath.toLowerCase()
 
+    // Use execFileAsync (no shell) to prevent injection via path metacharacters
     if (ext.endsWith('.tar.gz') || ext.endsWith('.tgz')) {
-      await execAsync(`tar -xzf "${archivePath}" -C "${destDir}"`)
+      await execFileAsync('tar', ['-xzf', archivePath, '-C', destDir])
     } else if (ext.endsWith('.tar.xz')) {
-      await execAsync(`tar -xJf "${archivePath}" -C "${destDir}"`)
+      await execFileAsync('tar', ['-xJf', archivePath, '-C', destDir])
     } else if (ext.endsWith('.zip')) {
       if (process.platform === 'win32') {
-        await execAsync(
-          `powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force"`
-        )
+        await execFileAsync('powershell', [
+          '-NoProfile', '-NonInteractive', '-command',
+          'Expand-Archive',
+          '-Path', archivePath,
+          '-DestinationPath', destDir,
+          '-Force'
+        ])
       } else {
-        await execAsync(`unzip -o "${archivePath}" -d "${destDir}"`)
+        await execFileAsync('unzip', ['-o', archivePath, '-d', destDir])
       }
     } else {
       throw new Error(`Unsupported archive format: ${path.extname(archivePath)}`)

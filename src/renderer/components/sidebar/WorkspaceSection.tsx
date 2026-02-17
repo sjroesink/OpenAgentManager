@@ -278,7 +278,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     [setActiveSession, navigate]
   )
 
-  const isExpanded = expandedWorkspaceIds.has(workspace.id)
+  const isExpanded = !!expandedWorkspaceIds[workspace.id]
   const hasDraftForThis = draftThread?.workspaceId === workspace.id
 
   // Build tree structure from flat sessions list

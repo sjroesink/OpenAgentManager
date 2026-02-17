@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
 import type { Message, ContentBlock, PermissionRequestEvent, ToolCallInfo } from '@shared/types/session'
 import { ToolCallCard } from './ToolCallCard'
 import { useSessionStore } from '../../stores/session-store'
@@ -25,7 +26,7 @@ function renderContentBlock(block: ContentBlock, isUser: boolean, index: number)
         `}
       >
         <div className={`markdown-body break-words ${isUser ? '' : 'markdown-body-agent'}`}>
-          <ReactMarkdown>{block.text}</ReactMarkdown>
+          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{block.text}</ReactMarkdown>
         </div>
       </div>
     )
@@ -174,6 +175,13 @@ export function MessageBubble({ message, sessionId, workingDir }: MessageBubbleP
   const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
   const respondToPermission = useSessionStore((s) => s.respondToPermission)
 
+  // All hooks must be called before any conditional returns
+  const toolCallMap = useMemo(
+    () => new Map((message.toolCalls || []).map((tc) => [tc.toolCallId, tc])),
+    [message.toolCalls]
+  )
+  const messageSegments = useMemo(() => buildMessageSegments(message.content), [message.content])
+
   const hasVisibleContent =
     message.content.some((b) => (b.type === 'text' || b.type === 'thinking') && b.text) ||
     message.content.some((b) => b.type === 'image') ||
@@ -183,16 +191,12 @@ export function MessageBubble({ message, sessionId, workingDir }: MessageBubbleP
   // Don't render empty agent bubbles (e.g. from empty session update chunks)
   if (!isUser && !hasVisibleContent) return null
 
-  // Build a lookup map for tool calls by ID
-  const toolCallMap = new Map(
-    (message.toolCalls || []).map((tc) => [tc.toolCallId, tc])
-  )
+  // Build a lookup map for pending permissions by tool call ID
   const pendingPermissionsByToolCallId = new Map(
     pendingPermissions
       .filter((permission) => permission.sessionId === sessionId && !!permission.toolCall.toolCallId)
       .map((permission) => [permission.toolCall.toolCallId, permission])
   )
-  const messageSegments = useMemo(() => buildMessageSegments(message.content), [message.content])
 
   // Check if content has tool_call_ref blocks (new ordered format)
   const hasToolCallRefs = message.content.some((b) => b.type === 'tool_call_ref')

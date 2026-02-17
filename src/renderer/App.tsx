@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppLayout } from './components/layout/AppLayout'
 import { PermissionDialog } from './components/thread/PermissionDialog'
 import { useSessionStore } from './stores/session-store'
@@ -92,9 +93,11 @@ export default function App() {
   }, [])
 
   return (
-    <>
+    <ErrorBoundary>
       <AppLayout />
-      <PermissionDialog />
-    </>
+      <ErrorBoundary fallback={null}>
+        <PermissionDialog />
+      </ErrorBoundary>
+    </ErrorBoundary>
   )
 }

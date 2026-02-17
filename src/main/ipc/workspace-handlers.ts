@@ -1,6 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { workspaceService } from '../services/workspace-service'
+import { logger } from '../util/logger'
 import { worktreeHookService } from '../services/worktree-hook-service'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { AgentProjectConfig } from '@shared/types/thread-format'
@@ -19,6 +20,7 @@ export function registerWorkspaceHandlers(): void {
 
   ipcMain.handle('workspace:remove', async (_event, { id }: { id: string }) => {
     workspaceService.remove(id)
+    return { success: true }
   })
 
   ipcMain.handle(
@@ -53,7 +55,10 @@ export function registerWorkspaceHandlers(): void {
   })
 
   ipcMain.handle('workspace:open-in-vscode', async (_event, { path }: { path: string }) => {
-    exec(`code "${path}"`)
+    // execFile does NOT spawn a shell, so path cannot break out
+    execFile('code', [path], (err) => {
+      if (err) logger.warn('Failed to open VS Code:', err.message)
+    })
   })
 
   ipcMain.handle(
@@ -70,6 +75,7 @@ export function registerWorkspaceHandlers(): void {
       { workspacePath, config }: { workspacePath: string; config: AgentProjectConfig }
     ) => {
       worktreeHookService.writeConfig(workspacePath, config)
+      return { success: true }
     }
   )
 }

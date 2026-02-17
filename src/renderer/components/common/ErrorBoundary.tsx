@@ -2,6 +2,8 @@ import React, { Component } from 'react'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
+  /** Custom fallback UI. If null, the error is silently swallowed. */
+  fallback?: React.ReactNode | null
 }
 
 interface ErrorBoundaryState {
@@ -25,6 +27,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render(): React.ReactNode {
     if (this.state.hasError) {
+      // If fallback is explicitly provided (including null), use it
+      if (this.props.fallback !== undefined) {
+        return this.props.fallback
+      }
+      // Default full-page error UI
       return (
         <div className="flex flex-col items-center justify-center h-screen w-screen bg-surface-0 text-text-primary p-8">
           <h1 className="text-xl font-bold mb-4 text-error">Something went wrong</h1>
