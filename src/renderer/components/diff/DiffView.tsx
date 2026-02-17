@@ -7,8 +7,12 @@ import { MonacoDiffEditor } from './MonacoDiffEditor'
 import { Spinner } from '../common/Spinner'
 import type { FileChange, DiffResult } from '@shared/types/project'
 
+const COMMIT_ALL_PROMPT =
+  'Commit all current changes in this workspace. Stage everything and create an appropriate commit message.'
+
 export function DiffView() {
   const activeSession = useSessionStore((s) => s.getActiveSession())
+  const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const { diffViewSelectedFile, setDiffViewSelectedFile } = useUiStore()
   const navigate = useRouteStore((s) => s.navigate)
 
@@ -17,9 +21,6 @@ export function DiffView() {
   const [loading, setLoading] = useState(false)
   const [loadingDiff, setLoadingDiff] = useState(false)
   const [sideBySide, setSideBySide] = useState(true)
-
-  // Commit state
-  const [commitMessage, setCommitMessage] = useState('')
   const [committing, setCommitting] = useState(false)
   const [commitResult, setCommitResult] = useState<string | null>(null)
 
@@ -40,7 +41,7 @@ export function DiffView() {
       })
       .catch(() => setChanges([]))
       .finally(() => setLoading(false))
-  }, [workingDir, diffViewSelectedFile, setDiffViewSelectedFile])
+  }, [workingDir, diffViewSelectedFile, setDiffViewSelectedFile, activeSession?.status])
 
   // Fetch diff when selected file changes
   useEffect(() => {
@@ -67,31 +68,28 @@ export function DiffView() {
   const currentBranch = activeSession?.worktreeBranch || ''
   const baseBranch = 'main' // TODO: detect dynamically
 
+  const canCommitChanges =
+    changes.length > 0 &&
+    !committing &&
+    activeSession?.status !== 'creating' &&
+    activeSession?.status !== 'initializing'
+
   const handleCommit = useCallback(async () => {
-    if (!commitMessage.trim() || !workingDir) return
+    if (!workingDir || !canCommitChanges) return
     setCommitting(true)
     setCommitResult(null)
+
     try {
-      const result = await window.api.invoke('git:commit', {
-        worktreePath: workingDir,
-        message: commitMessage.trim(),
-        files: ['.']
-      })
-      setCommitResult(`Committed: ${result.hash.slice(0, 7)}`)
-      setCommitMessage('')
-      // Refresh changes
-      const updated = await window.api.invoke('file:get-changes', { workingDir })
-      setChanges(updated)
-      if (updated.length === 0) {
-        setDiffViewSelectedFile(null)
-        setDiff(null)
-      }
+      await sendPrompt([{ type: 'text', text: COMMIT_ALL_PROMPT }])
+      setCommitResult('Commit request sent to agent')
     } catch (error) {
-      setCommitResult(`Error: ${(error as Error).message}`)
+      setCommitResult(
+        `Error: ${error instanceof Error ? error.message : 'Failed to send commit request'}`
+      )
     } finally {
       setCommitting(false)
     }
-  }, [commitMessage, workingDir, setDiffViewSelectedFile])
+  }, [canCommitChanges, sendPrompt, workingDir])
 
   const fileDiff = diff?.files[0]
 
@@ -227,27 +225,16 @@ export function DiffView() {
           </span>
         )}
 
-        {/* Commit input + button */}
-        <input
-          type="text"
-          value={commitMessage}
-          onChange={(e) => setCommitMessage(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && commitMessage.trim()) handleCommit()
-          }}
-          placeholder="Commit message..."
-          className="w-[300px] bg-surface-2 border border-border rounded px-2 py-1 text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-accent/50"
-        />
         <button
           onClick={handleCommit}
-          disabled={!commitMessage.trim() || committing || changes.length === 0}
+          disabled={!canCommitChanges}
           className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-            !commitMessage.trim() || committing || changes.length === 0
+            !canCommitChanges
               ? 'bg-surface-2 text-text-muted cursor-not-allowed'
               : 'bg-accent text-accent-text hover:bg-accent-hover'
           }`}
         >
-          {committing ? 'Committing...' : 'Commit changes'}
+          {committing ? 'Sending...' : 'Commit changes'}
         </button>
       </div>
     </div>
