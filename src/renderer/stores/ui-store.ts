@@ -28,6 +28,10 @@ interface UiState {
   diffViewOpen: boolean
   diffViewSelectedFile: string | null
 
+  // Threads overview
+  threadsOverviewOpen: boolean
+  threadsOverviewSearchQuery: string
+
   // Actions
   toggleSidebar: () => void
   toggleReviewPanel: () => void
@@ -43,6 +47,9 @@ interface UiState {
   openDiffView: (filePath?: string) => void
   closeDiffView: () => void
   setDiffViewSelectedFile: (path: string | null) => void
+  openThreadsOverview: (searchQuery?: string) => void
+  closeThreadsOverview: () => void
+  setThreadsOverviewSearchQuery: (query: string) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -65,6 +72,9 @@ export const useUiStore = create<UiState>((set) => ({
   diffViewOpen: false,
   diffViewSelectedFile: null,
 
+  threadsOverviewOpen: false,
+  threadsOverviewSearchQuery: '',
+
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
   toggleTerminal: () => set((s) => ({ terminalVisible: !s.terminalVisible })),
@@ -78,5 +88,8 @@ export const useUiStore = create<UiState>((set) => ({
   setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
   openDiffView: (filePath) => set({ diffViewOpen: true, diffViewSelectedFile: filePath ?? null }),
   closeDiffView: () => set({ diffViewOpen: false, diffViewSelectedFile: null }),
-  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path })
+  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
+  openThreadsOverview: (searchQuery) => set({ threadsOverviewOpen: true, threadsOverviewSearchQuery: searchQuery ?? '' }),
+  closeThreadsOverview: () => set({ threadsOverviewOpen: false, threadsOverviewSearchQuery: '' }),
+  setThreadsOverviewSearchQuery: (query) => set({ threadsOverviewSearchQuery: query })
 }))
