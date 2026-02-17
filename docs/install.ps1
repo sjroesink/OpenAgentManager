@@ -6,7 +6,11 @@
 $ErrorActionPreference = "Stop"
 $repo = "sjroesink/OpenAgentManager"
 $name = "OpenAgentManager"
-$channel = (($env:OAM_CHANNEL ?? "stable").ToLowerInvariant())
+$channel = $env:OAM_CHANNEL
+if ([string]::IsNullOrWhiteSpace($channel)) {
+    $channel = "stable"
+}
+$channel = $channel.ToLowerInvariant()
 
 Write-Host ""
 Write-Host "  Installing $name..." -ForegroundColor Cyan
