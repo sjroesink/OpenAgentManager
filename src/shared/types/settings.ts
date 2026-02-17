@@ -31,6 +31,12 @@ export interface GitSettings {
 }
 
 export interface AgentSettings {
+  /**
+   * Agent-specific API key values keyed by environment variable name.
+   * Example: { GH_COPILOT_TOKEN: "..." }
+   */
+  apiKeys?: Record<string, string>
+  /** @deprecated Use apiKeys instead. */
   apiKey?: string
   model?: string
   customArgs?: string[]

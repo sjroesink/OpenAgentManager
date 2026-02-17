@@ -7,6 +7,7 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
+  PermissionResolvedEvent,
   WorktreeHookProgressEvent,
   HookStep,
   Message,
@@ -16,6 +17,7 @@ import type {
 import { useWorkspaceStore } from './workspace-store'
 import { useProjectStore } from './project-store'
 import { useAgentStore } from './agent-store'
+import { useAcpFeaturesStore } from './acp-features-store'
 
 /** A draft thread that hasn't been created yet — lives only in UI state. */
 export interface DraftThread {
@@ -53,10 +55,11 @@ interface SessionState {
   setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
   setActiveSession: (sessionId: string | null) => void
   setActiveDraft: (draftId: string | null) => void
-  sendPrompt: (content: ContentBlock[], mode?: InteractionMode) => Promise<void>
+  sendPrompt: (content: ContentBlock[], mode?: InteractionMode, sessionId?: string) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
   handlePermissionRequest: (event: PermissionRequestEvent) => void
+  handlePermissionResolved: (event: PermissionResolvedEvent) => void
   handleHookProgress: (event: WorktreeHookProgressEvent) => void
   respondToPermission: (requestId: string, optionId: string) => void
 
@@ -74,7 +77,7 @@ interface SessionState {
     updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'interactionMode' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>
   ) => void
   discardDraftThread: () => void
-  commitDraftThread: (prompt?: string) => Promise<void>
+  commitDraftThread: (promptContent?: ContentBlock[]) => Promise<void>
   retryInitialization: (sessionId: string) => void
 
   // Helpers
@@ -86,6 +89,7 @@ interface SessionState {
 const reconnectingIds = new Set<string>()
 const promptQueueBySession = new Map<string, Array<{ content: ContentBlock[]; mode?: InteractionMode }>>()
 const processingPromptSessions = new Set<string>()
+const autoTitleRequestedSessionIds = new Set<string>()
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -260,7 +264,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: state.sessions.map((s) =>
           s.sessionId === placeholderId ? session : s
         ),
-        activeSessionId: session.sessionId
+        activeSessionId:
+          state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
       }))
       return session
     } catch (error) {
@@ -319,9 +324,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ activeDraftId: draftId, activeSessionId: null })
   },
 
-sendPrompt: async (content, mode) => {
-    const { activeSessionId } = get()
-    if (!activeSessionId) return
+sendPrompt: async (content, mode, sessionId) => {
+    const targetSessionId = sessionId ?? get().activeSessionId
+    if (!targetSessionId) return
 
     // Optimistically add user message
     const userMessage: Message = {
@@ -333,43 +338,43 @@ sendPrompt: async (content, mode) => {
 
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.sessionId === activeSessionId
+        s.sessionId === targetSessionId
           ? { ...s, status: 'prompting' as const, lastError: undefined, messages: [...s.messages, userMessage] }
           : s
       )
     }))
 
-    const queue = promptQueueBySession.get(activeSessionId) ?? []
+    const queue = promptQueueBySession.get(targetSessionId) ?? []
     queue.push({ content, mode })
-    promptQueueBySession.set(activeSessionId, queue)
+    promptQueueBySession.set(targetSessionId, queue)
 
-    if (processingPromptSessions.has(activeSessionId)) {
+    if (processingPromptSessions.has(targetSessionId)) {
       return
     }
 
-    processingPromptSessions.add(activeSessionId)
+    processingPromptSessions.add(targetSessionId)
 
     try {
-      while ((promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0) {
-        const next = promptQueueBySession.get(activeSessionId)?.shift()
+      while ((promptQueueBySession.get(targetSessionId)?.length ?? 0) > 0) {
+        const next = promptQueueBySession.get(targetSessionId)?.shift()
         if (!next) continue
 
-        const currentSession = get().sessions.find((s) => s.sessionId === activeSessionId)
+        const currentSession = get().sessions.find((s) => s.sessionId === targetSessionId)
         const effectiveMode = next.mode ?? currentSession?.interactionMode
 
         try {
           await window.api.invoke('session:prompt', {
-            sessionId: activeSessionId,
+            sessionId: targetSessionId,
             content: next.content,
             mode: effectiveMode
           })
 
-          const hasPendingItems = (promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0
+          const hasPendingItems = (promptQueueBySession.get(targetSessionId)?.length ?? 0) > 0
           // Prompt completed successfully. Treat this as a hard turn boundary:
           // if an agent failed to emit terminal tool updates, close remaining open calls.
           set((state) => ({
             sessions: state.sessions.map((s) => {
-              if (s.sessionId !== activeSessionId) return s
+              if (s.sessionId !== targetSessionId) return s
               const messages = s.messages.map((m) => {
                 const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
                 if (!m.isStreaming && !hasOpenToolCalls) return m
@@ -391,22 +396,11 @@ sendPrompt: async (content, mode) => {
             })
           }))
 
-          // Auto-generate title after first agent response if title is still default
-          const session = get().sessions.find((s) => s.sessionId === activeSessionId)
-          if (session) {
-            const isDefaultTitle =
-              session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
-            const userMessages = session.messages.filter((m) => m.role === 'user')
-            if (isDefaultTitle && userMessages.length === 1) {
-              // Fire-and-forget: title comes back via session_info_update event
-              window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
-            }
-          }
         } catch (error) {
           const errorMessage = (error as Error).message || 'Prompt failed'
           set((state) => ({
             sessions: state.sessions.map((s) =>
-              s.sessionId === activeSessionId
+              s.sessionId === targetSessionId
                 ? { ...s, status: 'error' as const, lastError: errorMessage }
                 : s
             )
@@ -414,8 +408,8 @@ sendPrompt: async (content, mode) => {
         }
       }
     } finally {
-      processingPromptSessions.delete(activeSessionId)
-      promptQueueBySession.delete(activeSessionId)
+      processingPromptSessions.delete(targetSessionId)
+      promptQueueBySession.delete(targetSessionId)
     }
   },
 
@@ -441,6 +435,17 @@ sendPrompt: async (content, mode) => {
           }
         })
       }))
+
+      // Trigger title generation as soon as the first agent text arrives.
+      if (update.type === 'text_chunk' && !autoTitleRequestedSessionIds.has(sessionId)) {
+        const session = get().sessions.find((s) => s.sessionId === sessionId)
+        if (session && shouldAutoGenerateTitle(session)) {
+          autoTitleRequestedSessionIds.add(sessionId)
+          window.api.invoke('session:generate-title', { sessionId }).catch(() => {
+            autoTitleRequestedSessionIds.delete(sessionId)
+          })
+        }
+      }
     } catch (err) {
       console.error('[session-store] Error handling session update:', err)
     }
@@ -465,6 +470,17 @@ sendPrompt: async (content, mode) => {
       }))
     } catch (err) {
       console.error('[session-store] Error handling hook progress:', err)
+    }
+  },
+
+  handlePermissionResolved: (event) => {
+    try {
+      if (!event || !event.requestId) return
+      set((state) => ({
+        pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== event.requestId)
+      }))
+    } catch (err) {
+      console.error('[session-store] Error handling permission resolution:', err)
     }
   },
 
@@ -503,7 +519,7 @@ sendPrompt: async (content, mode) => {
     set({ draftThread: null, activeDraftId: null })
   },
 
-  commitDraftThread: async (prompt?: string) => {
+  commitDraftThread: async (promptContent?: ContentBlock[]) => {
     const { draftThread } = get()
     if (!draftThread || !draftThread.agentId) return
 
@@ -530,6 +546,9 @@ sendPrompt: async (content, mode) => {
       (a: { registryId: string }) => a.registryId === agentId
     )
 
+    const firstTextBlock = promptContent?.find((block) => block.type === 'text')
+    const pendingPromptText = firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+
     // Create placeholder immediately so the chat shows right away
     const placeholderId = `init-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -545,7 +564,8 @@ sendPrompt: async (content, mode) => {
       interactionMode: draftThread.interactionMode || undefined,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
-      pendingPrompt: prompt,
+      pendingPrompt: pendingPromptText,
+      pendingPromptContent: promptContent,
       initProgress: initSteps
     }
 
@@ -561,17 +581,18 @@ sendPrompt: async (content, mode) => {
     runInitPipeline(set, get, placeholderId, {
       agentId,
       modelId: draftThread.modelId,
+      interactionMode: draftThread.interactionMode || undefined,
       workspacePath: draftThread.workspacePath,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
-      prompt,
+      promptContent,
       existingConnection: existingConnection || null
     })
   },
 
   retryInitialization: (sessionId: string) => {
     const session = get().sessions.find((s) => s.sessionId === sessionId)
-    if (!session || !session.pendingPrompt) return
+    if (!session || (!session.pendingPrompt && !session.pendingPromptContent?.length)) return
 
     const agentStore = useAgentStore.getState()
     const existingConnection = agentStore.connections.find(
@@ -598,10 +619,12 @@ sendPrompt: async (content, mode) => {
     runInitPipeline(set, get, sessionId, {
       agentId: session.agentId,
       modelId: undefined,
+      interactionMode: session.interactionMode,
       workspacePath: session.workingDir,
       useWorktree: session.useWorktree,
       workspaceId: session.workspaceId,
-      prompt: session.pendingPrompt,
+      promptContent: session.pendingPromptContent
+        ?? (session.pendingPrompt ? [{ type: 'text', text: session.pendingPrompt }] : undefined),
       existingConnection: existingConnection || null
     })
   },
@@ -627,7 +650,7 @@ interface InitPipelineParams {
   workspacePath: string
   useWorktree: boolean
   workspaceId: string
-  prompt?: string
+  promptContent?: ContentBlock[]
   existingConnection: { connectionId: string } | null
 }
 
@@ -660,7 +683,7 @@ async function runInitPipeline(
   placeholderId: string,
   params: InitPipelineParams
 ) {
-  const { agentId, modelId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
+  const { agentId, modelId, workspacePath, useWorktree, workspaceId, promptContent, existingConnection } = params
   const agentStore = useAgentStore.getState()
 
   try {
@@ -689,18 +712,36 @@ async function runInitPipeline(
     })
     updateInitStep(set, placeholderId, 'Creating session', 'completed')
 
+    const firstTextBlock = promptContent?.find(
+      (block) => block.type === 'text' && block.text.trim().length > 0
+    )
+    const pendingPromptText = firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+
     // Replace placeholder with real session
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.sessionId === placeholderId ? { ...session, pendingPrompt: prompt } : s
+        s.sessionId === placeholderId
+          ? {
+              ...session,
+              pendingPromptContent: promptContent,
+              pendingPrompt: pendingPromptText
+            }
+          : s
       ),
       activeSessionId:
         state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
     }))
 
+    if (params.interactionMode) {
+      useAcpFeaturesStore.getState().applyUpdate(session.sessionId, {
+        type: 'current_mode_update',
+        modeId: params.interactionMode
+      })
+    }
+
     // Send the first prompt if one was provided.
-    if (prompt && prompt.trim().length > 0) {
-      await get().sendPrompt([{ type: 'text', text: prompt }])
+    if (promptContent && promptContent.length > 0) {
+      await get().sendPrompt(promptContent, undefined, session.sessionId)
     }
   } catch (error) {
     // Mark the running step as failed and set error status
@@ -733,8 +774,22 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   switch (update.type) {
     case 'message_start': {
       const normalizedSession = finalizeOpenToolCalls(session)
+      const lastUserIdx = findLastIndex(normalizedSession.messages, (m) => m.role === 'user')
+      const hasOpenStreamingAgent = normalizedSession.messages.some(
+        (m, index) => index > lastUserIdx && m.role === 'agent' && m.isStreaming
+      )
+      if (update.messageId === 'current' && hasOpenStreamingAgent) {
+        // Some agents emit duplicate/late message_start("current"). Reuse the active bubble.
+        return normalizedSession
+      }
+      const hasExplicitMessage = update.messageId !== 'current' && normalizedSession.messages.some(
+        (m, index) => index > lastUserIdx && m.id === update.messageId
+      )
+      if (hasExplicitMessage) {
+        return normalizedSession
+      }
       const newMsg: Message = {
-        id: update.messageId,
+        id: update.messageId === 'current' ? uuid() : update.messageId,
         role: 'agent',
         content: [],
         timestamp: new Date().toISOString(),
@@ -984,4 +1039,17 @@ function finalizeOpenToolCalls(session: SessionInfo): SessionInfo {
     return normalized
   })
   return didChange ? { ...session, messages } : session
+}
+
+function shouldAutoGenerateTitle(session: SessionInfo): boolean {
+  const isDefaultTitle =
+    session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
+  if (!isDefaultTitle) return false
+
+  const userMessages = session.messages.filter((m) => m.role === 'user')
+  if (userMessages.length !== 1) return false
+
+  return session.messages.some(
+    (m) => m.role === 'agent' && m.content.some((block) => block.type === 'text' && block.text.trim().length > 0)
+  )
 }

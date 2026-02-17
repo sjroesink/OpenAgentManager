@@ -8,6 +8,7 @@ interface ModelPickerProps {
   onChange: (modelId: string | null) => void
   emptyLabel?: string
   className?: string
+  showLabel?: boolean
 }
 
 export function ModelPicker({
@@ -16,7 +17,8 @@ export function ModelPicker({
   value,
   onChange,
   emptyLabel = 'Default model',
-  className
+  className,
+  showLabel = true
 }: ModelPickerProps) {
   const loadAgentModels = useAgentStore((s) => s.loadAgentModels)
   const modelsByAgent = useAgentStore((s) => s.modelsByAgent)
@@ -38,9 +40,11 @@ export function ModelPicker({
 
   return (
     <div>
-      <label className="block text-xs font-medium text-text-secondary mb-1.5">
-        Model
-      </label>
+      {showLabel && (
+        <label className="block text-xs font-medium text-text-secondary mb-1.5">
+          Model
+        </label>
+      )}
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value || null)}

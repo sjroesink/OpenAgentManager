@@ -12,6 +12,10 @@ export function registerAgentHandlers(): void {
     return registryService.getCached()
   })
 
+  ipcMain.handle('registry:get-icon-svg', async (_event, { agentId, icon }: { agentId: string; icon?: string }) => {
+    return registryService.fetchRegistryIconSvg(agentId, icon)
+  })
+
   // --- Agent Management ---
   ipcMain.handle('agent:install', async (_event, { agentId }: { agentId: string }) => {
     return agentManager.install(agentId)

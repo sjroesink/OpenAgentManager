@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "8a8b1767-14ef-4fff-9f68-0b8837d47200",
+  "title": "Inline permissies en sidebar indicator",
+  "createdAt": "2026-02-16T20:29:27.558Z",
+  "updatedAt": "2026-02-16T20:57:40.227Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 8,
+    "userMessageCount": 4,
+    "agentMessageCount": 4,
+    "toolCallCount": 61
+  }
+}

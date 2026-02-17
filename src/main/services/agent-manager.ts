@@ -10,6 +10,7 @@ import type {
   AgentModelCatalog,
   AgentModeCatalog
 } from '@shared/types/agent'
+import { getApiKeyEnvVarsForAgent, getModelArgForAgent, getModelEnvVarsForAgent } from '@shared/config/agent-env'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
 import { downloadService } from './download-service'
@@ -180,19 +181,19 @@ export class AgentManagerService {
     const agentSettings = settingsService.getAgentSettings(agentId)
     const finalEnv: Record<string, string> = { ...env }
 
-    // Add API key if configured
-    if (agentSettings?.apiKey) {
-      // Common env var patterns for API keys
-      finalEnv['API_KEY'] = agentSettings.apiKey
-      finalEnv['ANTHROPIC_API_KEY'] = agentSettings.apiKey
-      finalEnv['OPENAI_API_KEY'] = agentSettings.apiKey
+    // Add mapped API key env vars for this agent.
+    for (const envVarName of getApiKeyEnvVarsForAgent(agentId)) {
+      const mappedValue = this.resolveMappedApiKeyValue(agentId, agentSettings, envVarName)
+      if (mappedValue) {
+        finalEnv[envVarName] = mappedValue
+      }
     }
 
-    // Add model as env var (some agents read this)
+    // Add mapped model env vars for this agent.
     if (agentSettings?.model) {
-      finalEnv['MODEL'] = agentSettings.model
-      finalEnv['ANTHROPIC_MODEL'] = agentSettings.model
-      finalEnv['OPENAI_MODEL'] = agentSettings.model
+      for (const envVarName of getModelEnvVarsForAgent(agentId)) {
+        finalEnv[envVarName] = agentSettings.model
+      }
     }
 
     // Merge custom env
@@ -219,9 +220,12 @@ export class AgentManagerService {
     // Add custom args
     let finalArgs = [...args, ...(agentSettings?.customArgs || [])]
 
-    // Add model as CLI arg for agents like OpenCode that don't support session/set_config_option
+    // Add mapped model CLI arg for agents that require startup model selection.
     if (agentSettings?.model) {
-      finalArgs = [...finalArgs, '--model', agentSettings.model]
+      const modelArg = getModelArgForAgent(agentId)
+      if (modelArg) {
+        finalArgs = [...finalArgs, modelArg, agentSettings.model]
+      }
     }
 
     // Determine spawn parameters (potentially wrapped for WSL)
@@ -317,31 +321,42 @@ export class AgentManagerService {
     agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
     emitStatus: (status: AgentStatus, error?: string) => void
   ): Promise<void> {
-    const apiKey = agentSettings?.apiKey
-    if (!apiKey) return
-
     const envVarMethod = authMethods.find((m) => m.type === 'env_var' && m.varName)
     if (!envVarMethod) {
       logger.debug('No env_var auth method available, skipping auto-authenticate')
       return
     }
 
-    const varName = envVarMethod.varName!.toUpperCase()
-    const providedKeys = ['API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY']
-    const hasEnvVar = providedKeys.some((key) => key.toUpperCase() === varName)
-
-    if (!hasEnvVar) {
-      logger.debug(`API key not provided for env_var auth method: ${varName}`)
+    const envVarName = envVarMethod.varName!
+    const apiKey = this.resolveMappedApiKeyValue(client.agentId, agentSettings, envVarName)
+    if (!apiKey) {
+      logger.debug(`API key not configured for env_var auth method: ${envVarName}`)
       return
     }
 
     try {
       logger.info(`Auto-authenticating with env_var method: ${envVarMethod.id}`)
-      await client.authenticate(envVarMethod.id, { [envVarMethod.varName!]: apiKey })
+      await client.authenticate(envVarMethod.id, { [envVarName]: apiKey })
     } catch (error) {
       logger.warn(`Auto-authenticate failed for ${envVarMethod.id}:`, error)
       emitStatus('error', `Authentication failed: ${(error as Error).message}`)
     }
+  }
+
+  private resolveMappedApiKeyValue(
+    agentId: string,
+    agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
+    envVarName: string
+  ): string | undefined {
+    const configuredValue = agentSettings?.apiKeys?.[envVarName]
+    if (configuredValue) return configuredValue
+
+    // Backward compatibility with legacy single API key setting.
+    const legacyApiKey = agentSettings?.apiKey
+    if (!legacyApiKey) return undefined
+
+    const mappedEnvVars = getApiKeyEnvVarsForAgent(agentId)
+    return mappedEnvVars.includes(envVarName) ? legacyApiKey : undefined
   }
 
   async authenticate(

@@ -165,35 +165,6 @@ export function Toolbar() {
   const isMac = navigator.platform.toLowerCase().includes('mac')
 
   const [menuOpen, setMenuOpen] = useState(false)
-  const [diffTotals, setDiffTotals] = useState({ additions: 0, deletions: 0 })
-
-  useEffect(() => {
-    const workingDir = activeSession?.workingDir
-    if (!workingDir) {
-      setDiffTotals({ additions: 0, deletions: 0 })
-      return
-    }
-
-    let cancelled = false
-
-    window.api
-      .invoke('file:get-changes', { workingDir })
-      .then((changes: Array<{ additions: number; deletions: number }>) => {
-        if (cancelled) return
-        const additions = changes.reduce((sum, change) => sum + change.additions, 0)
-        const deletions = changes.reduce((sum, change) => sum + change.deletions, 0)
-        setDiffTotals({ additions, deletions })
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDiffTotals({ additions: 0, deletions: 0 })
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeSession?.sessionId, activeSession?.workingDir, activeSession?.status])
 
   return (
     <div className="titlebar-drag flex items-center h-10 px-3 bg-surface-1 border-b border-border gap-2 shrink-0 relative">
@@ -285,20 +256,6 @@ export function Toolbar() {
         </svg>
         Agents
       </Button>
-
-      {/* Diff summary + open full diff */}
-      <button
-        onClick={() => navigate('diff')}
-        className={`titlebar-no-drag flex items-center gap-1.5 px-2.5 py-1 rounded border transition-colors ${
-          currentRoute === 'diff'
-            ? 'border-accent/40 bg-accent/20 text-accent'
-            : 'border-border text-text-secondary hover:text-text-primary hover:bg-surface-2'
-        }`}
-        title="Open full diff view (Ctrl+Shift+D)"
-      >
-        <span className="font-mono text-xs text-success">+{diffTotals.additions}</span>
-        <span className="font-mono text-xs text-error">-{diffTotals.deletions}</span>
-      </button>
 
       <button
         onClick={toggleTerminal}

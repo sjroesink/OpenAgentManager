@@ -1,0 +1,24 @@
+{
+  "specVersion": "1.1",
+  "threadId": "47a946f6-b504-48e6-b085-d80b2a88a9c7",
+  "title": "Move Diff Controls to Composer",
+  "createdAt": "2026-02-17T12:27:31.562Z",
+  "updatedAt": "2026-02-17T12:27:33.735Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 27
+  },
+  "metadata": {
+    "interactionMode": "full-access"
+  }
+}

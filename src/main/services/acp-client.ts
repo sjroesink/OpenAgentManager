@@ -214,7 +214,7 @@ export class AcpClient extends EventEmitter {
     cwd: string,
     mcpServers: unknown[] = [],
     internalSessionId?: string,
-    options?: { suppressInitialUpdates?: boolean }
+    options?: { suppressInitialUpdates?: boolean; preferredModeId?: string }
   ): Promise<string> {
     const result = (await this.sendRequest(
       'session/new',
@@ -237,6 +237,7 @@ export class AcpClient extends EventEmitter {
     }
     const remoteId = result.sessionId
     const suppressInitialUpdates = options?.suppressInitialUpdates === true
+    const preferredModeId = options?.preferredModeId
     this.updateModelCatalogFromSessionNewResult(result)
     this.updateModeCatalogFromSessionNewResult(result)
 
@@ -251,12 +252,16 @@ export class AcpClient extends EventEmitter {
       const modes = result.modes
       // Build configOptions from legacy modes field for backward compat
       if (modes.availableModes && modes.availableModes.length > 0) {
+        const resolvedModeId =
+          preferredModeId && modes.availableModes.some((mode) => mode.id === preferredModeId)
+            ? preferredModeId
+            : modes.currentModeId || modes.availableModes[0].id
         const modeConfigOption = {
           id: '_mode',
           name: 'Mode',
           category: 'mode' as const,
           type: 'select' as const,
-          currentValue: modes.currentModeId || modes.availableModes[0].id,
+          currentValue: resolvedModeId,
           options: modes.availableModes.map((m) => ({
             value: m.id,
             name: m.name,
@@ -280,10 +285,10 @@ export class AcpClient extends EventEmitter {
         }
 
         // Also emit current_mode_update
-        if (modes.currentModeId) {
+        if (resolvedModeId) {
           const modeEvent: SessionUpdateEvent = {
             sessionId,
-            update: { type: 'current_mode_update', modeId: modes.currentModeId }
+            update: { type: 'current_mode_update', modeId: resolvedModeId }
           }
           this.emit('session-update', modeEvent)
           if (this.mainWindow && !this.mainWindow.isDestroyed()) {

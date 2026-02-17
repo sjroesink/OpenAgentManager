@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "9754d450-45ef-4b08-a841-00e0617b83b7",
+  "title": "Stable Workspace Order Newest Threads First",
+  "createdAt": "2026-02-17T08:04:05.975Z",
+  "updatedAt": "2026-02-17T08:04:45.061Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 18
+  }
+}

@@ -56,15 +56,22 @@ export const useAcpFeaturesStore = create<AcpFeaturesState>((set, get) => ({
   applyUpdate: (sessionId, update) => {
     switch (update.type) {
       case 'current_mode_update':
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            [sessionId]: {
-              ...(state.sessions[sessionId] || EMPTY_STATE),
-              currentModeId: update.modeId
+        set((state) => {
+          const existing = state.sessions[sessionId] || EMPTY_STATE
+          return {
+            sessions: {
+              ...state.sessions,
+              [sessionId]: {
+                ...existing,
+                currentModeId: update.modeId,
+                // Keep mode selector in sync when the agent reports a mode change.
+                configOptions: existing.configOptions.map((opt) =>
+                  opt.category === 'mode' ? { ...opt, currentValue: update.modeId } : opt
+                )
+              }
             }
           }
-        }))
+        })
         break
 
       case 'config_options_update':

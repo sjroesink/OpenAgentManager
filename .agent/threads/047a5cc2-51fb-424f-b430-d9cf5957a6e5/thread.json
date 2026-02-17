@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "047a5cc2-51fb-424f-b430-d9cf5957a6e5",
+  "title": "Collapsible Workspace Group Headers",
+  "createdAt": "2026-02-17T08:21:57.789Z",
+  "updatedAt": "2026-02-17T08:25:43.975Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 4,
+    "userMessageCount": 2,
+    "agentMessageCount": 2,
+    "toolCallCount": 17
+  }
+}

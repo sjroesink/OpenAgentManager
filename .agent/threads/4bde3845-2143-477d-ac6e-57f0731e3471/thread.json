@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "4bde3845-2143-477d-ac6e-57f0731e3471",
+  "title": "Codex Slash Commands Reconnect Mapping Bug",
+  "createdAt": "2026-02-17T07:42:14.290Z",
+  "updatedAt": "2026-02-17T07:50:45.502Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 4,
+    "userMessageCount": 2,
+    "agentMessageCount": 2,
+    "toolCallCount": 26
+  }
+}

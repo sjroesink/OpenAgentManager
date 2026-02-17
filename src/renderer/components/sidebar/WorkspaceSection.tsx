@@ -314,6 +314,18 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     return counts
   }, [pendingPermissions])
 
+  const workspacePendingPermissionCount = useMemo(() => {
+    if (sessions.length === 0 || pendingPermissions.length === 0) return 0
+    const workspaceSessionIds = new Set(sessions.map((session) => session.sessionId))
+    let count = 0
+    for (const permission of pendingPermissions) {
+      if (workspaceSessionIds.has(permission.sessionId)) {
+        count++
+      }
+    }
+    return count
+  }, [sessions, pendingPermissions])
+
   const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
     startDraftThread(workspace.id, workspace.path)
@@ -339,16 +351,32 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         useWorktree: !!workspace.defaultUseWorktree
       })
     }
+    const baselineDraft = useSessionStore.getState().draftThread
 
     // Then try to fetch from config file (might have more up-to-date or shared values)
     try {
       const config = await window.api.invoke('workspace:get-config', { workspacePath: workspace.path })
       if (config?.defaults) {
+        const currentDraft = useSessionStore.getState().draftThread
+        if (!currentDraft || currentDraft.id !== draftId) return
+
         updateDraftThread({
-          agentId: config.defaults.agentId || workspace.defaultAgentId || null,
-          modelId: config.defaults.modelId || workspace.defaultModelId || null,
-          interactionMode: config.defaults.interactionMode || workspace.defaultInteractionMode || null,
-          useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
+          agentId:
+            currentDraft.agentId === baselineDraft?.agentId
+              ? config.defaults.agentId || workspace.defaultAgentId || null
+              : currentDraft.agentId,
+          modelId:
+            currentDraft.modelId === baselineDraft?.modelId
+              ? config.defaults.modelId || workspace.defaultModelId || null
+              : currentDraft.modelId,
+          interactionMode:
+            currentDraft.interactionMode === baselineDraft?.interactionMode
+              ? config.defaults.interactionMode || workspace.defaultInteractionMode || null
+              : currentDraft.interactionMode,
+          useWorktree:
+            currentDraft.useWorktree === baselineDraft?.useWorktree
+              ? config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
+              : currentDraft.useWorktree
         })
       }
     } catch (err) {
@@ -411,10 +439,13 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   }, [contextMenu])
 
   return (
-    <div>
+    <div className="mx-2 my-1 overflow-hidden rounded-lg border border-border bg-surface-1">
       {/* Workspace header */}
       <div
-        className="group/workspace flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer"
+        className={`
+          group/workspace flex items-center gap-1.5 px-3 py-2 text-xs text-text-secondary cursor-pointer transition-colors
+          ${isExpanded ? 'bg-surface-2 border-b border-border' : 'bg-surface-1 hover:bg-surface-2'}
+        `}
         onClick={() => toggleExpanded(workspace.id)}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -433,6 +464,8 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
 
+        <span className="h-3.5 w-0.5 rounded-full bg-accent opacity-70 shrink-0" />
+
         {/* Folder icon */}
         <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
@@ -445,6 +478,23 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
         {/* Workspace name */}
         <span className="flex-1 font-medium truncate">{workspace.name}</span>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <span
+            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-3 text-text-secondary"
+            title={`${sessions.length} ${sessions.length === 1 ? 'thread' : 'threads'}`}
+          >
+            {sessions.length}
+          </span>
+          {workspacePendingPermissionCount > 0 && (
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white"
+              title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
+            >
+              {workspacePendingPermissionCount}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto">
           <button
@@ -481,7 +531,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
       {/* Thread tree */}
       {isExpanded && (
-        <div>
+        <div className="py-1">
           {/* Draft thread item */}
           {hasDraftForThis && (
             <button

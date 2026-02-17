@@ -1,6 +1,6 @@
 import fs from 'fs'
 import type { AcpRegistry } from '@shared/types/agent'
-import { ACP_REGISTRY_URL, REGISTRY_CACHE_TTL_MS } from '@shared/constants'
+import { ACP_CDN_URL, ACP_REGISTRY_URL, REGISTRY_CACHE_TTL_MS, getAgentIconUrl } from '@shared/constants'
 import { getRegistryCachePath } from '../util/paths'
 import { logger } from '../util/logger'
 
@@ -72,6 +72,26 @@ export class RegistryService {
       return diskCache.data
     }
     return null
+  }
+
+  /** Fetch a trusted ACP registry SVG icon. */
+  async fetchRegistryIconSvg(agentId: string, icon?: string): Promise<string | null> {
+    const iconUrl = getAgentIconUrl(agentId, icon)
+    if (!iconUrl || !iconUrl.startsWith(ACP_CDN_URL)) {
+      return null
+    }
+
+    const response = await fetch(iconUrl)
+    if (!response.ok) {
+      throw new Error(`Icon fetch failed: ${response.status} ${response.statusText}`)
+    }
+
+    const svg = await response.text()
+    if (!svg.includes('<svg')) {
+      return null
+    }
+
+    return svg
   }
 
   private loadFromDisk(): CachedRegistry | null {

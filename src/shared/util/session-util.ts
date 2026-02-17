@@ -8,8 +8,21 @@ import { v4 as uuid } from 'uuid'
 export function applyUpdateToMessages(messages: Message[], update: SessionUpdate): Message[] {
   switch (update.type) {
     case 'message_start': {
+      const lastUserIdx = findLastIndex(messages, (m) => m.role === 'user')
+      const hasOpenStreamingAgent = messages.some(
+        (m, index) => index > lastUserIdx && m.role === 'agent' && m.isStreaming
+      )
+      if (update.messageId === 'current' && hasOpenStreamingAgent) {
+        return messages
+      }
+      const hasExplicitMessage = update.messageId !== 'current' && messages.some(
+        (m, index) => index > lastUserIdx && m.id === update.messageId
+      )
+      if (hasExplicitMessage) {
+        return messages
+      }
       const newMsg: Message = {
-        id: update.messageId,
+        id: update.messageId === 'current' ? uuid() : update.messageId,
         role: 'agent',
         content: [],
         timestamp: new Date().toISOString(),
@@ -152,9 +165,24 @@ function replaceAgentMessage(
 ): Message[] {
   const lastUserIdx = findLastIndex(messages, (m) => m.role === 'user')
 
-  const idx = messages.findIndex((m, i) =>
-    i > lastUserIdx && (m.id === messageId || (messageId === 'current' && m.role === 'agent'))
-  )
+  let idx = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (i <= lastUserIdx) break
+    if (messages[i].id === messageId) {
+      idx = i
+      break
+    }
+  }
+
+  if (idx < 0) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (i <= lastUserIdx) break
+      if (messages[i].role === 'agent' && messages[i].isStreaming) {
+        idx = i
+        break
+      }
+    }
+  }
 
   if (idx >= 0) {
     const newMessages = [...messages]

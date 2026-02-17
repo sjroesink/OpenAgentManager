@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "01a3f430-8770-45c3-9f30-61228dfed25c",
+  "title": "Full Access bij nieuwe thread",
+  "createdAt": "2026-02-17T09:53:09.007Z",
+  "updatedAt": "2026-02-17T09:53:12.173Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 23
+  }
+}

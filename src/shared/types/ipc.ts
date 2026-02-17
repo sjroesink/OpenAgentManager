@@ -18,6 +18,7 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
+  PermissionResolvedEvent,
   InteractionMode,
   WorktreeHookProgressEvent,
   ConfigOption,
@@ -36,6 +37,7 @@ export interface IpcChannels {
   // --- Registry ---
   'registry:fetch': { request: void; response: AcpRegistry }
   'registry:get-cached': { request: void; response: AcpRegistry | null }
+  'registry:get-icon-svg': { request: { agentId: string; icon?: string }; response: string | null }
 
   // --- Agent Management ---
   'agent:install': { request: { agentId: string }; response: InstalledAgent }
@@ -157,6 +159,7 @@ export interface IpcChannels {
 export interface IpcEvents {
   'session:update': SessionUpdateEvent
   'session:permission-request': PermissionRequestEvent
+  'session:permission-resolved': PermissionResolvedEvent
   'session:hook-progress': WorktreeHookProgressEvent
   'terminal:data': { terminalId: string; data: string }
   'agent:status-change': { connectionId: string; status: AgentConnection['status']; error?: string }

@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "8ecf5f91-2527-4fcd-9628-619167294cf0",
+  "title": "Sidebar Search Button and Focus Fix",
+  "createdAt": "2026-02-17T03:57:14.016Z",
+  "updatedAt": "2026-02-17T04:02:44.112Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 19
+  }
+}

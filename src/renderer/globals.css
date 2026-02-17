@@ -312,3 +312,9 @@ body,
 .panel-transition {
   transition: width 0.2s ease, height 0.2s ease;
 }
+
+/* Force monochrome agent glyphs to render white in compact UI contexts */
+.agent-icon-inline svg * {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}

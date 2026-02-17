@@ -124,7 +124,16 @@ export class SessionManagerService {
 
     // Create ACP session with our stable sessionId for mapping
     const mcpServers = this.getEnabledMcpServers()
-    await client.newSession(workingDir, mcpServers, sessionId)
+    await client.newSession(workingDir, mcpServers, sessionId, {
+      preferredModeId: request.interactionMode
+    })
+    if (request.interactionMode) {
+      try {
+        await client.setMode(sessionId, request.interactionMode)
+      } catch (error) {
+        logger.warn(`Failed to set interaction mode "${request.interactionMode}" for session ${sessionId}:`, error)
+      }
+    }
     if (request.modelId) {
       try {
         await client.setModel(sessionId, request.modelId)
@@ -339,6 +348,13 @@ export class SessionManagerService {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
 
+    // If the prompt is currently blocked on permissions, dismiss them as cancelled.
+    const pendingForSession = Array.from(this.pendingPermissions.values())
+      .filter((permission) => permission.sessionId === sessionId)
+    for (const permission of pendingForSession) {
+      this.resolvePermission({ requestId: permission.requestId, optionId: '__cancelled__' })
+    }
+
     const client = agentManager.getClient(session.connectionId)
     if (client) {
       client.cancel(sessionId)
@@ -350,6 +366,11 @@ export class SessionManagerService {
   resolvePermission(response: PermissionResponse): void {
     // Remove from pending tracking
     this.pendingPermissions.delete(response.requestId)
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('session:permission-resolved', {
+        requestId: response.requestId
+      })
+    }
 
     // Forward the permission response to all active agent connections.
     // Each client will check if it has a pending resolver for this requestId.
@@ -457,14 +478,16 @@ export class SessionManagerService {
 
     // Build a summary of the conversation for the title prompt
     const conversationText = session.messages
-      .filter((m) => m.content.length > 0)
       .map((m) => {
         const text = m.content
           .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
           .map((b) => b.text)
           .join('\n')
+          .trim()
+        if (!text) return null
         return `${m.role === 'user' ? 'User' : 'Agent'}: ${text}`
       })
+      .filter((line): line is string => !!line)
       .join('\n\n')
 
     if (!conversationText.trim()) {
@@ -589,6 +612,13 @@ export class SessionManagerService {
 
       const client = agentManager.getClient(session.connectionId)!
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      if (session.interactionMode) {
+        try {
+          await client.setMode(sessionId, session.interactionMode)
+        } catch (error) {
+          logger.warn(`Failed to restore interaction mode "${session.interactionMode}" for session ${sessionId}:`, error)
+        }
+      }
       this.ensureListener(session.connectionId)
 
       session.status = 'active'

@@ -1,0 +1,24 @@
+{
+  "specVersion": "1.1",
+  "threadId": "990e6ca0-a27b-4d49-a501-e3f3558e7e78",
+  "title": "Cancel Clears Pending Permissions",
+  "createdAt": "2026-02-17T08:52:39.498Z",
+  "updatedAt": "2026-02-17T08:58:03.320Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 23
+  },
+  "metadata": {
+    "interactionMode": "read-only"
+  }
+}

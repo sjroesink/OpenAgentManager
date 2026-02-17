@@ -21,6 +21,8 @@ export interface SessionInfo {
   parentSessionId?: string
   /** The first prompt to be sent once session creation completes. UI-only field. */
   pendingPrompt?: string
+  /** Rich first prompt content (text/images) to send after initialization. UI-only field. */
+  pendingPromptContent?: ContentBlock[]
   /** Tracks agent initialization progress (launching, connecting, creating session). UI-only field. */
   initProgress?: HookStep[]
   /** Error message from failed initialization. UI-only field. */
@@ -208,6 +210,10 @@ export interface PermissionRequestEvent {
 export interface PermissionResponse {
   requestId: string
   optionId: string
+}
+
+export interface PermissionResolvedEvent {
+  requestId: string
 }
 
 export interface CreateSessionRequest {
