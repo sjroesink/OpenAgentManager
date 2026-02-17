@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useUiStore } from '../../stores/ui-store'
+import { useRouteStore } from '../../stores/route-store'
 import { DiffFileTree } from './DiffFileTree'
 import { MonacoDiffEditor } from './MonacoDiffEditor'
 import { Spinner } from '../common/Spinner'
@@ -8,7 +9,8 @@ import type { FileChange, DiffResult } from '@shared/types/project'
 
 export function DiffView() {
   const activeSession = useSessionStore((s) => s.getActiveSession())
-  const { diffViewSelectedFile, setDiffViewSelectedFile, closeDiffView } = useUiStore()
+  const { diffViewSelectedFile, setDiffViewSelectedFile } = useUiStore()
+  const navigate = useRouteStore((s) => s.navigate)
 
   const [changes, setChanges] = useState<FileChange[]>([])
   const [diff, setDiff] = useState<DiffResult | null>(null)
@@ -96,11 +98,11 @@ export function DiffView() {
   // Handle keyboard shortcut to close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeDiffView()
+      if (e.key === 'Escape') navigate('home')
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [closeDiffView])
+  }, [navigate])
 
   if (!activeSession) {
     return (
@@ -116,7 +118,7 @@ export function DiffView() {
       <div className="flex items-center px-3 py-1.5 border-b border-border bg-surface-1 shrink-0 gap-2">
         {/* Close button */}
         <button
-          onClick={closeDiffView}
+          onClick={() => navigate('home')}
           className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
           title="Close diff view (Esc)"
         >

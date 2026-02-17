@@ -79,6 +79,10 @@ function ToolCallGroup({
   onPermissionRespond
 }: ToolCallGroupProps) {
   const [expanded, setExpanded] = useState(false)
+  const requiresUserAction = toolCalls.some((toolCall) =>
+    pendingPermissionsByToolCallId.has(toolCall.toolCallId)
+  )
+  const isExpanded = expanded || requiresUserAction
   const doneCount = toolCalls.filter((toolCall) => toolCall.status === 'completed').length
   const runningCount = toolCalls.filter(
     (toolCall) => toolCall.status === 'running' || toolCall.status === 'in_progress'
@@ -88,7 +92,10 @@ function ToolCallGroup({
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-surface-1">
       <button
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          if (requiresUserAction) return
+          setExpanded((value) => !value)
+        }}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-surface-2 transition-colors"
       >
         <span className="text-text-primary font-medium">Tool calls ({toolCalls.length})</span>
@@ -97,7 +104,7 @@ function ToolCallGroup({
         {failedCount > 0 && <span className="text-error">Failed {failedCount}</span>}
         <div className="flex-1" />
         <svg
-          className={`w-3 h-3 transition-transform text-text-muted ${expanded ? 'rotate-180' : ''}`}
+          className={`w-3 h-3 transition-transform text-text-muted ${isExpanded ? 'rotate-180' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -106,7 +113,7 @@ function ToolCallGroup({
         </svg>
       </button>
 
-      {expanded && (
+      {isExpanded && (
         <div className="border-t border-border px-3 py-2">
           <div className="border-l border-border/70 pl-2 space-y-1.5">
             {toolCalls.map((toolCall) => (
