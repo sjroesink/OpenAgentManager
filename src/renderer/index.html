@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +7,14 @@
   </head>
   <body class="bg-surface-0 text-text-primary overflow-hidden">
     <div id="root"></div>
+    <script>
+      // Apply theme class before React loads to prevent flash
+      ;(function () {
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        // Default to system preference; will be refined by React hook once settings load
+        if (prefersDark) document.documentElement.classList.add('dark')
+      })()
+    </script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

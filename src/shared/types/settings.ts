@@ -57,7 +57,7 @@ export interface McpServerConfig {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   general: {
-    theme: 'dark',
+    theme: 'system',
     fontSize: 14,
     showToolCallDetails: true
   },
