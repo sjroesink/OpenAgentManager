@@ -75,6 +75,8 @@ function useAppMenu(): MenuGroup[] {
     {
       label: 'Help',
       items: [
+        { label: 'Setup Wizard', action: () => navigate('onboarding') },
+        { label: '', separator: true },
         { label: 'About AgentManager' }
       ]
     }

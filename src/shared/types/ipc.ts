@@ -135,6 +135,12 @@ export interface IpcChannels {
   'settings:set': { request: Partial<AppSettings>; response: void }
   'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
 
+  // --- Agent CLI Detection ---
+  'agent:detect-cli': {
+    request: { commands: string[] }
+    response: Record<string, boolean>
+  }
+
   // --- System ---
   'system:wsl-info': {
     request: void

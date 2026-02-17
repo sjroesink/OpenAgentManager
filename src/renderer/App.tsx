@@ -88,6 +88,15 @@ export default function App() {
     loadPersistedSessions()
   }, [loadInstalled, fetchRegistry, loadWorkspaces, loadPersistedSessions])
 
+  // Check if onboarding needs to be shown on first launch
+  useEffect(() => {
+    window.api.invoke('settings:get', undefined).then((settings) => {
+      if (!settings.general.completedOnboarding) {
+        useRouteStore.getState().navigate('onboarding')
+      }
+    })
+  }, [])
+
   // Global keyboard shortcuts for navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

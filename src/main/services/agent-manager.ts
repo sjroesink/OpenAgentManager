@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import { execSync } from 'child_process'
 import { v4 as uuid } from 'uuid'
 import type {
   AcpRegistryAgent,
@@ -551,6 +552,26 @@ export class AgentManagerService {
     } catch (err) {
       logger.error('Failed to save installed agents:', err)
     }
+  }
+
+  // ============================
+  // CLI Detection
+  // ============================
+
+  detectCliCommands(commands: string[]): Record<string, boolean> {
+    const results: Record<string, boolean> = {}
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+
+    for (const cmd of commands) {
+      try {
+        execSync(`${whichCmd} ${cmd}`, { stdio: 'pipe', timeout: 5000 })
+        results[cmd] = true
+      } catch {
+        results[cmd] = false
+      }
+    }
+
+    return results
   }
 }
 

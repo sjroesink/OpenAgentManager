@@ -20,6 +20,8 @@ export interface GeneralSettings {
   summarizationModel?: string
   /** Terminal shell to use (auto-detected by default based on OS) */
   terminalShell?: string
+  /** Whether the user has completed (or skipped) the onboarding wizard */
+  completedOnboarding?: boolean
 }
 
 export interface GitSettings {
