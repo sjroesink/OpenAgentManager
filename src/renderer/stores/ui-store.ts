@@ -26,7 +26,6 @@ interface UiState {
   diffViewSelectedFile: string | null
 
   // Threads overview
-  threadsOverviewOpen: boolean
   threadsOverviewSearchQuery: string
   threadsOverviewFocusSearch: boolean
 
@@ -63,7 +62,6 @@ export const useUiStore = create<UiState>((set) => ({
 
   diffViewSelectedFile: null,
 
-  threadsOverviewOpen: false,
   threadsOverviewSearchQuery: '',
   threadsOverviewFocusSearch: false,
 
@@ -79,13 +77,11 @@ export const useUiStore = create<UiState>((set) => ({
   setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
   openThreadsOverview: (searchQuery, focusSearch = false) =>
     set({
-      threadsOverviewOpen: true,
       threadsOverviewSearchQuery: searchQuery ?? '',
       threadsOverviewFocusSearch: focusSearch
     }),
   closeThreadsOverview: () =>
     set({
-      threadsOverviewOpen: false,
       threadsOverviewSearchQuery: '',
       threadsOverviewFocusSearch: false
     }),

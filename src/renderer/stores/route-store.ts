@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Route = 'home' | 'settings' | 'agents' | 'diff'
+export type Route = 'home' | 'settings' | 'agents' | 'diff' | 'threads'
 
 export interface RouteParams {
   diffFile?: string

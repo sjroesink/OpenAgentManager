@@ -16,7 +16,6 @@ export function AppLayout() {
   const terminalVisible = useUiStore((s) => s.terminalVisible)
   const terminalHeight = useUiStore((s) => s.terminalHeight)
   const currentRoute = useRouteStore((s) => s.current.route)
-  const threadsOverviewOpen = useUiStore((s) => s.threadsOverviewOpen)
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -35,16 +34,11 @@ export function AppLayout() {
             {currentRoute === 'diff' && <DiffView />}
             {currentRoute === 'settings' && <SettingsView />}
             {currentRoute === 'agents' && <AgentBrowserView />}
+            {currentRoute === 'threads' && <ThreadsOverview />}
             {currentRoute === 'home' && (
               <>
-                {threadsOverviewOpen ? (
-                  <ThreadsOverview />
-                ) : (
-                  <>
-                    <MainPanel />
-                    <ReviewPanel />
-                  </>
-                )}
+                <MainPanel />
+                <ReviewPanel />
               </>
             )}
           </div>
