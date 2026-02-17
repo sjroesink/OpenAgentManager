@@ -52,4 +52,11 @@ export function registerGitHandlers(): void {
       return gitService.getDiff(worktreePath, filePath)
     }
   )
+
+  ipcMain.handle(
+    'git:rename-branch',
+    async (_event, { worktreePath, newBranch }: { worktreePath: string; newBranch: string }) => {
+      return gitService.renameBranch(worktreePath, newBranch)
+    }
+  )
 }

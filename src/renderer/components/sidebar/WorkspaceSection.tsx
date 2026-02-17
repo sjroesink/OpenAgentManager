@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useAgentStore } from '../../stores/agent-store'
+import { useRouteStore } from '../../stores/route-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import { AgentIcon } from '../common/AgentIcon'
 import type { WorkspaceInfo } from '@shared/types/workspace'
@@ -264,6 +265,18 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
+  const navigate = useRouteStore((s) => s.navigate)
+
+  const handleSelectSession = useCallback(
+    (sessionId: string | null) => {
+      setActiveSession(sessionId)
+      // Navigate home when selecting a thread from a non-home route
+      if (useRouteStore.getState().current.route !== 'home') {
+        navigate('home')
+      }
+    },
+    [setActiveSession, navigate]
+  )
 
   const isExpanded = !!expandedWorkspaceIds[workspace.id]
   const hasDraftForThis = draftThread?.workspaceId === workspace.id
@@ -507,7 +520,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 editTitle={editTitle}
                 editInputRef={editInputRef}
                 generatingTitle={generatingTitle}
-                onSelect={setActiveSession}
+                onSelect={handleSelectSession}
                 onStartRename={startRename}
                 onCommitRename={commitRename}
                 onSetEditTitle={setEditTitle}

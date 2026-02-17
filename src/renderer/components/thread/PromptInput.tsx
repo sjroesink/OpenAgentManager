@@ -144,8 +144,8 @@ export function PromptInput() {
   const isInitializing = session?.status === 'initializing'
   const isCreating = session?.status === 'creating'
   const isPrompting = session?.status === 'prompting'
-  const isBusy = isPrompting || isCreating || isInitializing
-  const isModeChangeDisabled = isInitializing || isCreating || isPrompting
+  const isBusy = isCreating || isInitializing
+  const isModeChangeDisabled = isInitializing || isCreating
 
   // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
@@ -450,7 +450,7 @@ export function PromptInput() {
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working...' : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'}
+            placeholder={isInitializing ? 'Launching agent...' : isCreating ? 'Setting up session...' : isPrompting ? 'Agent is working. Queue your next message...' : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'}
             disabled={isBusy}
             readOnly={isInitializing || isCreating}
             rows={1}
@@ -492,7 +492,7 @@ export function PromptInput() {
           <ConfigOptionSelector
             configOption={modelConfig}
             onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
-            disabled={isBusy}
+            disabled={isInitializing || isCreating}
           />
         )}
 
@@ -502,7 +502,7 @@ export function PromptInput() {
             key={config.id}
             configOption={config}
             onSelect={(value) => handleConfigOptionChange(config.id, value)}
-            disabled={isBusy}
+            disabled={isInitializing || isCreating}
           />
         ))}
       </div>

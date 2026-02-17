@@ -85,6 +85,16 @@ export interface IpcChannels {
     response: CommitResult
   }
   'git:diff': { request: { worktreePath: string; filePath?: string }; response: DiffResult }
+  'git:rename-branch': {
+    request: { worktreePath: string; newBranch: string }
+    response: string
+  }
+
+  // --- Sessions (branch rename) ---
+  'session:rename-branch': {
+    request: { sessionId: string; newBranch: string }
+    response: string
+  }
 
   // --- Terminal ---
   'terminal:create': { request: { cwd: string; sessionId: string }; response: string }

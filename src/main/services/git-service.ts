@@ -15,7 +15,8 @@ export class GitService {
   async createWorktree(
     projectPath: string,
     sessionId: string,
-    baseBranch?: string
+    baseBranch?: string,
+    customBranchName?: string
   ): Promise<WorktreeInfo> {
     const git = simpleGit(projectPath)
 
@@ -25,7 +26,7 @@ export class GitService {
       throw new Error(`Not a git repository: ${projectPath}`)
     }
 
-    const branchName = `${DEFAULT_WORKTREE_PREFIX}${sessionId}`
+    const branchName = customBranchName || `${DEFAULT_WORKTREE_PREFIX}${sessionId}`
     const worktreeBase = this.getWorktreeBase(projectPath)
     const worktreePath = path.join(worktreeBase, `thread-${sessionId}`)
 
@@ -159,6 +160,21 @@ export class GitService {
       message,
       branch: status.current || ''
     }
+  }
+
+  /**
+   * Rename the current branch of a worktree
+   */
+  async renameBranch(worktreePath: string, newBranch: string): Promise<string> {
+    const git = simpleGit(worktreePath)
+    const status = await git.status()
+    const oldBranch = status.current
+    if (!oldBranch) {
+      throw new Error('Could not determine current branch')
+    }
+    await git.raw(['branch', '-m', oldBranch, newBranch])
+    logger.info(`Branch renamed: ${oldBranch} → ${newBranch} in ${worktreePath}`)
+    return newBranch
   }
 
   /**

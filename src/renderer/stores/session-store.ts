@@ -67,6 +67,7 @@ interface SessionState {
   loadPersistedSessions: () => Promise<void>
   deleteSession: (sessionId: string, cleanupWorktree: boolean) => Promise<void>
   renameSession: (sessionId: string, title: string) => Promise<void>
+  renameWorktreeBranch: (sessionId: string, newBranch: string) => Promise<void>
   generateTitle: (sessionId: string) => Promise<string | null>
   forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
 
@@ -86,6 +87,8 @@ interface SessionState {
 
 /** Guard to prevent duplicate reconnect attempts for the same session. */
 const reconnectingIds = new Set<string>()
+const promptQueueBySession = new Map<string, Array<{ content: ContentBlock[]; mode?: InteractionMode }>>()
+const processingPromptSessions = new Set<string>()
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -172,6 +175,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await window.api.invoke('session:rename', { sessionId, title })
     } catch (error) {
       console.error('Failed to rename session:', error)
+    }
+  },
+
+  renameWorktreeBranch: async (sessionId, newBranch) => {
+    try {
+      const result = await window.api.invoke('session:rename-branch', { sessionId, newBranch })
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === sessionId ? { ...s, worktreeBranch: result } : s
+        )
+      }))
+    } catch (error) {
+      console.error('Failed to rename worktree branch:', error)
+      throw error
     }
   },
 
@@ -322,53 +339,83 @@ sendPrompt: async (content, mode) => {
       )
     }))
 
-    const currentSession = get().sessions.find((s) => s.sessionId === activeSessionId)
-    const effectiveMode = mode ?? currentSession?.interactionMode
+    const queue = promptQueueBySession.get(activeSessionId) ?? []
+    queue.push({ content, mode })
+    promptQueueBySession.set(activeSessionId, queue)
+
+    if (processingPromptSessions.has(activeSessionId)) {
+      return
+    }
+
+    processingPromptSessions.add(activeSessionId)
 
     try {
-      await window.api.invoke('session:prompt', { sessionId: activeSessionId, content, mode: effectiveMode })
+      while ((promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0) {
+        const next = promptQueueBySession.get(activeSessionId)?.shift()
+        if (!next) continue
 
-      // Prompt completed successfully. Treat this as a hard turn boundary:
-      // if an agent failed to emit terminal tool updates, close remaining open calls.
-      set((state) => ({
-        sessions: state.sessions.map((s) => {
-          if (s.sessionId !== activeSessionId) return s
-          const messages = s.messages.map((m) => {
-            const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
-            if (!m.isStreaming && !hasOpenToolCalls) return m
-            return {
-              ...m,
-              isStreaming: false,
-              toolCalls: m.toolCalls?.map((tc) => ({
-                ...tc,
-                status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
-              }))
-            }
+        const currentSession = get().sessions.find((s) => s.sessionId === activeSessionId)
+        const effectiveMode = next.mode ?? currentSession?.interactionMode
+
+        try {
+          await window.api.invoke('session:prompt', {
+            sessionId: activeSessionId,
+            content: next.content,
+            mode: effectiveMode
           })
-          return { ...s, status: 'active' as const, lastError: undefined, messages }
-        })
-      }))
 
-      // Auto-generate title after first agent response if title is still default
-      const session = get().sessions.find((s) => s.sessionId === activeSessionId)
-      if (session) {
-        const isDefaultTitle =
-          session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
-        const userMessages = session.messages.filter((m) => m.role === 'user')
-        if (isDefaultTitle && userMessages.length === 1) {
-          // Fire-and-forget: title comes back via session_info_update event
-          window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
+          const hasPendingItems = (promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0
+          // Prompt completed successfully. Treat this as a hard turn boundary:
+          // if an agent failed to emit terminal tool updates, close remaining open calls.
+          set((state) => ({
+            sessions: state.sessions.map((s) => {
+              if (s.sessionId !== activeSessionId) return s
+              const messages = s.messages.map((m) => {
+                const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
+                if (!m.isStreaming && !hasOpenToolCalls) return m
+                return {
+                  ...m,
+                  isStreaming: false,
+                  toolCalls: m.toolCalls?.map((tc) => ({
+                    ...tc,
+                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+                  }))
+                }
+              })
+              return {
+                ...s,
+                status: hasPendingItems ? ('prompting' as const) : ('active' as const),
+                lastError: undefined,
+                messages
+              }
+            })
+          }))
+
+          // Auto-generate title after first agent response if title is still default
+          const session = get().sessions.find((s) => s.sessionId === activeSessionId)
+          if (session) {
+            const isDefaultTitle =
+              session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
+            const userMessages = session.messages.filter((m) => m.role === 'user')
+            if (isDefaultTitle && userMessages.length === 1) {
+              // Fire-and-forget: title comes back via session_info_update event
+              window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
+            }
+          }
+        } catch (error) {
+          const errorMessage = (error as Error).message || 'Prompt failed'
+          set((state) => ({
+            sessions: state.sessions.map((s) =>
+              s.sessionId === activeSessionId
+                ? { ...s, status: 'error' as const, lastError: errorMessage }
+                : s
+            )
+          }))
         }
       }
-    } catch (error) {
-      const errorMessage = (error as Error).message || 'Prompt failed'
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.sessionId === activeSessionId
-            ? { ...s, status: 'error' as const, lastError: errorMessage }
-            : s
-        )
-      }))
+    } finally {
+      processingPromptSessions.delete(activeSessionId)
+      promptQueueBySession.delete(activeSessionId)
     }
   },
 
