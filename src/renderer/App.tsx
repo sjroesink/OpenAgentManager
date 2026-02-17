@@ -9,6 +9,7 @@ import { useWorkspaceStore } from './stores/workspace-store'
 import { useAcpFeaturesStore } from './stores/acp-features-store'
 import { useUiStore } from './stores/ui-store'
 import { useIpcEvent } from './hooks/useIpc'
+import { useTheme } from './hooks/useTheme'
 import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
 export default function App() {
@@ -16,6 +17,9 @@ export default function App() {
   const { updateConnectionStatus, loadInstalled, fetchRegistry } = useAgentStore()
   const { loadWorkspaces } = useWorkspaceStore()
   const { applyUpdate: applyAcpUpdate } = useAcpFeaturesStore()
+
+  // Apply theme from settings (dark/light/system)
+  useTheme()
 
   // Subscribe to IPC events from main process
   const onSessionUpdate = useCallback(

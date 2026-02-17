@@ -35,6 +35,7 @@ export function SettingsDialog() {
     setSaving(true)
     try {
       await window.api.invoke('settings:set', settings)
+      window.dispatchEvent(new Event('theme-changed'))
     } finally {
       setSaving(false)
       setSettingsOpen(false)

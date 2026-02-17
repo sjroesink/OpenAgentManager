@@ -3,6 +3,38 @@
 @tailwind utilities;
 
 :root {
+  /* Light theme (default) */
+  --color-surface-0: #f5f5f5;
+  --color-surface-1: #e8e8e8;
+  --color-surface-2: #dedede;
+  --color-surface-3: #d4d4d4;
+  --color-border: #c8c8c8;
+  --color-border-subtle: #d8d8d8;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #555555;
+  --color-text-muted: #888888;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-text: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-code-bg: #e8e8ec;
+  --color-code-border: #d0d0d6;
+  --color-code-text: #1e1e2e;
+  --color-pre-bg: #eaeaef;
+  --color-pre-border: #d0d0d8;
+  --color-agent-pre-bg: #fdf6e8;
+  --color-agent-pre-border: #d9c88c;
+  --color-agent-pre-text: #4a3c10;
+  --color-agent-code-bg: #faf0d6;
+  --color-agent-code-border: #d9c88c;
+  --color-agent-code-text: #5a4a14;
+
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.dark {
   --color-surface-0: #0f0f0f;
   --color-surface-1: #1a1a1a;
   --color-surface-2: #242424;
@@ -18,8 +50,17 @@
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
-
-  font-family: 'Inter', system-ui, sans-serif;
+  --color-code-bg: #20242b;
+  --color-code-border: #343a45;
+  --color-code-text: #d8dee9;
+  --color-pre-bg: #1f2329;
+  --color-pre-border: #353b45;
+  --color-agent-pre-bg: #1f1a10;
+  --color-agent-pre-border: #6f5b2b;
+  --color-agent-pre-text: #fff6d8;
+  --color-agent-code-bg: #272012;
+  --color-agent-code-border: #7d6630;
+  --color-agent-code-text: #fff0be;
 }
 
 * {
@@ -190,8 +231,8 @@ body,
 }
 
 .markdown-body pre {
-  background: #1f2329;
-  border: 1px solid #353b45;
+  background: var(--color-pre-bg);
+  border: 1px solid var(--color-pre-border);
   border-radius: 7px;
   padding: 0.7em 0.8em;
   overflow-x: auto;
@@ -212,9 +253,9 @@ body,
 }
 
 .markdown-body :not(pre) > code {
-  background: #20242b;
-  border: 1px solid #343a45;
-  color: #d8dee9;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  color: var(--color-code-text);
   border-radius: 5px;
   padding: 0.1em 0.38em;
   word-break: break-word;
@@ -222,9 +263,9 @@ body,
 
 /* Higher-contrast code blocks for agent responses */
 .markdown-body-agent pre {
-  background: #1f1a10;
-  border-color: #6f5b2b;
-  color: #fff6d8;
+  background: var(--color-agent-pre-bg);
+  border-color: var(--color-agent-pre-border);
+  color: var(--color-agent-pre-text);
 }
 
 .markdown-body-agent pre code {
@@ -232,9 +273,9 @@ body,
 }
 
 .markdown-body-agent :not(pre) > code {
-  background: #272012;
-  border-color: #7d6630;
-  color: #fff0be;
+  background: var(--color-agent-code-bg);
+  border-color: var(--color-agent-code-border);
+  color: var(--color-agent-code-text);
 }
 
 .markdown-body table {
