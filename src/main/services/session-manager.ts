@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import type { BrowserWindow } from 'electron'
+import type { AgentConnection } from '@shared/types/agent'
 import type { SessionInfo, CreateSessionRequest, PermissionResponse, PermissionRequestEvent, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep, ContentBlock } from '@shared/types/session'
 import { applyUpdateToMessages } from '@shared/util/session-util'
 import { agentManager } from './agent-manager'
@@ -37,6 +38,14 @@ export class SessionManagerService {
         ...(s.url ? { url: s.url } : {}),
         ...(s.env && Object.keys(s.env).length ? { env: s.env } : {})
       }))
+  }
+
+  private async ensureAuthenticatedConnection(agentId: string, workingDir: string): Promise<AgentConnection> {
+    const authResult = await agentManager.checkAuthentication(agentId, workingDir)
+    if (!authResult.isAuthenticated) {
+      throw new Error(authResult.error || 'Authentication required')
+    }
+    return authResult.connection
   }
 
   private sendHookProgress(event: WorktreeHookProgressEvent): void {
@@ -216,7 +225,7 @@ export class SessionManagerService {
     let client = agentManager.getClient(source.connectionId)
     if (!client) {
       logger.info(`Agent connection lost for source session ${sourceSessionId}, re-launching agent ${source.agentId}...`)
-      const connection = await agentManager.launch(source.agentId, source.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(source.agentId, source.workingDir)
       source.connectionId = connection.connectionId
       this.sessions.set(sourceSessionId, source)
       client = agentManager.getClient(source.connectionId)!
@@ -291,7 +300,7 @@ export class SessionManagerService {
     // Recovery: if connection lost, re-launch agent
     if (!client) {
       logger.info(`Agent connection lost for session ${sessionId}, re-launching agent ${session.agentId}...`)
-      const connection = await agentManager.launch(session.agentId, session.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(session.agentId, session.workingDir)
       session.connectionId = connection.connectionId
       client = agentManager.getClient(session.connectionId)!
       
@@ -507,7 +516,7 @@ export class SessionManagerService {
         (c) => c.agentId === agentId && c.status === 'connected'
       )
       if (!connection) {
-        connection = await agentManager.launch(agentId, session.workingDir)
+        connection = await this.ensureAuthenticatedConnection(agentId, session.workingDir)
       }
 
       const client = agentManager.getClient(connection.connectionId)
@@ -606,7 +615,7 @@ export class SessionManagerService {
     }
 
     try {
-      const connection = await agentManager.launch(session.agentId, session.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(session.agentId, session.workingDir)
       session.connectionId = connection.connectionId
       this.sessions.set(sessionId, session)
 

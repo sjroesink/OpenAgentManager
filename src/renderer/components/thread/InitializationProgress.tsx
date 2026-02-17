@@ -1,16 +1,31 @@
 import React from 'react'
+import type { AuthMethod } from '@shared/types/agent'
 import type { SessionInfo, HookStep } from '@shared/types/session'
 import { useSessionStore } from '../../stores/session-store'
 import { Spinner } from '../common/Spinner'
+import { AuthMethodPrompt } from './AuthMethodPrompt'
 
 interface InitializationProgressProps {
   session: SessionInfo
+  authMethods?: AuthMethod[]
+  connectionId?: string
+  onAuthFlowComplete?: () => Promise<void> | void
 }
 
-export function InitializationProgress({ session }: InitializationProgressProps) {
+export function InitializationProgress({
+  session,
+  authMethods,
+  connectionId,
+  onAuthFlowComplete
+}: InitializationProgressProps) {
   const steps = session.initProgress || []
   const isError = session.status === 'error' && !!session.initError
   const hasRunningStep = steps.some((s) => s.status === 'running')
+  const showAuthPrompt =
+    isError &&
+    !!connectionId &&
+    !!authMethods?.length &&
+    /auth|login|unauthorized|credential|api.?key|token|forbidden|401|403/i.test(session.initError || '')
 
   // Hook progress sub-steps (worktree setup, symlinks, etc.)
   // The main process emits these with the real session ID during session:create.
@@ -59,7 +74,18 @@ export function InitializationProgress({ session }: InitializationProgressProps)
         {/* Error message + retry */}
         {isError && (
           <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-xs text-error mb-2">{session.initError}</p>
+            <p className="text-xs text-error mb-2 break-words whitespace-pre-line">{session.initError}</p>
+            {showAuthPrompt && (
+              <div className="mb-2 rounded-lg border border-border bg-surface-2 p-2">
+                <AuthMethodPrompt
+                  authMethods={authMethods!}
+                  connectionId={connectionId!}
+                  agentId={session.agentId}
+                  projectPath={session.workingDir}
+                  onAuthFlowComplete={onAuthFlowComplete}
+                />
+              </div>
+            )}
             <button
               onClick={handleRetry}
               className="text-xs text-accent hover:text-accent-hover font-medium"

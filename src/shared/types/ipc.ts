@@ -7,6 +7,7 @@ import type {
   AcpRegistry,
   InstalledAgent,
   AgentConnection,
+  AgentAuthCheckResult,
   AgentModelCatalog,
   AgentModeCatalog
 } from './agent'
@@ -44,6 +45,7 @@ export interface IpcChannels {
   'agent:uninstall': { request: { agentId: string }; response: void }
   'agent:list-installed': { request: void; response: InstalledAgent[] }
   'agent:launch': { request: { agentId: string; projectPath: string; extraEnv?: Record<string, string> }; response: AgentConnection }
+  'agent:check-auth': { request: { agentId: string; projectPath?: string }; response: AgentAuthCheckResult }
   'agent:terminate': { request: { connectionId: string }; response: void }
   'agent:authenticate': {
     request: { connectionId: string; method: string; credentials?: Record<string, string> }

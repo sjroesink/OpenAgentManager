@@ -102,6 +102,85 @@ const promptQueueBySession = new Map<string, Array<{ content: ContentBlock[]; mo
 const processingPromptSessions = new Set<string>()
 const autoTitleRequestedSessionIds = new Set<string>()
 
+function getPendingPromptText(content?: ContentBlock[]): string | undefined {
+  if (!content || content.length === 0) return undefined
+  const firstTextBlock = content.find(
+    (block) => block.type === 'text' && block.text.trim().length > 0
+  )
+  return firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+}
+
+function enqueuePrompt(sessionId: string, item: { content: ContentBlock[]; mode?: InteractionMode }): void {
+  const queue = promptQueueBySession.get(sessionId) ?? []
+  queue.push(item)
+  promptQueueBySession.set(sessionId, queue)
+}
+
+async function processPromptQueue(set: SetFn, get: GetFn, sessionId: string): Promise<void> {
+  if (processingPromptSessions.has(sessionId)) {
+    return
+  }
+
+  processingPromptSessions.add(sessionId)
+
+  try {
+    while ((promptQueueBySession.get(sessionId)?.length ?? 0) > 0) {
+      const next = promptQueueBySession.get(sessionId)?.shift()
+      if (!next) continue
+
+      const currentSession = get().sessions.find((s) => s.sessionId === sessionId)
+      const effectiveMode = next.mode ?? currentSession?.interactionMode
+
+      try {
+        await window.api.invoke('session:prompt', {
+          sessionId,
+          content: next.content,
+          mode: effectiveMode
+        })
+
+        const hasPendingItems = (promptQueueBySession.get(sessionId)?.length ?? 0) > 0
+        // Prompt completed successfully. Treat this as a hard turn boundary:
+        // if an agent failed to emit terminal tool updates, close remaining open calls.
+        set((state) => ({
+          sessions: state.sessions.map((s) => {
+            if (s.sessionId !== sessionId) return s
+            const messages = s.messages.map((m) => {
+              const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
+              if (!m.isStreaming && !hasOpenToolCalls) return m
+              return {
+                ...m,
+                isStreaming: false,
+                toolCalls: m.toolCalls?.map((tc) => ({
+                  ...tc,
+                  status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+                }))
+              }
+            })
+            return {
+              ...s,
+              status: hasPendingItems ? ('prompting' as const) : ('active' as const),
+              lastError: undefined,
+              messages
+            }
+          })
+        }))
+      } catch (error) {
+        const errorMessage = (error as Error).message || 'Prompt failed'
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.sessionId === sessionId
+              ? { ...s, status: 'error' as const, lastError: errorMessage }
+              : s
+          )
+        }))
+      }
+    }
+  } finally {
+    processingPromptSessions.delete(sessionId)
+    promptQueueBySession.delete(sessionId)
+  }
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -392,9 +471,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-sendPrompt: async (content, mode, sessionId) => {
+  sendPrompt: async (content, mode, sessionId) => {
     const targetSessionId = sessionId ?? get().activeSessionId
     if (!targetSessionId) return
+
+    const targetSession = get().sessions.find((s) => s.sessionId === targetSessionId)
+    if (!targetSession) return
 
     // Optimistically add user message
     const userMessage: Message = {
@@ -402,6 +484,24 @@ sendPrompt: async (content, mode, sessionId) => {
       role: 'user',
       content: content,
       timestamp: new Date().toISOString()
+    }
+
+    if (targetSession.status === 'initializing' || targetSession.status === 'creating') {
+      set((state) => ({
+        sessions: state.sessions.map((s) => {
+          if (s.sessionId !== targetSessionId) return s
+          const nextPendingPromptQueue = [...(s.pendingPromptQueue ?? []), { content, mode }]
+          return {
+            ...s,
+            lastError: undefined,
+            messages: [...s.messages, userMessage],
+            pendingPromptQueue: nextPendingPromptQueue,
+            pendingPromptContent: nextPendingPromptQueue[0]?.content,
+            pendingPrompt: getPendingPromptText(nextPendingPromptQueue[0]?.content)
+          }
+        })
+      }))
+      return
     }
 
     set((state) => ({
@@ -412,73 +512,8 @@ sendPrompt: async (content, mode, sessionId) => {
       )
     }))
 
-    const queue = promptQueueBySession.get(targetSessionId) ?? []
-    queue.push({ content, mode })
-    promptQueueBySession.set(targetSessionId, queue)
-
-    if (processingPromptSessions.has(targetSessionId)) {
-      return
-    }
-
-    processingPromptSessions.add(targetSessionId)
-
-    try {
-      while ((promptQueueBySession.get(targetSessionId)?.length ?? 0) > 0) {
-        const next = promptQueueBySession.get(targetSessionId)?.shift()
-        if (!next) continue
-
-        const currentSession = get().sessions.find((s) => s.sessionId === targetSessionId)
-        const effectiveMode = next.mode ?? currentSession?.interactionMode
-
-        try {
-          await window.api.invoke('session:prompt', {
-            sessionId: targetSessionId,
-            content: next.content,
-            mode: effectiveMode
-          })
-
-          const hasPendingItems = (promptQueueBySession.get(targetSessionId)?.length ?? 0) > 0
-          // Prompt completed successfully. Treat this as a hard turn boundary:
-          // if an agent failed to emit terminal tool updates, close remaining open calls.
-          set((state) => ({
-            sessions: state.sessions.map((s) => {
-              if (s.sessionId !== targetSessionId) return s
-              const messages = s.messages.map((m) => {
-                const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
-                if (!m.isStreaming && !hasOpenToolCalls) return m
-                return {
-                  ...m,
-                  isStreaming: false,
-                  toolCalls: m.toolCalls?.map((tc) => ({
-                    ...tc,
-                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
-                  }))
-                }
-              })
-              return {
-                ...s,
-                status: hasPendingItems ? ('prompting' as const) : ('active' as const),
-                lastError: undefined,
-                messages
-              }
-            })
-          }))
-
-        } catch (error) {
-          const errorMessage = (error as Error).message || 'Prompt failed'
-          set((state) => ({
-            sessions: state.sessions.map((s) =>
-              s.sessionId === targetSessionId
-                ? { ...s, status: 'error' as const, lastError: errorMessage }
-                : s
-            )
-          }))
-        }
-      }
-    } finally {
-      processingPromptSessions.delete(targetSessionId)
-      promptQueueBySession.delete(targetSessionId)
-    }
+    enqueuePrompt(targetSessionId, { content, mode })
+    await processPromptQueue(set, get, targetSessionId)
   },
 
   cancelPrompt: async () => {
@@ -626,8 +661,16 @@ sendPrompt: async (content, mode, sessionId) => {
       (a: { registryId: string }) => a.registryId === agentId
     )
 
-    const firstTextBlock = promptContent?.find((block) => block.type === 'text')
-    const pendingPromptText = firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+    const pendingPromptText = getPendingPromptText(promptContent)
+    const pendingPromptQueue = promptContent?.length ? [{ content: promptContent }] : undefined
+    const initialMessages: Message[] = promptContent?.length
+      ? [{
+          id: uuid(),
+          role: 'user',
+          content: promptContent,
+          timestamp: new Date().toISOString()
+        }]
+      : []
 
     // Create placeholder immediately so the chat shows right away
     const placeholderId = `init-${uuid().slice(0, 8)}`
@@ -640,12 +683,13 @@ sendPrompt: async (content, mode, sessionId) => {
       createdAt: new Date().toISOString(),
       workingDir: draftThread.workspacePath,
       status: 'initializing',
-      messages: [],
+      messages: initialMessages,
       interactionMode: draftThread.interactionMode || undefined,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
       pendingPrompt: pendingPromptText,
       pendingPromptContent: promptContent,
+      pendingPromptQueue,
       initProgress: initSteps
     }
 
@@ -677,7 +721,7 @@ sendPrompt: async (content, mode, sessionId) => {
 
   retryInitialization: (sessionId: string) => {
     const session = get().sessions.find((s) => s.sessionId === sessionId)
-    if (!session || (!session.pendingPrompt && !session.pendingPromptContent?.length)) return
+    if (!session || (!session.pendingPromptQueue?.length && !session.pendingPrompt && !session.pendingPromptContent?.length)) return
 
     const agentStore = useAgentStore.getState()
     const existingConnection = agentStore.connections.find(
@@ -708,7 +752,8 @@ sendPrompt: async (content, mode, sessionId) => {
       workspacePath: session.workingDir,
       useWorktree: session.useWorktree,
       workspaceId: session.workspaceId,
-      promptContent: session.pendingPromptContent
+      promptContent: session.pendingPromptQueue?.[0]?.content
+        ?? session.pendingPromptContent
         ?? (session.pendingPrompt ? [{ type: 'text', text: session.pendingPrompt }] : undefined),
       existingConnection: existingConnection || null
     })
@@ -770,6 +815,9 @@ async function runInitPipeline(
 ) {
   const { agentId, modelId, workspacePath, useWorktree, workspaceId, promptContent, existingConnection } = params
   const agentStore = useAgentStore.getState()
+  const queuedPrompts = () =>
+    get().sessions.find((s) => s.sessionId === placeholderId)?.pendingPromptQueue
+    ?? (promptContent?.length ? [{ content: promptContent }] : [])
 
   try {
     let connection = existingConnection
@@ -797,10 +845,8 @@ async function runInitPipeline(
     })
     updateInitStep(set, placeholderId, 'Creating session', 'completed')
 
-    const firstTextBlock = promptContent?.find(
-      (block) => block.type === 'text' && block.text.trim().length > 0
-    )
-    const pendingPromptText = firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+    const pendingQueue = queuedPrompts()
+    const pendingPromptText = getPendingPromptText(pendingQueue[0]?.content)
 
     // Replace placeholder with real session
     set((state) => ({
@@ -808,7 +854,10 @@ async function runInitPipeline(
         s.sessionId === placeholderId
           ? {
               ...session,
-              pendingPromptContent: promptContent,
+              // Preserve optimistic user messages entered while initializing.
+              messages: s.messages,
+              pendingPromptQueue: pendingQueue,
+              pendingPromptContent: pendingQueue[0]?.content,
               pendingPrompt: pendingPromptText
             }
           : s
@@ -824,9 +873,35 @@ async function runInitPipeline(
       })
     }
 
-    // Send the first prompt if one was provided.
-    if (promptContent && promptContent.length > 0) {
-      await get().sendPrompt(promptContent, undefined, session.sessionId)
+    // Flush prompts queued during initialization, preserving submit order.
+    if (pendingQueue.length > 0) {
+      for (const queued of pendingQueue) {
+        enqueuePrompt(session.sessionId, queued)
+      }
+
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === session.sessionId
+            ? {
+                ...s,
+                pendingPromptQueue: undefined,
+                pendingPromptContent: undefined,
+                pendingPrompt: undefined,
+                status: 'prompting' as const
+              }
+            : s
+        )
+      }))
+
+      await processPromptQueue(set, get, session.sessionId)
+    } else {
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === session.sessionId
+            ? { ...s, status: 'active' as const, pendingPromptQueue: undefined, pendingPromptContent: undefined, pendingPrompt: undefined }
+            : s
+        )
+      }))
     }
   } catch (error) {
     // Mark the running step as failed and set error status

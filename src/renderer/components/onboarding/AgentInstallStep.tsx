@@ -11,8 +11,11 @@ export function AgentInstallStep() {
     registry,
     registryLoading,
     registryError,
+    authChecks,
+    authCheckErrors,
     fetchRegistry,
     installAgent,
+    checkAgentAuth,
     uninstallAgent,
     isInstalled
   } = useAgentStore()
@@ -57,6 +60,7 @@ export function AgentInstallStep() {
     setInstallingId(agentId)
     try {
       await installAgent(agentId)
+      await checkAgentAuth(agentId)
     } catch (error) {
       console.error('Install error:', error)
     } finally {
@@ -108,6 +112,8 @@ export function AgentInstallStep() {
           ) : (
             agents.map((agent) => {
               const agentInstalled = isInstalled(agent.id)
+              const authCheck = authChecks[agent.id]
+              const authCheckError = authCheck?.error || authCheckErrors[agent.id]
               const foundOnPath = cliDetection[agent.id] ?? false
               const isLoading = installingId === agent.id
 
@@ -140,10 +146,22 @@ export function AgentInstallStep() {
                         <Badge variant="default">{distributionType}</Badge>
                         {foundOnPath && <Badge variant="success">Found on PATH</Badge>}
                         {agentInstalled && <Badge variant="accent">Installed</Badge>}
+                        {agentInstalled && authCheck?.isAuthenticated && (
+                          <Badge variant="success">Authenticated</Badge>
+                        )}
+                        {agentInstalled && authCheck && !authCheck.isAuthenticated && authCheck.requiresAuthentication && (
+                          <Badge variant="warning">Auth required</Badge>
+                        )}
+                        {agentInstalled && authCheckError && !authCheck?.requiresAuthentication && (
+                          <Badge variant="error">Check failed</Badge>
+                        )}
                       </div>
                       <p className="text-xs text-text-secondary mb-2 line-clamp-2">
                         {agent.description}
                       </p>
+                      {agentInstalled && authCheckError && (
+                        <p className="text-[11px] text-error mb-2 break-words whitespace-pre-line">{authCheckError}</p>
+                      )}
                       <div className="flex items-center gap-2 text-[10px] text-text-muted">
                         <span>{agent.authors.join(', ')}</span>
                         <span>|</span>

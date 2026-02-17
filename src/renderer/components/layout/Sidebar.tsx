@@ -26,7 +26,13 @@ export function Sidebar() {
   )
 
   const handleNewThread = async () => {
-    const { updateDraftThread } = useSessionStore.getState()
+    const { draftThread, setActiveDraft, updateDraftThread } = useSessionStore.getState()
+    if (draftThread) {
+      setActiveDraft(draftThread.id)
+      navigate('new-thread', { draftId: draftThread.id })
+      return
+    }
+
     if (sortedWorkspaces.length > 0) {
       // Start a draft on the most recently accessed workspace
       const topWorkspace = sortedWorkspaces[0]

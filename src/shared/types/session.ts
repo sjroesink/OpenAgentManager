@@ -23,6 +23,8 @@ export interface SessionInfo {
   pendingPrompt?: string
   /** Rich first prompt content (text/images) to send after initialization. UI-only field. */
   pendingPromptContent?: ContentBlock[]
+  /** Prompts queued while the session is still initializing/creating. UI-only field. */
+  pendingPromptQueue?: Array<{ content: ContentBlock[]; mode?: InteractionMode }>
   /** Tracks agent initialization progress (launching, connecting, creating session). UI-only field. */
   initProgress?: HookStep[]
   /** Error message from failed initialization. UI-only field. */

@@ -124,7 +124,7 @@ function ThreadItem({
           className={`
             w-full text-left pr-3 py-0.5 flex items-start gap-2 transition-colors
             ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
-            ${isActive ? 'bg-accent/10 border-r-2 border-accent' : 'hover:bg-surface-2'}
+            ${isActive ? 'bg-accent/20 border-r-2 border-accent ring-1 ring-inset ring-accent/40' : 'hover:bg-surface-2'}
           `}
         >
           {/* Expand chevron for threads with children */}
@@ -328,6 +328,14 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
   const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    const existingDraft = useSessionStore.getState().draftThread
+    if (existingDraft) {
+      setActiveDraft(existingDraft.id)
+      navigate('new-thread', { draftId: existingDraft.id })
+      if (!isExpanded) toggleExpanded(workspace.id)
+      return
+    }
+
     startDraftThread(workspace.id, workspace.path)
     const draftId = useSessionStore.getState().draftThread?.id
     if (draftId) {
@@ -574,7 +582,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               className={`
                 w-full text-left pl-8 pr-3 py-1 flex items-start gap-2 transition-colors
                 ${activeDraftId === draftThread!.id
-                  ? 'bg-accent/10 border-r-2 border-accent'
+                  ? 'bg-accent/20 border-r-2 border-accent ring-1 ring-inset ring-accent/40'
                   : 'hover:bg-surface-2'
                 }
               `}

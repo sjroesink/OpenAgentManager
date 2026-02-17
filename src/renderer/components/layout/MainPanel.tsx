@@ -135,6 +135,13 @@ export function MainPanel() {
           <p className="text-sm">Create a new thread to start working with an agent</p>
         </div>
         <Button variant="primary" onClick={async () => {
+          const existingDraft = useSessionStore.getState().draftThread
+          if (existingDraft) {
+            useSessionStore.getState().setActiveDraft(existingDraft.id)
+            navigate('new-thread', { draftId: existingDraft.id })
+            return
+          }
+
           const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
           if (sorted.length > 0) {
             startDraftThread(sorted[0].id, sorted[0].path)

@@ -3,15 +3,14 @@ import { useRouteStore } from '../../stores/route-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../common/Button'
 import { AgentInstallStep } from './AgentInstallStep'
-import { ApiKeyConfigStep } from './ApiKeyConfigStep'
-import { AGENT_ENV_CONFIG } from '@shared/config/agent-env'
+import { AgentAuthenticationStep } from './AgentAuthenticationStep'
 import type { AppSettings } from '@shared/types/settings'
 
-type WizardStep = 'install-agents' | 'configure-keys'
+type WizardStep = 'install-agents' | 'authenticate-agents'
 
 const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'install-agents', label: 'Install Agents' },
-  { id: 'configure-keys', label: 'Configure API Keys' }
+  { id: 'authenticate-agents', label: 'Authenticate Agents' }
 ]
 
 export function OnboardingView() {
@@ -23,11 +22,6 @@ export function OnboardingView() {
     fetchRegistry()
     loadInstalled()
   }, [fetchRegistry, loadInstalled])
-
-  const installedAgentsNeedingKeys = installed.filter((agent) => {
-    const config = AGENT_ENV_CONFIG[agent.registryId]
-    return config && config.apiKeyEnvVars.length > 0
-  })
 
   const markOnboardingComplete = async () => {
     const current = await window.api.invoke('settings:get', undefined)
@@ -42,10 +36,10 @@ export function OnboardingView() {
 
   const handleNext = () => {
     if (currentStep === 'install-agents') {
-      if (installedAgentsNeedingKeys.length === 0) {
+      if (installed.length === 0) {
         handleComplete()
       } else {
-        setCurrentStep('configure-keys')
+        setCurrentStep('authenticate-agents')
       }
     } else {
       handleComplete()
@@ -53,7 +47,7 @@ export function OnboardingView() {
   }
 
   const handleBack = () => {
-    if (currentStep === 'configure-keys') {
+    if (currentStep === 'authenticate-agents') {
       setCurrentStep('install-agents')
     }
   }
@@ -115,9 +109,7 @@ export function OnboardingView() {
       {/* Step content */}
       <div className="flex-1 overflow-y-auto">
         {currentStep === 'install-agents' && <AgentInstallStep />}
-        {currentStep === 'configure-keys' && (
-          <ApiKeyConfigStep agents={installedAgentsNeedingKeys} />
-        )}
+        {currentStep === 'authenticate-agents' && <AgentAuthenticationStep />}
       </div>
 
       {/* Footer navigation */}
@@ -130,7 +122,7 @@ export function OnboardingView() {
           )}
         </div>
         <Button variant="primary" onClick={handleNext}>
-          {currentStep === 'configure-keys' || installedAgentsNeedingKeys.length === 0
+          {currentStep === 'authenticate-agents' || installed.length === 0
             ? 'Finish Setup'
             : 'Next'}
         </Button>

@@ -37,6 +37,10 @@ export function registerAgentHandlers(): void {
     }
   )
 
+  ipcMain.handle('agent:check-auth', async (_event, { agentId, projectPath }: { agentId: string; projectPath?: string }) => {
+    return agentManager.checkAuthentication(agentId, projectPath)
+  })
+
   ipcMain.handle('agent:terminate', async (_event, { connectionId }: { connectionId: string }) => {
     agentManager.terminate(connectionId)
     return { success: true }

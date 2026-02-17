@@ -19,10 +19,15 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
   const loadAgentModes = useAgentStore((s) => s.loadAgentModes)
   const modesByAgent = useAgentStore((s) => s.modesByAgent)
   const modesLoadingByAgent = useAgentStore((s) => s.modesLoadingByAgent)
+  const modeErrorsByAgent = useAgentStore((s) => s.modeErrorsByAgent)
+  const modelErrorsByAgent = useAgentStore((s) => s.modelErrorsByAgent)
   const workspace = workspaces.find((w) => w.id === draft.workspaceId)
   const modeCatalog = draft.agentId ? modesByAgent[draft.agentId] : undefined
   const modeOptions = useMemo(() => modeCatalog?.availableModes || [], [modeCatalog])
   const isLoadingModes = draft.agentId ? modesLoadingByAgent[draft.agentId] === true : false
+  const modeError = draft.agentId ? modeErrorsByAgent[draft.agentId] : undefined
+  const modelError = draft.agentId ? modelErrorsByAgent[draft.agentId] : undefined
+  const probeError = modeError || modelError
 
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -249,6 +254,9 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             </label>
             <AgentSelector selectedAgentId={draft.agentId} onSelect={handleAgentSelect} />
           </div>
+          {probeError && (
+            <p className="text-[11px] text-error break-words whitespace-pre-line">{probeError}</p>
+          )}
 
           <ModelPicker
             agentId={draft.agentId}
@@ -256,6 +264,7 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             value={draft.modelId}
             onChange={(modelId) => updateDraftThread({ modelId })}
             emptyLabel="Default model"
+            showError={false}
           />
 
           <div>

@@ -10,6 +10,7 @@ import { useRouteStore } from './stores/route-store'
 import { useIpcEvent } from './hooks/useIpc'
 import { useTheme } from './hooks/useTheme'
 import type { SessionUpdateEvent, PermissionRequestEvent, PermissionResolvedEvent, WorktreeHookProgressEvent } from '@shared/types/session'
+import type { AgentConnection } from '@shared/types/agent'
 
 export default function App() {
   const {
@@ -64,12 +65,8 @@ export default function App() {
   )
 
   const onAgentStatusChange = useCallback(
-    (event: { connectionId: string; status: string; error?: string }) => {
-      updateConnectionStatus(
-        event.connectionId,
-        event.status as 'connected' | 'error' | 'terminated',
-        event.error
-      )
+    (event: { connectionId: string; status: AgentConnection['status']; error?: string }) => {
+      updateConnectionStatus(event.connectionId, event.status, event.error)
     },
     [updateConnectionStatus]
   )

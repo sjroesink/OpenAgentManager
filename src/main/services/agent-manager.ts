@@ -1,10 +1,13 @@
 import { BrowserWindow } from 'electron'
 import { execSync } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { v4 as uuid } from 'uuid'
 import type {
   AcpRegistryAgent,
   InstalledAgent,
   AgentConnection,
+  AgentAuthCheckResult,
   AgentStatus,
   BinaryDistribution,
   AuthMethod,
@@ -397,16 +400,75 @@ export class AgentManagerService {
   }
 
   listConnections(): AgentConnection[] {
-    return Array.from(this.connections.values()).map((client) => ({
-      connectionId: client.connectionId,
-      agentId: client.agentId,
-      agentName: client.agentName,
-      status: client.isRunning ? 'connected' as const : 'terminated' as const,
-      pid: client.pid,
-      startedAt: '',
-      capabilities: client.capabilities || undefined,
-      authMethods: client.authMethods
-    }))
+    return Array.from(this.connections.values()).map((client) => this.toAgentConnection(client))
+  }
+
+  async checkAuthentication(agentId: string, projectPath?: string): Promise<AgentAuthCheckResult> {
+    const resolvedProjectPath = projectPath || this.resolveOnboardingProjectPath()
+    const checkedAt = new Date().toISOString()
+
+    let client = Array.from(this.connections.values()).find(
+      (existing) => existing.agentId === agentId && existing.isRunning
+    )
+    let connection: AgentConnection
+
+    if (!client) {
+      connection = await this.launch(agentId, resolvedProjectPath)
+      const launchedClient = this.connections.get(connection.connectionId)
+      if (!launchedClient) {
+        throw new Error(`Connection not found after launching agent: ${agentId}`)
+      }
+      client = launchedClient
+      connection = this.toAgentConnection(client)
+    } else {
+      connection = this.toAgentConnection(client)
+    }
+
+    const authMethods = client.authMethods || []
+    if (authMethods.length === 0) {
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: true,
+        requiresAuthentication: false,
+        authMethods,
+        connection
+      }
+    }
+
+    try {
+      await client.newSession(
+        resolvedProjectPath,
+        [],
+        `auth-probe-${uuid().slice(0, 8)}`,
+        { suppressInitialUpdates: true }
+      )
+
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: true,
+        requiresAuthentication: false,
+        authMethods,
+        connection
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const requiresAuthentication = this.isAuthenticationError(message)
+
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: false,
+        requiresAuthentication,
+        authMethods,
+        connection,
+        error: message
+      }
+    }
   }
 
   async getModels(agentId: string, projectPath: string): Promise<AgentModelCatalog> {
@@ -442,7 +504,7 @@ export class AgentManagerService {
       return connectedClient.getModelCatalog()
     } catch (error) {
       logger.warn(`Failed to probe models for ${agentId}:`, error)
-      return connectedClient.getModelCatalog()
+      throw error
     } finally {
       if (shouldTerminateAfterProbe) {
         this.terminate(connectedClient.connectionId)
@@ -483,7 +545,7 @@ export class AgentManagerService {
       return connectedClient.getModeCatalog()
     } catch (error) {
       logger.warn(`Failed to probe modes for ${agentId}:`, error)
-      return connectedClient.getModeCatalog()
+      throw error
     } finally {
       if (shouldTerminateAfterProbe) {
         this.terminate(connectedClient.connectionId)
@@ -576,6 +638,37 @@ export class AgentManagerService {
     }
 
     return results
+  }
+
+  private toAgentConnection(client: AcpClient): AgentConnection {
+    return {
+      connectionId: client.connectionId,
+      agentId: client.agentId,
+      agentName: client.agentName,
+      status: client.isRunning ? 'connected' : 'terminated',
+      pid: client.pid,
+      startedAt: '',
+      capabilities: client.capabilities || undefined,
+      authMethods: client.authMethods
+    }
+  }
+
+  private resolveOnboardingProjectPath(): string {
+    const configuredDefault = settingsService.get().general.defaultProjectPath
+    if (configuredDefault && existsSync(configuredDefault)) {
+      return configuredDefault
+    }
+
+    const userHome = homedir()
+    if (userHome && existsSync(userHome)) {
+      return userHome
+    }
+
+    return process.cwd()
+  }
+
+  private isAuthenticationError(message: string): boolean {
+    return /auth|login|unauthorized|credential|api.?key|token|forbidden|401|403/i.test(message)
   }
 }
 

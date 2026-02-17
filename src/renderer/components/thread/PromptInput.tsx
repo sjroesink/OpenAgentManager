@@ -186,7 +186,7 @@ export function PromptInput({
   const isInitializing = mode === 'session' && session?.status === 'initializing'
   const isCreating = mode === 'session' && session?.status === 'creating'
   const isPrompting = mode === 'session' && session?.status === 'prompting'
-  const isBusy = mode === 'session' ? isCreating || isInitializing : draftDisabled
+  const isBusy = mode === 'draft' ? draftDisabled : false
   const isModeChangeDisabled = isInitializing || isCreating
 
   // ACP state for the active session
@@ -262,7 +262,7 @@ export function PromptInput({
 
   const handleSubmit = useCallback(async () => {
     if (!text.trim() && attachments.length === 0) return
-    if (isBusy) return
+    if (mode === 'draft' && draftDisabled) return
 
     const content: ContentBlock[] = []
 
@@ -291,7 +291,7 @@ export function PromptInput({
 
     if (!activeSessionId) return
     await sendPrompt(content)
-  }, [text, attachments, isBusy, mode, onDraftSubmit, activeSessionId, sendPrompt, composerDraftId, clearComposerDraft])
+  }, [text, attachments, mode, draftDisabled, onDraftSubmit, activeSessionId, sendPrompt, composerDraftId, clearComposerDraft])
 
   const adjustTextareaHeight = useCallback((textarea: HTMLTextAreaElement) => {
     textarea.style.height = 'auto'
@@ -354,8 +354,7 @@ export function PromptInput({
     }
   }
 
-  const inputValue =
-    mode === 'session' && isCreating && session?.pendingPrompt ? session.pendingPrompt : text
+  const inputValue = text
 
   useEffect(() => {
     if (!composerDraftId) {
@@ -796,15 +795,14 @@ export function PromptInput({
                 mode === 'draft'
                   ? draftPlaceholder
                   : isInitializing
-                    ? 'Launching agent...'
+                    ? 'Launching agent... (messages will queue)'
                     : isCreating
-                      ? 'Setting up session...'
+                      ? 'Setting up session... (messages will queue)'
                       : isPrompting
                         ? 'Agent is working. Queue your next message...'
                         : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'
               }
-              disabled={isBusy}
-              readOnly={mode === 'session' && (isInitializing || isCreating)}
+              disabled={mode === 'draft' && draftDisabled}
               rows={1}
               className="w-full box-border bg-transparent border-0 rounded-xl px-1.5 py-1 text-sm text-text-primary placeholder-text-muted resize-none overflow-y-hidden focus:outline-none disabled:opacity-50"
               style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px`, maxHeight: `${MAX_TEXTAREA_HEIGHT}px` }}

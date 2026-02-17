@@ -208,7 +208,19 @@ export class AcpClient extends EventEmitter {
 
   /** Authenticate with the agent */
   async authenticate(method: string, credentials?: Record<string, string>): Promise<void> {
-    await this.sendRequest('authenticate', { methodId: method, ...credentials })
+    const modernParams = { authMethodId: method, ...credentials }
+    const legacyParams = { methodId: method, ...credentials }
+
+    try {
+      await this.sendRequest('connection/authenticate', modernParams)
+      return
+    } catch (error) {
+      if (!this.isMethodNotFoundError(error)) {
+        throw error
+      }
+    }
+
+    await this.sendRequest('authenticate', legacyParams)
   }
 
   /** Create a new session */
@@ -556,6 +568,15 @@ export class AcpClient extends EventEmitter {
 
   /** Logout - invalidate credentials (RFD) */
   async logout(): Promise<void> {
+    try {
+      await this.sendRequest('connection/logout', {})
+      return
+    } catch (error) {
+      if (!this.isMethodNotFoundError(error)) {
+        throw error
+      }
+    }
+
     await this.sendRequest('logout', {})
   }
 
@@ -621,7 +642,7 @@ export class AcpClient extends EventEmitter {
       })
 
       const json = JSON.stringify(request) + '\n'
-      logger.info(`[${this.agentId}:send] ${json.trim()}`)
+      logger.debug(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
   }
@@ -659,7 +680,7 @@ export class AcpClient extends EventEmitter {
       this.requestMetadata.set(id, { method })
 
       const json = JSON.stringify(request) + '\n'
-      logger.info(`[${this.agentId}:send] ${json.trim()}`)
+      logger.debug(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
   }
@@ -669,7 +690,7 @@ export class AcpClient extends EventEmitter {
     if (!this.childProcess || !this.childProcess.stdin) return
     const notification = { jsonrpc: '2.0', method, params }
     const json = JSON.stringify(notification) + '\n'
-    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    logger.debug(`[${this.agentId}:send] ${json.trim()}`)
     this.childProcess.stdin.write(json)
   }
 
@@ -683,7 +704,7 @@ export class AcpClient extends EventEmitter {
     }
 
     const json = JSON.stringify(response) + '\n'
-    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    logger.debug(`[${this.agentId}:send] ${json.trim()}`)
     this.childProcess.stdin.write(json)
   }
 
@@ -724,8 +745,8 @@ export class AcpClient extends EventEmitter {
   }
 
   private handleMessage(msg: any): void {
-    // Log all incoming messages
-    logger.info(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
+    // Log raw incoming JSON-RPC messages only at debug level.
+    logger.debug(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
 
     // Response to our request
     if (msg.id !== undefined && msg.method === undefined) {
@@ -1355,5 +1376,10 @@ export class AcpClient extends EventEmitter {
   private registerSessionMapping(remoteId: string, internalSessionId: string): void {
     this.remoteToInternal.set(remoteId, internalSessionId)
     this.internalToRemote.set(internalSessionId, remoteId)
+  }
+
+  private isMethodNotFoundError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false
+    return /ACP error -32601/i.test(error.message) || /Method not found/i.test(error.message)
   }
 }
