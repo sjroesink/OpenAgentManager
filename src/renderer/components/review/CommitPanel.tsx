@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/session-store'
 import { Button } from '../common/Button'
 
@@ -11,10 +11,16 @@ export function CommitPanel() {
   const [committing, setCommitting] = useState(false)
   const [result, setResult] = useState<string | null>(null)
 
+  useEffect(() => {
+    setCommitting(false)
+    setResult(null)
+  }, [activeSession?.sessionId])
+
   if (!activeSession) return null
 
   const canCommit =
     !committing &&
+    (activeSession.interactionMode || '').toLowerCase() !== 'read' &&
     activeSession.status !== 'creating' &&
     activeSession.status !== 'initializing'
 
@@ -56,3 +62,4 @@ export function CommitPanel() {
     </div>
   )
 }
+

@@ -67,6 +67,7 @@ function getMessagePreview(session: SessionInfo): string {
 
 export function ThreadsOverview() {
   const sessions = useSessionStore((s) => s.sessions)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const setActiveSession = useSessionStore((s) => s.setActiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
   const renameSession = useSessionStore((s) => s.renameSession)
@@ -496,6 +497,7 @@ export function ThreadsOverview() {
                       )?.icon
                       const isDeleting = deletingSessionIds.has(session.sessionId)
                       const isSelected = selectedSessionIds.has(session.sessionId)
+                      const isActive = activeSessionId === session.sessionId
                       const pendingCount = pendingCountBySession.get(session.sessionId) || 0
                       const lastActivity = getLastActivity(session)
                       const messageCount = session.messages.length
@@ -507,7 +509,11 @@ export function ThreadsOverview() {
                         <div
                           key={session.sessionId}
                           className={`w-full px-4 py-3 transition-colors group flex items-start gap-2 ${
-                            isSelected ? 'bg-accent/10' : 'hover:bg-surface-1'
+                            isActive
+                              ? 'bg-surface-2 ring-1 ring-inset ring-accent'
+                              : isSelected
+                                ? 'bg-surface-2'
+                                : 'hover:bg-surface-2 focus-within:bg-surface-2'
                           } ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
                         >
                           <label

@@ -24,6 +24,11 @@ export function DiffView() {
   const [committing, setCommitting] = useState(false)
   const [commitResult, setCommitResult] = useState<string | null>(null)
 
+  useEffect(() => {
+    setCommitting(false)
+    setCommitResult(null)
+  }, [activeSession?.sessionId])
+
   const workingDir = activeSession?.workingDir
 
   // Fetch file changes on mount
@@ -70,6 +75,7 @@ export function DiffView() {
 
   const canCommitChanges =
     changes.length > 0 &&
+    (activeSession?.interactionMode || '').toLowerCase() !== 'read' &&
     !committing &&
     activeSession?.status !== 'creating' &&
     activeSession?.status !== 'initializing'
@@ -240,3 +246,4 @@ export function DiffView() {
     </div>
   )
 }
+

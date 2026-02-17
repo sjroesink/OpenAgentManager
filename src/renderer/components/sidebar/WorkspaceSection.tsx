@@ -124,7 +124,7 @@ function ThreadItem({
           className={`
             w-full text-left pr-3 py-0.5 flex items-start gap-2 transition-colors
             ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
-            ${isActive ? 'bg-accent/20 border-r-2 border-accent ring-1 ring-inset ring-accent/40' : 'hover:bg-surface-2'}
+            ${isActive ? 'bg-accent/30 border-r-2 border-accent ring-1 ring-inset ring-accent/55' : 'hover:bg-accent/12 hover:ring-1 hover:ring-inset hover:ring-accent/35'}
           `}
         >
           {/* Expand chevron for threads with children */}

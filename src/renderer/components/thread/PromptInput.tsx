@@ -189,6 +189,11 @@ export function PromptInput({
   const isBusy = mode === 'draft' ? draftDisabled : false
   const isModeChangeDisabled = isInitializing || isCreating
 
+  useEffect(() => {
+    setCommitting(false)
+    setCommitResult(null)
+  }, [mode, session?.sessionId])
+
   // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
   const commands = acpState?.commands
@@ -482,6 +487,7 @@ export function PromptInput({
   const canCommitChanges =
     mode === 'session' &&
     diffTotals.fileCount > 0 &&
+    (modeConfig?.currentValue || session?.interactionMode || '').toLowerCase() !== 'read' &&
     !committing &&
     !isInitializing &&
     !isCreating
@@ -890,3 +896,4 @@ export function PromptInput({
     </>
   )
 }
+
