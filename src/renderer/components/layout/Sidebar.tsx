@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { useUiStore } from '../../stores/ui-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useSessionStore } from '../../stores/session-store'
+import { useRouteStore } from '../../stores/route-store'
 import { WorkspaceSection } from '../sidebar/WorkspaceSection'
 import { Button } from '../common/Button'
 import type { InteractionMode } from '@shared/types/session'
@@ -19,6 +20,7 @@ export function Sidebar() {
   const startDraftThread = useSessionStore((s) => s.startDraftThread)
   const pendingPermissionCount = useSessionStore((s) => s.pendingPermissions.length)
   const openThreadsOverview = useUiStore((s) => s.openThreadsOverview)
+  const navigate = useRouteStore((s) => s.navigate)
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
@@ -141,10 +143,12 @@ export function Sidebar() {
 
   const handleOpenThreads = () => {
     openThreadsOverview()
+    navigate('threads')
   }
 
   const handleOpenSearchThreads = () => {
     openThreadsOverview('', true)
+    navigate('threads')
   }
 
   if (!sidebarVisible) return null

@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useUiStore } from '../../stores/ui-store'
+import { useRouteStore } from '../../stores/route-store'
 import { AgentIcon } from '../common/AgentIcon'
 import type { SessionInfo } from '@shared/types/session'
 
@@ -73,6 +74,7 @@ export function ThreadsOverview() {
   const shouldFocusSearch = useUiStore((s) => s.threadsOverviewFocusSearch)
   const setSearchQuery = useUiStore((s) => s.setThreadsOverviewSearchQuery)
   const closeThreadsOverview = useUiStore((s) => s.closeThreadsOverview)
+  const navigate = useRouteStore((s) => s.navigate)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -123,6 +125,7 @@ export function ThreadsOverview() {
   const handleSelect = (sessionId: string) => {
     setActiveSession(sessionId)
     closeThreadsOverview()
+    navigate('home')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -131,6 +134,7 @@ export function ThreadsOverview() {
         setSearchQuery('')
       } else {
         closeThreadsOverview()
+        navigate('home')
       }
     }
   }
@@ -140,7 +144,10 @@ export function ThreadsOverview() {
       {/* Header */}
       <div className="flex items-center px-4 py-3 border-b border-border gap-3 shrink-0">
         <button
-          onClick={closeThreadsOverview}
+          onClick={() => {
+            closeThreadsOverview()
+            navigate('home')
+          }}
           className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
           title="Back"
         >
