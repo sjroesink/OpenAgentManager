@@ -28,6 +28,11 @@ interface UiState {
   diffViewOpen: boolean
   diffViewSelectedFile: string | null
 
+  // Threads overview
+  threadsOverviewOpen: boolean
+  threadsOverviewSearchQuery: string
+  threadsOverviewFocusSearch: boolean
+
   // Actions
   toggleSidebar: () => void
   toggleReviewPanel: () => void
@@ -43,6 +48,9 @@ interface UiState {
   openDiffView: (filePath?: string) => void
   closeDiffView: () => void
   setDiffViewSelectedFile: (path: string | null) => void
+  openThreadsOverview: (searchQuery?: string, focusSearch?: boolean) => void
+  closeThreadsOverview: () => void
+  setThreadsOverviewSearchQuery: (query: string) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -65,6 +73,10 @@ export const useUiStore = create<UiState>((set) => ({
   diffViewOpen: false,
   diffViewSelectedFile: null,
 
+  threadsOverviewOpen: false,
+  threadsOverviewSearchQuery: '',
+  threadsOverviewFocusSearch: false,
+
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
   toggleTerminal: () => set((s) => ({ terminalVisible: !s.terminalVisible })),
@@ -78,5 +90,18 @@ export const useUiStore = create<UiState>((set) => ({
   setSelectedDiffFile: (path) => set({ selectedDiffFile: path }),
   openDiffView: (filePath) => set({ diffViewOpen: true, diffViewSelectedFile: filePath ?? null }),
   closeDiffView: () => set({ diffViewOpen: false, diffViewSelectedFile: null }),
-  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path })
+  setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
+  openThreadsOverview: (searchQuery, focusSearch = false) =>
+    set({
+      threadsOverviewOpen: true,
+      threadsOverviewSearchQuery: searchQuery ?? '',
+      threadsOverviewFocusSearch: focusSearch
+    }),
+  closeThreadsOverview: () =>
+    set({
+      threadsOverviewOpen: false,
+      threadsOverviewSearchQuery: '',
+      threadsOverviewFocusSearch: false
+    }),
+  setThreadsOverviewSearchQuery: (query) => set({ threadsOverviewSearchQuery: query })
 }))

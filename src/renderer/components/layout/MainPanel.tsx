@@ -287,9 +287,7 @@ export function MainPanel() {
       </div>
 
       {/* Thread view */}
-      <div className="flex-1 overflow-y-auto">
-        <ThreadView session={activeSession} />
-      </div>
+      <ThreadView session={activeSession} />
 
       {/* Hook progress banner (during session creation) */}
       {activeSession.status === 'creating' && (
