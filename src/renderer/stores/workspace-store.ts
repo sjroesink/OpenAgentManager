@@ -9,7 +9,7 @@ interface WorkspaceState {
   // Actions
   loadWorkspaces: () => Promise<void>
   createWorkspace: (path: string, name?: string) => Promise<WorkspaceInfo>
-  removeWorkspace: (id: string) => Promise<void>
+  removeWorkspace: (id: string, cleanupWorktrees?: boolean) => Promise<void>
   toggleExpanded: (id: string) => void
   openInVSCode: (path: string) => Promise<void>
   touchWorkspace: (id: string) => Promise<void>
@@ -52,8 +52,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     return workspace
   },
 
-  removeWorkspace: async (id) => {
-    await window.api.invoke('workspace:remove', { id })
+  removeWorkspace: async (id, cleanupWorktrees = false) => {
+    await window.api.invoke('workspace:remove', { id, cleanupWorktrees })
     set((state) => ({
       workspaces: state.workspaces.filter((w) => w.id !== id)
     }))

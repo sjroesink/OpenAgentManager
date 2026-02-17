@@ -256,7 +256,7 @@ function ThreadItem({
 // ---- Main WorkspaceSection ----
 
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, removeSessionsByWorkspace, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -266,7 +266,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const [generatingTitle, setGeneratingTitle] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
-  const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
+  const { expandedWorkspaceIds, toggleExpanded, openInVSCode, removeWorkspace } = useWorkspaceStore()
   const navigate = useRouteStore((s) => s.navigate)
 
   const handleSelectSession = useCallback(
@@ -429,6 +429,38 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     e.preventDefault()
     e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY, type: 'thread', sessionId })
+  }
+
+  const handleDeleteWorkspace = async () => {
+    setContextMenu(null)
+    try {
+      const sessionCount = sessions.length
+      if (sessionCount === 0) {
+        const confirmDeleteWorkspace = window.confirm(`Delete workspace "${workspace.name}"?`)
+        if (!confirmDeleteWorkspace) return
+        await removeWorkspace(workspace.id, false)
+        removeSessionsByWorkspace(workspace.id)
+        return
+      }
+
+      const confirmDeleteWithSessions = window.confirm(
+        `Delete workspace "${workspace.name}" and its ${sessionCount} ${sessionCount === 1 ? 'thread' : 'threads'}?`
+      )
+      if (!confirmDeleteWithSessions) return
+
+      const worktreeSessionCount = sessions.filter((session) => !!session.worktreePath && session.useWorktree).length
+      let cleanupWorktrees = false
+      if (worktreeSessionCount > 0) {
+        cleanupWorktrees = window.confirm(
+          `This workspace has ${worktreeSessionCount} ${worktreeSessionCount === 1 ? 'thread' : 'threads'} with worktrees.\n\nAlso delete their worktrees?`
+        )
+      }
+
+      await removeWorkspace(workspace.id, cleanupWorktrees)
+      removeSessionsByWorkspace(workspace.id)
+    } catch (error) {
+      console.error('Failed to delete workspace:', error)
+    }
   }
 
   useEffect(() => {
@@ -626,6 +658,13 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
               >
                 Open in VS Code
+              </button>
+              <div className="my-1 border-t border-border" />
+              <button
+                onClick={() => { void handleDeleteWorkspace() }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+              >
+                Delete Workspace
               </button>
             </>
           )}

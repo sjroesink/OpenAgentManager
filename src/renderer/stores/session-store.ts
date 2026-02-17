@@ -12,7 +12,8 @@ import type {
   HookStep,
   Message,
   ContentBlock,
-  InteractionMode
+  InteractionMode,
+  ImageContent
 } from '@shared/types/session'
 import { useWorkspaceStore } from './workspace-store'
 import { useProjectStore } from './project-store'
@@ -30,6 +31,11 @@ export interface DraftThread {
   useWorktree: boolean
 }
 
+export interface ComposerDraft {
+  text: string
+  attachments: ImageContent[]
+}
+
 interface SessionState {
   sessions: SessionInfo[]
   activeSessionId: string | null
@@ -40,6 +46,7 @@ interface SessionState {
   // Draft thread (inline "new thread" in sidebar)
   draftThread: DraftThread | null
   activeDraftId: string | null
+  composerDrafts: Record<string, ComposerDraft>
 
   // Actions
   createSession: (
@@ -55,6 +62,9 @@ interface SessionState {
   setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
   setActiveSession: (sessionId: string | null) => void
   setActiveDraft: (draftId: string | null) => void
+  getComposerDraft: (threadId: string) => ComposerDraft
+  setComposerDraft: (threadId: string, draft: ComposerDraft) => void
+  clearComposerDraft: (threadId: string) => void
   sendPrompt: (content: ContentBlock[], mode?: InteractionMode, sessionId?: string) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
@@ -70,6 +80,7 @@ interface SessionState {
   renameWorktreeBranch: (sessionId: string, newBranch: string) => Promise<void>
   generateTitle: (sessionId: string) => Promise<string | null>
   forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
+  removeSessionsByWorkspace: (workspaceId: string) => void
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
@@ -99,6 +110,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deletingSessionIds: new Set<string>(),
   draftThread: null,
   activeDraftId: null,
+  composerDrafts: {},
 
   loadPersistedSessions: async () => {
     try {
@@ -143,6 +155,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set((state) => {
         const next = new Set(state.deletingSessionIds)
         next.delete(sessionId)
+        const nextComposerDrafts = { ...state.composerDrafts }
+        delete nextComposerDrafts[sessionId]
         return {
           // Remove the session and promote orphaned children to root level
           sessions: state.sessions
@@ -153,6 +167,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
                 : s
             ),
           activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+          composerDrafts: nextComposerDrafts,
           deletingSessionIds: next
         }
       })
@@ -320,8 +335,61 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  removeSessionsByWorkspace: (workspaceId) => {
+    set((state) => {
+      const removedSessionIds = new Set(
+        state.sessions
+          .filter((session) => session.workspaceId === workspaceId)
+          .map((session) => session.sessionId)
+      )
+
+      if (removedSessionIds.size === 0) {
+        return state
+      }
+
+      const nextComposerDrafts = { ...state.composerDrafts }
+      for (const sessionId of removedSessionIds) {
+        delete nextComposerDrafts[sessionId]
+      }
+
+      return {
+        sessions: state.sessions.filter((session) => session.workspaceId !== workspaceId),
+        activeSessionId:
+          state.activeSessionId && removedSessionIds.has(state.activeSessionId)
+            ? null
+            : state.activeSessionId,
+        composerDrafts: nextComposerDrafts
+      }
+    })
+  },
+
   setActiveDraft: (draftId) => {
     set({ activeDraftId: draftId, activeSessionId: null })
+  },
+
+  getComposerDraft: (threadId) => {
+    const draft = get().composerDrafts[threadId]
+    return draft ?? { text: '', attachments: [] }
+  },
+
+  setComposerDraft: (threadId, draft) => {
+    set((state) => ({
+      composerDrafts: {
+        ...state.composerDrafts,
+        [threadId]: draft
+      }
+    }))
+  },
+
+  clearComposerDraft: (threadId) => {
+    set((state) => {
+      if (!state.composerDrafts[threadId]) {
+        return state
+      }
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[threadId]
+      return { composerDrafts: nextComposerDrafts }
+    })
   },
 
 sendPrompt: async (content, mode, sessionId) => {
@@ -516,7 +584,19 @@ sendPrompt: async (content, mode, sessionId) => {
   },
 
   discardDraftThread: () => {
-    set({ draftThread: null, activeDraftId: null })
+    set((state) => {
+      const draftId = state.draftThread?.id
+      if (!draftId) {
+        return { draftThread: null, activeDraftId: null }
+      }
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[draftId]
+      return {
+        draftThread: null,
+        activeDraftId: null,
+        composerDrafts: nextComposerDrafts
+      }
+    })
   },
 
   commitDraftThread: async (promptContent?: ContentBlock[]) => {
@@ -570,11 +650,16 @@ sendPrompt: async (content, mode, sessionId) => {
     }
 
     // Clear draft and show placeholder — user sees the thread immediately
-    set({
-      draftThread: null,
-      activeDraftId: null,
-      sessions: [...get().sessions, placeholder],
-      activeSessionId: placeholderId
+    set((state) => {
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[draftThread.id]
+      return {
+        draftThread: null,
+        activeDraftId: null,
+        sessions: [...state.sessions, placeholder],
+        activeSessionId: placeholderId,
+        composerDrafts: nextComposerDrafts
+      }
     })
 
     // Run the initialization pipeline in the background

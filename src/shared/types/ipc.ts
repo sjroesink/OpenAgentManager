@@ -114,7 +114,7 @@ export interface IpcChannels {
   // --- Workspaces ---
   'workspace:list': { request: void; response: WorkspaceInfo[] }
   'workspace:create': { request: { path: string; name?: string }; response: WorkspaceInfo }
-  'workspace:remove': { request: { id: string }; response: void }
+  'workspace:remove': { request: { id: string; cleanupWorktrees?: boolean }; response: void }
   'workspace:update': {
     request: {
         id: string
@@ -124,6 +124,7 @@ export interface IpcChannels {
   }
   'workspace:select-directory': { request: void; response: string | null }
   'workspace:open-in-vscode': { request: { path: string }; response: void }
+  'workspace:open-directory': { request: { path: string }; response: void }
   'workspace:get-config': { request: { workspacePath: string }; response: AgentProjectConfig | null }
   'workspace:set-config': {
     request: { workspacePath: string; config: AgentProjectConfig }

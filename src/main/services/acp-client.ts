@@ -80,7 +80,8 @@ export class AcpClient extends EventEmitter {
   private nextId = 1
   private pendingRequests = new Map<number, PendingRequest>()
   private requestMetadata = new Map<number, RequestMetadata>()
-  private buffer = ''
+  private stdoutBuffer = ''
+  private stderrBuffer = ''
   private mainWindow: BrowserWindow | null = null
   private permissionResolvers = new Map<string, PermissionResolver>()
   private terminals = new Map<string, TerminalProcess>()
@@ -128,18 +129,19 @@ export class AcpClient extends EventEmitter {
 
     // Handle stdout (JSON-RPC messages from agent)
     this.childProcess.stdout!.on('data', (data: Buffer) => {
-      this.handleData(data.toString())
+      this.handleData(data.toString(), 'stdout')
     })
 
     // Log stderr and collect for error reporting
     const stderrChunks: string[] = []
     this.childProcess.stderr!.on('data', (data: Buffer) => {
-      const text = data.toString().trim()
+      const raw = data.toString()
+      const text = raw.trim()
       if (text) {
         stderrChunks.push(text)
         logger.warn(`[${this.agentId}:stderr] ${text}`)
         // Try parsing as JSON-RPC (some agents write to stderr)
-        this.handleData(text)
+        this.handleData(raw, 'stderr')
       }
     })
 
@@ -697,10 +699,17 @@ export class AcpClient extends EventEmitter {
     this.childProcess.stdin.write(JSON.stringify(response) + '\n')
   }
 
-  private handleData(data: string): void {
-    this.buffer += data
-    const lines = this.buffer.split('\n')
-    this.buffer = lines.pop() || ''
+  private handleData(data: string, stream: 'stdout' | 'stderr' = 'stdout'): void {
+    const isStdout = stream === 'stdout'
+    const currentBuffer = (isStdout ? this.stdoutBuffer : this.stderrBuffer) + data
+    const lines = currentBuffer.split('\n')
+    const remaining = lines.pop() || ''
+
+    if (isStdout) {
+      this.stdoutBuffer = remaining
+    } else {
+      this.stderrBuffer = remaining
+    }
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -709,7 +718,7 @@ export class AcpClient extends EventEmitter {
         const msg = JSON.parse(trimmed) as JsonRpcResponse
         this.handleMessage(msg)
       } catch {
-        logger.debug(`[${this.agentId}] Non-JSON output: ${trimmed}`)
+        logger.debug(`[${this.agentId}] Non-JSON output (${stream}): ${trimmed}`)
       }
     }
   }

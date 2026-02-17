@@ -1,6 +1,5 @@
 import React from 'react'
 import { Toolbar } from './Toolbar'
-import { StatusBar } from './StatusBar'
 import { Sidebar } from './Sidebar'
 import { MainPanel } from './MainPanel'
 import { ReviewPanel } from './ReviewPanel'
@@ -64,9 +63,6 @@ export function AppLayout() {
           )}
         </div>
       </div>
-
-      {/* Bottom status bar */}
-      <StatusBar />
     </div>
   )
 }

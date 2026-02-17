@@ -4,6 +4,8 @@ import { access } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
 import { workspaceService } from '../services/workspace-service'
+import { sessionManager } from '../services/session-manager'
+import { threadStore } from '../services/thread-store'
 import { logger } from '../util/logger'
 import { worktreeHookService } from '../services/worktree-hook-service'
 import type { WorkspaceInfo } from '@shared/types/workspace'
@@ -88,10 +90,19 @@ export function registerWorkspaceHandlers(): void {
     }
   )
 
-  ipcMain.handle('workspace:remove', async (_event, { id }: { id: string }) => {
-    workspaceService.remove(id)
-    return { success: true }
-  })
+  ipcMain.handle(
+    'workspace:remove',
+    async (_event, { id, cleanupWorktrees = false }: { id: string; cleanupWorktrees?: boolean }) => {
+      const workspaceThreads = threadStore.loadAll().filter((thread) => thread.workspaceId === id)
+      const uniqueSessionIds = [...new Set(workspaceThreads.map((thread) => thread.sessionId))]
+
+      for (const sessionId of uniqueSessionIds) {
+        await sessionManager.removeSession(sessionId, cleanupWorktrees)
+      }
+
+      workspaceService.remove(id)
+    }
+  )
 
   ipcMain.handle(
     'workspace:update',
@@ -129,6 +140,18 @@ export function registerWorkspaceHandlers(): void {
       await openInVSCode(path)
     } catch (error) {
       logger.warn('Failed to open VS Code:', error instanceof Error ? error.message : error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('workspace:open-directory', async (_event, { path }: { path: string }) => {
+    try {
+      const openError = await shell.openPath(path)
+      if (openError) {
+        throw new Error(openError)
+      }
+    } catch (error) {
+      logger.warn('Failed to open directory:', error instanceof Error ? error.message : error)
       throw error
     }
   })

@@ -8,6 +8,8 @@ import type { SlashCommand, ContentBlock, ImageContent, ConfigOption } from '@sh
 
 const COMMIT_ALL_PROMPT =
   'Commit all current changes in this workspace. Stage everything and create an appropriate commit message.'
+const MIN_TEXTAREA_HEIGHT = 42
+const MAX_TEXTAREA_HEIGHT = 200
 
 /** Generic config option dropdown used for mode, model, and other selectors */
 function ConfigOptionSelector({
@@ -157,14 +159,28 @@ export function PromptInput({
   const [diffTotals, setDiffTotals] = useState({ additions: 0, deletions: 0, fileCount: 0 })
   const [committing, setCommitting] = useState(false)
   const [commitResult, setCommitResult] = useState<string | null>(null)
+  const [isEditingBranch, setIsEditingBranch] = useState(false)
+  const [branchInput, setBranchInput] = useState('')
+  const [isRenamingBranch, setIsRenamingBranch] = useState(false)
+  const [branchRenameError, setBranchRenameError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const commandMenuRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const { activeSessionId, sendPrompt, getActiveSession } = useSessionStore()
+  const {
+    activeSessionId,
+    activeDraftId,
+    sendPrompt,
+    getActiveSession,
+    renameWorktreeBranch,
+    getComposerDraft,
+    setComposerDraft,
+    clearComposerDraft
+  } = useSessionStore()
   const { getSessionState, setConfigOption } = useAcpFeaturesStore()
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const navigate = useRouteStore((s) => s.navigate)
   const currentRoute = useRouteStore((s) => s.current.route)
+  const composerDraftId = mode === 'session' ? activeSessionId : activeDraftId
 
   const session = getActiveSession()
   const isInitializing = mode === 'session' && session?.status === 'initializing'
@@ -258,10 +274,14 @@ export function PromptInput({
 
     setText('')
     setAttachments([])
+    if (composerDraftId) {
+      clearComposerDraft(composerDraftId)
+    }
 
     // Reset textarea height
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${MIN_TEXTAREA_HEIGHT}px`
+      textareaRef.current.style.overflowY = 'hidden'
     }
 
     if (mode === 'draft') {
@@ -271,7 +291,15 @@ export function PromptInput({
 
     if (!activeSessionId) return
     await sendPrompt(content)
-  }, [text, attachments, isBusy, mode, onDraftSubmit, activeSessionId, sendPrompt])
+  }, [text, attachments, isBusy, mode, onDraftSubmit, activeSessionId, sendPrompt, composerDraftId, clearComposerDraft])
+
+  const adjustTextareaHeight = useCallback((textarea: HTMLTextAreaElement) => {
+    textarea.style.height = 'auto'
+    const BORDER_WIDTH = 2
+    const nextHeight = Math.min(textarea.scrollHeight + BORDER_WIDTH, MAX_TEXTAREA_HEIGHT)
+    textarea.style.height = `${Math.max(nextHeight, MIN_TEXTAREA_HEIGHT)}px`
+    textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? 'auto' : 'hidden'
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commandMenuOpen && filteredCommands.length > 0) {
@@ -308,8 +336,7 @@ export function PromptInput({
 
     // Auto-resize
     const textarea = e.target
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+    adjustTextareaHeight(textarea)
 
     // Slash command detection
     const textBeforeCursor = newText.slice(0, textarea.selectionStart)
@@ -326,6 +353,30 @@ export function PromptInput({
       setCommandMenuOpen(false)
     }
   }
+
+  const inputValue =
+    mode === 'session' && isCreating && session?.pendingPrompt ? session.pendingPrompt : text
+
+  useEffect(() => {
+    if (!composerDraftId) {
+      setText('')
+      setAttachments([])
+      return
+    }
+    const draft = getComposerDraft(composerDraftId)
+    setText(draft.text)
+    setAttachments(draft.attachments)
+  }, [composerDraftId, getComposerDraft])
+
+  useEffect(() => {
+    if (!composerDraftId) return
+    setComposerDraft(composerDraftId, { text, attachments })
+  }, [composerDraftId, text, attachments, setComposerDraft])
+
+  useEffect(() => {
+    if (!textareaRef.current) return
+    adjustTextareaHeight(textareaRef.current)
+  }, [inputValue, adjustTextareaHeight])
 
   const handleConfigOptionChange = useCallback(
     (configId: string, value: string) => {
@@ -440,6 +491,11 @@ export function PromptInput({
     : null
   const sourceBranch = activeWorkspace?.gitBranch || 'main'
   const targetBranch = session?.worktreeBranch || sourceBranch
+  const canRenameBranch =
+    mode === 'session' &&
+    !!session?.sessionId &&
+    !!session?.worktreeBranch &&
+    session?.useWorktree === true
   const previewAttachment =
     previewIndex !== null && previewIndex >= 0 && previewIndex < attachments.length
       ? attachments[previewIndex]
@@ -472,6 +528,12 @@ export function PromptInput({
     }
   }, [mode, session?.sessionId, session?.workingDir, session?.status])
 
+  useEffect(() => {
+    setBranchInput(session?.worktreeBranch || '')
+    setIsEditingBranch(false)
+    setBranchRenameError(null)
+  }, [session?.sessionId, session?.worktreeBranch])
+
   const handleCommitChanges = useCallback(async () => {
     if (!canCommitChanges) return
     setCommitting(true)
@@ -487,6 +549,26 @@ export function PromptInput({
       setCommitting(false)
     }
   }, [canCommitChanges, sendPrompt])
+
+  const handleRenameBranch = useCallback(async () => {
+    if (!session?.sessionId || !canRenameBranch || isRenamingBranch) return
+    const nextBranch = branchInput.trim()
+    if (!nextBranch) {
+      setBranchRenameError('Branch name is required')
+      return
+    }
+
+    setIsRenamingBranch(true)
+    setBranchRenameError(null)
+    try {
+      await renameWorktreeBranch(session.sessionId, nextBranch)
+      setIsEditingBranch(false)
+    } catch (error) {
+      setBranchRenameError(error instanceof Error ? error.message : 'Failed to rename branch')
+    } finally {
+      setIsRenamingBranch(false)
+    }
+  }, [session?.sessionId, canRenameBranch, isRenamingBranch, branchInput, renameWorktreeBranch])
 
   if (mode === 'session' && !activeSessionId) return null
 
@@ -541,8 +623,8 @@ export function PromptInput({
       )}
 
       {mode === 'session' && session && (
-        <div className="max-w-3xl mx-auto mb-2">
-          <div className="flex items-center gap-2 p-2 rounded-xl bg-surface-1 border border-border">
+        <div className="max-w-3xl mx-auto mb-0">
+          <div className="flex items-center gap-2 p-2 rounded-t-xl rounded-b-none bg-surface-1 border border-border border-b-0">
             <div className="flex items-center gap-1.5 text-sm min-w-0 flex-1">
               <svg className="w-3.5 h-3.5 text-text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -554,9 +636,74 @@ export function PromptInput({
               </svg>
               <span className="text-text-secondary truncate">{sourceBranch}</span>
               <svg className="w-3.5 h-3.5 text-text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12h10m0 0l-4-4m4 4l-4 4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 12H7m0 0l4-4m-4 4l4 4" />
               </svg>
-              <span className="text-text-primary font-medium truncate">{targetBranch}</span>
+              {canRenameBranch && isEditingBranch ? (
+                <div className="flex items-center gap-1 min-w-0">
+                  <input
+                    value={branchInput}
+                    onChange={(e) => setBranchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void handleRenameBranch()
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setIsEditingBranch(false)
+                        setBranchInput(session?.worktreeBranch || '')
+                        setBranchRenameError(null)
+                      }
+                    }}
+                    className="bg-surface-2 border border-border rounded px-2 py-0.5 text-xs text-text-primary w-44 focus:outline-none focus:border-accent/50"
+                    disabled={isRenamingBranch}
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => void handleRenameBranch()}
+                    disabled={isRenamingBranch}
+                    className="p-1 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary disabled:opacity-50"
+                    title="Save branch name"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingBranch(false)
+                      setBranchInput(session?.worktreeBranch || '')
+                      setBranchRenameError(null)
+                    }}
+                    disabled={isRenamingBranch}
+                    className="p-1 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary disabled:opacity-50"
+                    title="Cancel rename"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-text-primary font-medium truncate">{targetBranch}</span>
+                  {canRenameBranch && (
+                    <button
+                      onClick={() => {
+                        setIsEditingBranch(true)
+                        setBranchInput(session?.worktreeBranch || '')
+                        setBranchRenameError(null)
+                      }}
+                      className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary"
+                      title="Rename worktree branch"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5h2m-1-1v2m-6 8l8-8 3 3-8 8H6v-3z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <button
@@ -591,115 +738,131 @@ export function PromptInput({
               {commitResult}
             </div>
           )}
-        </div>
-      )}
-
-      <div className="flex items-end gap-2 max-w-3xl mx-auto">
-        <div className="flex-1 relative">
-          {/* Slash command autocomplete menu */}
-          {commandMenuOpen && (
-            <div
-              ref={commandMenuRef}
-              className="absolute bottom-full left-0 mb-1 w-80 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
-            >
-              {filteredCommands.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-text-muted">No matching commands</div>
-              ) : (
-                filteredCommands.map((command, index) => (
-                  <button
-                    key={command.name}
-                    onClick={() => selectCommand(command)}
-                    onMouseEnter={() => setSelectedCommandIndex(index)}
-                    className={`w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
-                      index === selectedCommandIndex ? 'bg-surface-3' : 'hover:bg-surface-3'
-                    }`}
-                  >
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium text-accent">/{command.name}</span>
-                      {command.input?.hint && (
-                        <span className="text-xs text-text-muted italic">{command.input.hint}</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-text-secondary">{command.description}</div>
-                  </button>
-                ))
-              )}
+          {branchRenameError && (
+            <div className="text-[11px] mt-1 px-1 text-error">
+              {branchRenameError}
             </div>
           )}
-          <textarea
-            ref={textareaRef}
-            value={mode === 'session' && isCreating && session?.pendingPrompt ? session.pendingPrompt : text}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              mode === 'draft'
-                ? draftPlaceholder
-                : isInitializing
-                  ? 'Launching agent...'
-                  : isCreating
-                    ? 'Setting up session...'
-                    : isPrompting
-                      ? 'Agent is working. Queue your next message...'
-                      : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'
-            }
-            disabled={isBusy}
-            readOnly={mode === 'session' && (isInitializing || isCreating)}
-            rows={1}
-            className="w-full bg-surface-1 border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder-text-muted resize-none focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-colors disabled:opacity-50"
-            style={{ minHeight: '40px', maxHeight: '200px' }}
-          />
-        </div>
-        <Button
-          variant="primary"
-          size="md"
-          disabled={!canSubmit}
-          onClick={handleSubmit}
-          className="shrink-0 rounded-xl h-[40px] w-[40px] !p-0"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-            />
-          </svg>
-        </Button>
-      </div>
-
-      {/* Bottom bar: config selectors */}
-      {mode === 'session' && (
-        <div className="flex items-center gap-1 max-w-3xl mx-auto mt-1.5">
-          {/* Mode selector: only when provided by ACP */}
-          {modeConfig && (
-            <ConfigOptionSelector
-              configOption={modeConfig}
-              onSelect={(value) => handleConfigOptionChange(modeConfig.id, value)}
-              disabled={isModeChangeDisabled}
-            />
-          )}
-
-          {/* Model selector (if agent provides models) */}
-          {modelConfig && (
-            <ConfigOptionSelector
-              configOption={modelConfig}
-              onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
-              disabled={isInitializing || isCreating}
-            />
-          )}
-
-          {/* Other config option selectors */}
-          {otherConfigs.map((config) => (
-            <ConfigOptionSelector
-              key={config.id}
-              configOption={config}
-              onSelect={(value) => handleConfigOptionChange(config.id, value)}
-              disabled={isInitializing || isCreating}
-            />
-          ))}
         </div>
       )}
+
+      <div className="max-w-3xl mx-auto">
+        <div
+          className={`relative border border-border bg-surface-1 px-3 pt-2 pb-2 ${
+            mode === 'session' && session
+              ? 'rounded-b-2xl rounded-t-none'
+              : 'rounded-2xl'
+          }`}
+        >
+          <div className="relative pr-10">
+            {/* Slash command autocomplete menu */}
+            {commandMenuOpen && (
+              <div
+                ref={commandMenuRef}
+                className="absolute bottom-full left-0 mb-1 w-80 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
+              >
+                {filteredCommands.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-text-muted">No matching commands</div>
+                ) : (
+                  filteredCommands.map((command, index) => (
+                    <button
+                      key={command.name}
+                      onClick={() => selectCommand(command)}
+                      onMouseEnter={() => setSelectedCommandIndex(index)}
+                      className={`w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
+                        index === selectedCommandIndex ? 'bg-surface-3' : 'hover:bg-surface-3'
+                      }`}
+                    >
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-medium text-accent">/{command.name}</span>
+                        {command.input?.hint && (
+                          <span className="text-xs text-text-muted italic">{command.input.hint}</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-text-secondary">{command.description}</div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={handleInput}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={
+                mode === 'draft'
+                  ? draftPlaceholder
+                  : isInitializing
+                    ? 'Launching agent...'
+                    : isCreating
+                      ? 'Setting up session...'
+                      : isPrompting
+                        ? 'Agent is working. Queue your next message...'
+                        : 'Send a message... (Enter to send, Shift+Enter for new line, Ctrl+V to paste images)'
+              }
+              disabled={isBusy}
+              readOnly={mode === 'session' && (isInitializing || isCreating)}
+              rows={1}
+              className="w-full box-border bg-transparent border-0 rounded-xl px-1.5 py-1 text-sm text-text-primary placeholder-text-muted resize-none overflow-y-hidden focus:outline-none disabled:opacity-50"
+              style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px`, maxHeight: `${MAX_TEXTAREA_HEIGHT}px` }}
+            />
+          </div>
+
+          <div className="mt-1 min-h-7 pr-10">
+            {mode === 'session' && (
+              <div className="flex items-center gap-1 flex-wrap">
+                {/* Mode selector: only when provided by ACP */}
+                {modeConfig && (
+                  <ConfigOptionSelector
+                    configOption={modeConfig}
+                    onSelect={(value) => handleConfigOptionChange(modeConfig.id, value)}
+                    disabled={isModeChangeDisabled}
+                  />
+                )}
+
+                {/* Model selector (if agent provides models) */}
+                {modelConfig && (
+                  <ConfigOptionSelector
+                    configOption={modelConfig}
+                    onSelect={(value) => handleConfigOptionChange(modelConfig.id, value)}
+                    disabled={isInitializing || isCreating}
+                  />
+                )}
+
+                {/* Other config option selectors */}
+                {otherConfigs.map((config) => (
+                  <ConfigOptionSelector
+                    key={config.id}
+                    configOption={config}
+                    onSelect={(value) => handleConfigOptionChange(config.id, value)}
+                    disabled={isInitializing || isCreating}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+            className="absolute bottom-2 right-2 shrink-0 rounded-lg h-8 w-8 !p-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+              />
+            </svg>
+          </Button>
+        </div>
+      </div>
       </div>
 
       {previewAttachment && (

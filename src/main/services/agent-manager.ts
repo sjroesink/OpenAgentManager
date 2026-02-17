@@ -503,9 +503,13 @@ export class AgentManagerService {
 
     if (installed.distributionType === 'npx' && installed.npxPackage) {
       const npxDist = dist?.npx
+      const npxArgs = npxDist?.args || []
+      const hasYesFlag = npxArgs.includes('-y') || npxArgs.includes('--yes')
       return {
         command: getNpxCommand(),
-        args: [installed.npxPackage, ...(npxDist?.args || [])],
+        args: hasYesFlag
+          ? [installed.npxPackage, ...npxArgs]
+          : ['-y', installed.npxPackage, ...npxArgs],
         env: npxDist?.env || {}
       }
     }
