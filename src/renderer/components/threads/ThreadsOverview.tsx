@@ -70,13 +70,16 @@ export function ThreadsOverview() {
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const installedAgents = useAgentStore((s) => s.installed)
   const searchQuery = useUiStore((s) => s.threadsOverviewSearchQuery)
+  const shouldFocusSearch = useUiStore((s) => s.threadsOverviewFocusSearch)
   const setSearchQuery = useUiStore((s) => s.setThreadsOverviewSearchQuery)
   const closeThreadsOverview = useUiStore((s) => s.closeThreadsOverview)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    searchInputRef.current?.focus()
-  }, [])
+    if (shouldFocusSearch) {
+      searchInputRef.current?.focus()
+    }
+  }, [shouldFocusSearch])
 
   const workspaceMap = useMemo(() => {
     const map = new Map<string, string>()

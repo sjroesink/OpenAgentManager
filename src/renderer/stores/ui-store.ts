@@ -31,6 +31,7 @@ interface UiState {
   // Threads overview
   threadsOverviewOpen: boolean
   threadsOverviewSearchQuery: string
+  threadsOverviewFocusSearch: boolean
 
   // Actions
   toggleSidebar: () => void
@@ -47,7 +48,7 @@ interface UiState {
   openDiffView: (filePath?: string) => void
   closeDiffView: () => void
   setDiffViewSelectedFile: (path: string | null) => void
-  openThreadsOverview: (searchQuery?: string) => void
+  openThreadsOverview: (searchQuery?: string, focusSearch?: boolean) => void
   closeThreadsOverview: () => void
   setThreadsOverviewSearchQuery: (query: string) => void
 }
@@ -74,6 +75,7 @@ export const useUiStore = create<UiState>((set) => ({
 
   threadsOverviewOpen: false,
   threadsOverviewSearchQuery: '',
+  threadsOverviewFocusSearch: false,
 
   toggleSidebar: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   toggleReviewPanel: () => set((s) => ({ reviewPanelVisible: !s.reviewPanelVisible })),
@@ -89,7 +91,17 @@ export const useUiStore = create<UiState>((set) => ({
   openDiffView: (filePath) => set({ diffViewOpen: true, diffViewSelectedFile: filePath ?? null }),
   closeDiffView: () => set({ diffViewOpen: false, diffViewSelectedFile: null }),
   setDiffViewSelectedFile: (path) => set({ diffViewSelectedFile: path }),
-  openThreadsOverview: (searchQuery) => set({ threadsOverviewOpen: true, threadsOverviewSearchQuery: searchQuery ?? '' }),
-  closeThreadsOverview: () => set({ threadsOverviewOpen: false, threadsOverviewSearchQuery: '' }),
+  openThreadsOverview: (searchQuery, focusSearch = false) =>
+    set({
+      threadsOverviewOpen: true,
+      threadsOverviewSearchQuery: searchQuery ?? '',
+      threadsOverviewFocusSearch: focusSearch
+    }),
+  closeThreadsOverview: () =>
+    set({
+      threadsOverviewOpen: false,
+      threadsOverviewSearchQuery: '',
+      threadsOverviewFocusSearch: false
+    }),
   setThreadsOverviewSearchQuery: (query) => set({ threadsOverviewSearchQuery: query })
 }))

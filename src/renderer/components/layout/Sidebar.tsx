@@ -6,47 +6,6 @@ import { WorkspaceSection } from '../sidebar/WorkspaceSection'
 import { Button } from '../common/Button'
 import type { InteractionMode } from '@shared/types/session'
 
-function SidebarSearch() {
-  const [query, setQuery] = useState('')
-  const openThreadsOverview = useUiStore((s) => s.openThreadsOverview)
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && query.trim()) {
-      openThreadsOverview(query.trim())
-      setQuery('')
-    }
-  }
-
-  const handleClick = () => {
-    openThreadsOverview(query.trim())
-    setQuery('')
-  }
-
-  return (
-    <div className="px-3 pb-2">
-      <div className="relative">
-        <svg
-          className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onClick={handleClick}
-          placeholder="Search threads..."
-          className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface-2 border border-border rounded-md text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent/50 focus:border-accent/50"
-        />
-      </div>
-    </div>
-  )
-}
-
 function isInteractionMode(value: string): value is InteractionMode {
   return value === 'ask' || value === 'code' || value === 'plan' || value === 'act'
 }
@@ -59,6 +18,7 @@ export function Sidebar() {
   const sessions = useSessionStore((s) => s.sessions)
   const startDraftThread = useSessionStore((s) => s.startDraftThread)
   const pendingPermissionCount = useSessionStore((s) => s.pendingPermissions.length)
+  const openThreadsOverview = useUiStore((s) => s.openThreadsOverview)
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
@@ -179,6 +139,14 @@ export function Sidebar() {
     }
   }, [isResizing, setSidebarWidth])
 
+  const handleOpenThreads = () => {
+    openThreadsOverview()
+  }
+
+  const handleOpenSearchThreads = () => {
+    openThreadsOverview('', true)
+  }
+
   if (!sidebarVisible) return null
 
   return (
@@ -186,7 +154,7 @@ export function Sidebar() {
       className="relative flex flex-col bg-surface-1 border-r border-border shrink-0 h-full"
       style={{ width: sidebarWidth }}
     >
-      {/* New thread button */}
+      {/* Header actions */}
       <div className="p-3 border-b border-border">
         <div className="relative">
           <Button
@@ -215,10 +183,22 @@ export function Sidebar() {
             {pendingPermissionCount} open permission {pendingPermissionCount === 1 ? 'question' : 'questions'}
           </div>
         )}
-      </div>
 
-      {/* Search */}
-      <SidebarSearch />
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button variant="secondary" size="sm" className="w-full" onClick={handleOpenThreads}>
+            <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M3 12h18M3 17h18" />
+            </svg>
+            Threads
+          </Button>
+          <Button variant="secondary" size="sm" className="w-full" onClick={handleOpenSearchThreads}>
+            <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Search
+          </Button>
+        </div>
+      </div>
 
       {/* Workspace sections */}
       <div className="flex-1 overflow-y-auto">
