@@ -19,6 +19,7 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle('agent:uninstall', async (_event, { agentId }: { agentId: string }) => {
     agentManager.uninstall(agentId)
+    return { success: true }
   })
 
   ipcMain.handle('agent:list-installed', () => {
@@ -34,6 +35,7 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle('agent:terminate', async (_event, { connectionId }: { connectionId: string }) => {
     agentManager.terminate(connectionId)
+    return { success: true }
   })
 
   ipcMain.handle(

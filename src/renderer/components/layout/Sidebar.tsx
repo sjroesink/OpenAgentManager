@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useUiStore } from '../../stores/ui-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useSessionStore } from '../../stores/session-store'
@@ -22,8 +22,9 @@ export function Sidebar() {
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
 
-  const sortedWorkspaces = [...workspaces].sort((a, b) =>
-    b.lastAccessedAt.localeCompare(a.lastAccessedAt)
+  const sortedWorkspaces = useMemo(
+    () => [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt)),
+    [workspaces]
   )
 
   const handleNewThread = async () => {

@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppLayout } from './components/layout/AppLayout'
 import { AgentBrowser } from './components/registry/AgentBrowser'
 import { SettingsDialog } from './components/settings/SettingsDialog'
@@ -83,11 +84,17 @@ export default function App() {
   }, [])
 
   return (
-    <>
+    <ErrorBoundary>
       <AppLayout />
-      <AgentBrowser />
-      <SettingsDialog />
-      <PermissionDialog />
-    </>
+      <ErrorBoundary fallback={null}>
+        <AgentBrowser />
+      </ErrorBoundary>
+      <ErrorBoundary fallback={null}>
+        <SettingsDialog />
+      </ErrorBoundary>
+      <ErrorBoundary fallback={null}>
+        <PermissionDialog />
+      </ErrorBoundary>
+    </ErrorBoundary>
   )
 }

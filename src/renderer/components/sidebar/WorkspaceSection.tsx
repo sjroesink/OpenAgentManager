@@ -265,7 +265,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const editInputRef = useRef<HTMLInputElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
 
-  const isExpanded = expandedWorkspaceIds.has(workspace.id)
+  const isExpanded = !!expandedWorkspaceIds[workspace.id]
   const hasDraftForThis = draftThread?.workspaceId === workspace.id
 
   // Build tree structure from flat sessions list

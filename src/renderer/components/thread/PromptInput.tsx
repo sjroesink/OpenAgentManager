@@ -149,8 +149,10 @@ export function PromptInput() {
 
   // ACP state for the active session
   const acpState = activeSessionId ? getSessionState(activeSessionId) : undefined
-  const availableCommands = useMemo(() => acpState?.commands ?? [], [acpState])
-  const configOptions = useMemo(() => acpState?.configOptions ?? [], [acpState])
+  const commands = acpState?.commands
+  const configOpts = acpState?.configOptions
+  const availableCommands = useMemo(() => commands ?? [], [commands])
+  const configOptions = useMemo(() => configOpts ?? [], [configOpts])
 
   // Derive mode and model config options from ACP state
   const modeConfig = useMemo(
