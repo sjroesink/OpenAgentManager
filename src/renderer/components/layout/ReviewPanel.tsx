@@ -1,14 +1,23 @@
 import React from 'react'
 import { useUiStore } from '../../stores/ui-store'
+import { useRouteStore } from '../../stores/route-store'
 import { Tabs } from '../common/Tabs'
 import { FileChangeList } from '../review/FileChangeList'
 import { DiffViewer } from '../review/DiffViewer'
 import { CommitPanel } from '../review/CommitPanel'
 
 export function ReviewPanel() {
-  const { reviewPanelVisible, reviewPanelWidth, reviewTab, setReviewTab, selectedDiffFile, openDiffView } = useUiStore()
+  const { reviewPanelVisible, reviewPanelWidth, reviewTab, setReviewTab, selectedDiffFile, setDiffViewSelectedFile } = useUiStore()
+  const navigate = useRouteStore((s) => s.navigate)
 
   if (!reviewPanelVisible) return null
+
+  const handleOpenDiffView = () => {
+    if (selectedDiffFile) {
+      setDiffViewSelectedFile(selectedDiffFile)
+    }
+    navigate('diff')
+  }
 
   return (
     <div
@@ -26,7 +35,7 @@ export function ReviewPanel() {
           className="px-2 pt-1 flex-1"
         />
         <button
-          onClick={() => openDiffView(selectedDiffFile ?? undefined)}
+          onClick={handleOpenDiffView}
           className="p-1 mr-2 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
           title="Open full diff view"
         >

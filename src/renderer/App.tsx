@@ -1,13 +1,11 @@
 import React, { useEffect, useCallback } from 'react'
 import { AppLayout } from './components/layout/AppLayout'
-import { AgentBrowser } from './components/registry/AgentBrowser'
-import { SettingsDialog } from './components/settings/SettingsDialog'
 import { PermissionDialog } from './components/thread/PermissionDialog'
 import { useSessionStore } from './stores/session-store'
 import { useAgentStore } from './stores/agent-store'
 import { useWorkspaceStore } from './stores/workspace-store'
 import { useAcpFeaturesStore } from './stores/acp-features-store'
-import { useUiStore } from './stores/ui-store'
+import { useRouteStore } from './stores/route-store'
 import { useIpcEvent } from './hooks/useIpc'
 import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
 
@@ -65,17 +63,24 @@ export default function App() {
     loadPersistedSessions()
   }, [loadInstalled, fetchRegistry, loadWorkspaces, loadPersistedSessions])
 
-  // Global keyboard shortcut for diff view
+  // Global keyboard shortcuts for navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Ctrl+Shift+D — toggle diff view
       if (e.ctrlKey && e.shiftKey && e.key === 'D') {
         e.preventDefault()
-        const store = useUiStore.getState()
-        if (store.diffViewOpen) {
-          store.closeDiffView()
-        } else {
-          store.openDiffView()
-        }
+        const routeState = useRouteStore.getState()
+        routeState.navigate(routeState.current.route === 'diff' ? 'home' : 'diff')
+      }
+      // Alt+Left — go back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        useRouteStore.getState().goBack()
+      }
+      // Alt+Right — go forward
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        useRouteStore.getState().goForward()
       }
     }
     window.addEventListener('keydown', handler)
@@ -85,8 +90,6 @@ export default function App() {
   return (
     <>
       <AppLayout />
-      <AgentBrowser />
-      <SettingsDialog />
       <PermissionDialog />
     </>
   )

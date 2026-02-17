@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useUiStore } from '../../stores/ui-store'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useRouteStore } from '../../stores/route-store'
 import { Button } from '../common/Button'
 
 interface MenuItem {
@@ -17,20 +18,15 @@ interface MenuGroup {
 }
 
 function useAppMenu(): MenuGroup[] {
-  const {
-    toggleSidebar,
-    toggleReviewPanel,
-    toggleTerminal,
-    setSettingsOpen,
-    setRegistryBrowserOpen,
-    openDiffView
-  } = useUiStore()
+  const { toggleSidebar, toggleReviewPanel, toggleTerminal } = useUiStore()
+  const { navigate } = useRouteStore()
+  const currentRoute = useRouteStore((s) => s.current.route)
 
   return [
     {
       label: 'File',
       items: [
-        { label: 'Settings', shortcut: 'Ctrl+,', action: () => setSettingsOpen(true) },
+        { label: 'Settings', shortcut: 'Ctrl+,', action: () => navigate('settings') },
         { label: '', separator: true },
         { label: 'Close Window', shortcut: 'Ctrl+W', action: () => window.api.invoke('window:close', undefined) },
         { label: 'Quit', shortcut: 'Ctrl+Q', action: () => window.api.invoke('window:quit', undefined) }
@@ -54,8 +50,12 @@ function useAppMenu(): MenuGroup[] {
         { label: 'Toggle Sidebar', shortcut: 'Ctrl+B', action: toggleSidebar },
         { label: 'Toggle Review Panel', action: toggleReviewPanel },
         { label: 'Toggle Terminal', shortcut: 'Ctrl+`', action: toggleTerminal },
-        { label: 'Diff View', shortcut: 'Ctrl+Shift+D', action: () => openDiffView() },
-        { label: 'Agent Registry', action: () => setRegistryBrowserOpen(true) },
+        {
+          label: 'Diff View',
+          shortcut: 'Ctrl+Shift+D',
+          action: () => navigate(currentRoute === 'diff' ? 'home' : 'diff')
+        },
+        { label: 'Agent Registry', action: () => navigate('agents') },
         { label: '', separator: true },
         { label: 'Zoom In', shortcut: 'Ctrl+=', action: () => window.api.invoke('window:zoom-in', undefined) },
         { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => window.api.invoke('window:zoom-out', undefined) },
@@ -152,16 +152,9 @@ function MenuBar({ onClose }: { onClose: () => void }) {
 }
 
 export function Toolbar() {
-  const {
-    toggleSidebar,
-    toggleReviewPanel,
-    toggleTerminal,
-    setRegistryBrowserOpen,
-    setSettingsOpen,
-    openDiffView,
-    diffViewOpen,
-    closeDiffView
-  } = useUiStore()
+  const { toggleSidebar, toggleReviewPanel, toggleTerminal } = useUiStore()
+  const { navigate, goBack, goForward, canGoBack, canGoForward } = useRouteStore()
+  const currentRoute = useRouteStore((s) => s.current.route)
 
   const activeSession = useSessionStore((s) => s.getActiveSession())
   const workspaces = useWorkspaceStore((s) => s.workspaces)
@@ -201,6 +194,30 @@ export function Toolbar() {
         </svg>
       </button>
 
+      {/* Back button */}
+      <button
+        onClick={goBack}
+        disabled={!canGoBack}
+        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
+        title="Go back (Alt+Left)"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
+      {/* Forward button */}
+      <button
+        onClick={goForward}
+        disabled={!canGoForward}
+        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
+        title="Go forward (Alt+Right)"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+
       {/* Dropdown menu */}
       {menuOpen && <MenuBar onClose={() => setMenuOpen(false)} />}
 
@@ -226,7 +243,7 @@ export function Toolbar() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => setRegistryBrowserOpen(true)}
+        onClick={() => navigate('agents')}
         className="titlebar-no-drag"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -242,9 +259,9 @@ export function Toolbar() {
 
       {/* Diff view toggle */}
       <button
-        onClick={() => (diffViewOpen ? closeDiffView() : openDiffView())}
+        onClick={() => navigate(currentRoute === 'diff' ? 'home' : 'diff')}
         className={`titlebar-no-drag p-1.5 rounded transition-colors ${
-          diffViewOpen
+          currentRoute === 'diff'
             ? 'bg-accent/20 text-accent'
             : 'hover:bg-surface-2 text-text-secondary hover:text-text-primary'
         }`}
@@ -279,8 +296,12 @@ export function Toolbar() {
 
       {/* Settings */}
       <button
-        onClick={() => setSettingsOpen(true)}
-        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
+        onClick={() => navigate('settings')}
+        className={`titlebar-no-drag p-1.5 rounded transition-colors ${
+          currentRoute === 'settings'
+            ? 'bg-accent/20 text-accent'
+            : 'hover:bg-surface-2 text-text-secondary hover:text-text-primary'
+        }`}
         title="Settings"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -6,12 +6,15 @@ import { MainPanel } from './MainPanel'
 import { ReviewPanel } from './ReviewPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { DiffView } from '../diff/DiffView'
+import { SettingsView } from '../settings/SettingsView'
+import { AgentBrowserView } from '../registry/AgentBrowserView'
 import { useUiStore } from '../../stores/ui-store'
+import { useRouteStore } from '../../stores/route-store'
 
 export function AppLayout() {
   const terminalVisible = useUiStore((s) => s.terminalVisible)
   const terminalHeight = useUiStore((s) => s.terminalHeight)
-  const diffViewOpen = useUiStore((s) => s.diffViewOpen)
+  const currentRoute = useRouteStore((s) => s.current.route)
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -27,14 +30,12 @@ export function AppLayout() {
         <div className="flex flex-col flex-1 min-w-0">
           {/* Main panel area */}
           <div className="flex flex-1 min-h-0">
-            {diffViewOpen ? (
-              <DiffView />
-            ) : (
+            {currentRoute === 'diff' && <DiffView />}
+            {currentRoute === 'settings' && <SettingsView />}
+            {currentRoute === 'agents' && <AgentBrowserView />}
+            {currentRoute === 'home' && (
               <>
-                {/* Thread / conversation panel */}
                 <MainPanel />
-
-                {/* Review panel */}
                 <ReviewPanel />
               </>
             )}
