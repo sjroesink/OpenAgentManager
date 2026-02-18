@@ -74,7 +74,11 @@ export function InitializationProgress({
         {/* Error message + retry */}
         {isError && (
           <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-xs text-error mb-2 break-words whitespace-pre-line">{session.initError}</p>
+            {!showAuthPrompt && (
+              <p className="text-xs text-error mb-2 break-words whitespace-pre-line">
+                {session.initError}
+              </p>
+            )}
             {showAuthPrompt && (
               <div className="mb-2 rounded-lg border border-border bg-surface-2 p-2">
                 <AuthMethodPrompt

@@ -152,7 +152,9 @@ function ErrorBanner({
         </svg>
         <div className="flex-1 min-w-0">
           <p className="text-error font-medium">Error</p>
-          <p className="text-text-secondary mt-0.5 break-words">{error}</p>
+          {!looksLikeAuthError && (
+            <p className="text-text-secondary mt-0.5 break-words">{error}</p>
+          )}
 
           {looksLikeAuthError && (
             <div className="mt-3 pt-3 border-t border-error/10">

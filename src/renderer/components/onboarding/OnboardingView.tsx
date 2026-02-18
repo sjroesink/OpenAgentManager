@@ -2,21 +2,23 @@ import React, { useState, useEffect } from 'react'
 import { useRouteStore } from '../../stores/route-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../common/Button'
+import { PrerequisitesStep } from './PrerequisitesStep'
 import { AgentInstallStep } from './AgentInstallStep'
-import { AgentAuthenticationStep } from './AgentAuthenticationStep'
+import { WorkspaceStep } from './WorkspaceStep'
 import type { AppSettings } from '@shared/types/settings'
 
-type WizardStep = 'install-agents' | 'authenticate-agents'
+type WizardStep = 'prerequisites' | 'install-agents' | 'workspace'
 
 const STEPS: { id: WizardStep; label: string }[] = [
-  { id: 'install-agents', label: 'Install Agents' },
-  { id: 'authenticate-agents', label: 'Authenticate Agents' }
+  { id: 'prerequisites', label: 'Prerequisites' },
+  { id: 'install-agents', label: 'Agents' },
+  { id: 'workspace', label: 'Workspace' }
 ]
 
 export function OnboardingView() {
   const navigate = useRouteStore((s) => s.navigate)
-  const { installed, fetchRegistry, loadInstalled } = useAgentStore()
-  const [currentStep, setCurrentStep] = useState<WizardStep>('install-agents')
+  const { fetchRegistry, loadInstalled } = useAgentStore()
+  const [currentStep, setCurrentStep] = useState<WizardStep>('prerequisites')
 
   useEffect(() => {
     fetchRegistry()
@@ -35,24 +37,26 @@ export function OnboardingView() {
   const handleSkip = () => markOnboardingComplete()
 
   const handleNext = () => {
-    if (currentStep === 'install-agents') {
-      if (installed.length === 0) {
-        handleComplete()
-      } else {
-        setCurrentStep('authenticate-agents')
-      }
+    if (currentStep === 'prerequisites') {
+      setCurrentStep('install-agents')
+    } else if (currentStep === 'install-agents') {
+      setCurrentStep('workspace')
     } else {
       handleComplete()
     }
   }
 
   const handleBack = () => {
-    if (currentStep === 'authenticate-agents') {
+    if (currentStep === 'install-agents') {
+      setCurrentStep('prerequisites')
+    } else if (currentStep === 'workspace') {
       setCurrentStep('install-agents')
     }
   }
 
   const currentStepIndex = STEPS.findIndex((s) => s.id === currentStep)
+  const isFirstStep = currentStep === 'prerequisites'
+  const isLastStep = currentStep === 'workspace'
 
   return (
     <div className="flex flex-col h-full">
@@ -108,23 +112,22 @@ export function OnboardingView() {
 
       {/* Step content */}
       <div className="flex-1 overflow-y-auto">
+        {currentStep === 'prerequisites' && <PrerequisitesStep />}
         {currentStep === 'install-agents' && <AgentInstallStep />}
-        {currentStep === 'authenticate-agents' && <AgentAuthenticationStep />}
+        {currentStep === 'workspace' && <WorkspaceStep />}
       </div>
 
       {/* Footer navigation */}
       <div className="flex items-center justify-between px-8 py-4 border-t border-border bg-surface-1">
         <div>
-          {currentStep !== 'install-agents' && (
+          {!isFirstStep && (
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
           )}
         </div>
         <Button variant="primary" onClick={handleNext}>
-          {currentStep === 'authenticate-agents' || installed.length === 0
-            ? 'Finish Setup'
-            : 'Next'}
+          {isLastStep ? 'Finish Setup' : 'Next'}
         </Button>
       </div>
     </div>
