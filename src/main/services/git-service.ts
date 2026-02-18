@@ -103,6 +103,22 @@ export class GitService {
   }
 
   /**
+   * List local branches for a repository (current branch first).
+   */
+  async listBranches(projectPath: string): Promise<string[]> {
+    const git = simpleGit(projectPath)
+    const isRepo = await git.checkIsRepo()
+    if (!isRepo) {
+      return []
+    }
+
+    const summary = await git.branchLocal()
+    const current = summary.current
+    const others = summary.all.filter((branch) => branch !== current).sort((a, b) => a.localeCompare(b))
+    return current ? [current, ...others] : others
+  }
+
+  /**
    * Get git status for a working directory
    */
   async getStatus(workingDir: string): Promise<GitStatus> {
@@ -342,3 +358,4 @@ export class GitService {
 }
 
 export const gitService = new GitService()
+

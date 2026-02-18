@@ -102,7 +102,7 @@ export class SessionManagerService {
         const worktree = await gitService.createWorktree(
           request.workingDir,
           sessionLocalId,
-          undefined,
+          request.baseBranch || undefined,
           request.branchName || undefined
         )
         worktreePath = worktree.path
@@ -714,3 +714,4 @@ export class SessionManagerService {
 }
 
 export const sessionManager = new SessionManagerService()
+

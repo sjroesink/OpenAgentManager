@@ -91,6 +91,7 @@ export interface IpcChannels {
   }
   'git:remove-worktree': { request: { projectPath: string; worktreePath: string }; response: void }
   'git:list-worktrees': { request: { projectPath: string }; response: WorktreeInfo[] }
+  'git:list-branches': { request: { projectPath: string }; response: string[] }
   'git:commit': {
     request: { worktreePath: string; message: string; files: string[] }
     response: CommitResult
@@ -199,3 +200,4 @@ declare global {
     api: ElectronAPI
   }
 }
+

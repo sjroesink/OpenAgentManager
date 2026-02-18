@@ -31,6 +31,9 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
 
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [availableBranches, setAvailableBranches] = useState<string[]>([])
+  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [branchLoadError, setBranchLoadError] = useState<string | null>(null)
   const canCreate = !!draft.agentId && !creating
 
   useEffect(() => {
@@ -67,6 +70,47 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
     updateDraftThread
   ])
 
+  useEffect(() => {
+    if (!workspace?.isGitRepo || !draft.useWorktree) {
+      setAvailableBranches([])
+      setBranchLoadError(null)
+      setBranchesLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setBranchesLoading(true)
+    setBranchLoadError(null)
+
+    window.api
+      .invoke('git:list-branches', { projectPath: workspace.path })
+      .then((branches) => {
+        if (cancelled) return
+        setAvailableBranches(branches)
+
+        const nextBranch =
+          draft.baseBranch && branches.includes(draft.baseBranch)
+            ? draft.baseBranch
+            : (branches[0] || null)
+
+        if (nextBranch !== draft.baseBranch) {
+          updateDraftThread({ baseBranch: nextBranch })
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setBranchLoadError(err instanceof Error ? err.message : 'Failed to load branches')
+        setAvailableBranches([])
+      })
+      .finally(() => {
+        if (!cancelled) setBranchesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [workspace?.id, workspace?.path, workspace?.isGitRepo, draft.useWorktree, draft.baseBranch, updateDraftThread])
+
   const handleWorkspaceChange = useCallback(
     async (value: string) => {
       if (value === '__new__') {
@@ -74,8 +118,8 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
         if (!path) return
         try {
           const ws = await createWorkspace(path)
-          updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
-          
+          updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false, baseBranch: null })
+
           // Apply defaults for new workspace
           if (
             ws.defaultAgentId ||
@@ -128,8 +172,8 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
       } else {
         const ws = workspaces.find((w) => w.id === value)
         if (ws) {
-          updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false })
-          
+          updateDraftThread({ workspaceId: ws.id, workspacePath: ws.path, useWorktree: false, baseBranch: null })
+
           // Apply defaults from metadata
           if (
             ws.defaultAgentId ||
@@ -296,15 +340,50 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
 
           {/* Worktree toggle */}
           {workspace?.isGitRepo && (
-            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={draft.useWorktree}
-                onChange={(e) => updateDraftThread({ useWorktree: e.target.checked })}
-                className="rounded border-border"
-              />
-              Use git worktree
-            </label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={draft.useWorktree}
+                  onChange={(e) => {
+                    const enabled = e.target.checked
+                    updateDraftThread({ useWorktree: enabled, baseBranch: enabled ? draft.baseBranch : null })
+                  }}
+                  className="rounded border-border"
+                />
+                Use git worktree
+              </label>
+
+              {draft.useWorktree && (
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                    Base branch
+                  </label>
+                  <select
+                    value={draft.baseBranch || ''}
+                    onChange={(e) => updateDraftThread({ baseBranch: e.target.value || null })}
+                    disabled={branchesLoading || availableBranches.length === 0}
+                    className="w-full px-3 py-2 text-sm bg-surface-1 border border-border rounded-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+                  >
+                    <option value="">
+                      {branchesLoading
+                        ? 'Loading branches...'
+                        : availableBranches.length === 0
+                          ? 'No branches found'
+                          : 'Select base branch'}
+                    </option>
+                    {availableBranches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </select>
+                  {branchLoadError && (
+                    <p className="text-[11px] text-error mt-1">{branchLoadError}</p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* First message */}

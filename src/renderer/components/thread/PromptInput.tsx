@@ -494,8 +494,9 @@ export function PromptInput({
   const activeWorkspace = session
     ? workspaces.find((workspace) => workspace.id === session.workspaceId)
     : null
-  const sourceBranch = activeWorkspace?.gitBranch || 'main'
-  const targetBranch = session?.worktreeBranch || sourceBranch
+  const sourceBranch = session?.baseBranch || activeWorkspace?.gitBranch || 'main'
+  const targetBranch = session?.worktreeBranch
+    || (session?.useWorktree && (isInitializing || isCreating) ? 'creating worktree...' : sourceBranch)
   const canRenameBranch =
     mode === 'session' &&
     !!session?.sessionId &&

@@ -202,7 +202,20 @@ export function MainPanel() {
     deleteSession(activeSession.sessionId, cleanupWorktree)
     setThreadMenuOpen(false)
   }
+  const isWorktreeInitializing =
+    activeSession.useWorktree &&
+    activeSession.status === 'initializing' &&
+    !activeSession.worktreePath
   const currentDirectory = activeSession.worktreePath || activeSession.workingDir
+  const currentDirectoryLabel = isWorktreeInitializing
+    ? `${currentDirectory} (workspace, worktree pending)`
+    : currentDirectory
+  const headerBranchLabel = activeSession.worktreeBranch
+    || (isWorktreeInitializing
+      ? (activeSession.baseBranch
+        ? `${activeSession.baseBranch} -> creating worktree...`
+        : 'creating worktree...')
+      : null)
 
   const handleOpenFolder = async () => {
     try {
@@ -229,16 +242,16 @@ export function MainPanel() {
           <span className="text-xs text-text-muted truncate">{activeSession.title}</span>
         </div>
         <div className="flex-1" />
-        {activeSession.worktreeBranch && (
+        {headerBranchLabel && (
           <span className="text-xs text-text-muted bg-surface-2 px-2 py-0.5 rounded">
-            {activeSession.worktreeBranch}
+            {headerBranchLabel}
           </span>
         )}
         <span
           className="text-xs text-text-muted truncate max-w-[34vw]"
-          title={currentDirectory}
+          title={currentDirectoryLabel}
         >
-          {currentDirectory}
+          {currentDirectoryLabel}
         </span>
         <div className="relative" ref={openInMenuRef}>
           <button

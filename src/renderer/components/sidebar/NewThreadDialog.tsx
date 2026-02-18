@@ -20,6 +20,10 @@ export function NewThreadDialog() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [useWorktree, setUseWorktree] = useState(false)
+  const [availableBranches, setAvailableBranches] = useState<string[]>([])
+  const [selectedBaseBranch, setSelectedBaseBranch] = useState('')
+  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [branchLoadError, setBranchLoadError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   const selectedWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId)
@@ -50,6 +54,45 @@ export function NewThreadDialog() {
     }
   }, [selectedWorkspaceId, selectedWorkspace])
 
+  useEffect(() => {
+    if (!open) return
+    if (!selectedWorkspace?.isGitRepo || !useWorktree) {
+      setAvailableBranches([])
+      setSelectedBaseBranch('')
+      setBranchLoadError(null)
+      setBranchesLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setBranchesLoading(true)
+    setBranchLoadError(null)
+
+    window.api
+      .invoke('git:list-branches', { projectPath: selectedWorkspace.path })
+      .then((branches) => {
+        if (cancelled) return
+        setAvailableBranches(branches)
+        setSelectedBaseBranch((current) => {
+          if (current && branches.includes(current)) return current
+          return branches[0] || ''
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setBranchLoadError(err instanceof Error ? err.message : 'Failed to load branches')
+        setAvailableBranches([])
+        setSelectedBaseBranch('')
+      })
+      .finally(() => {
+        if (!cancelled) setBranchesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, selectedWorkspace?.id, selectedWorkspace?.path, selectedWorkspace?.isGitRepo, useWorktree])
+
   const handleSelectNewWorkspace = useCallback(async () => {
     const path = await window.api.invoke('workspace:select-directory', undefined)
     if (!path) return
@@ -77,12 +120,16 @@ export function NewThreadDialog() {
     const workspace = selectedWorkspace
     const workspaceId = selectedWorkspaceId
     const worktree = useWorktree
+    const baseBranch = worktree ? (selectedBaseBranch || undefined) : undefined
 
     setOpen(false)
     setSelectedWorkspaceId(null)
     setSelectedAgentId(null)
     setSelectedModelId(null)
     setUseWorktree(false)
+    setAvailableBranches([])
+    setSelectedBaseBranch('')
+    setBranchLoadError(null)
 
     try {
       let connection = connections.find(
@@ -99,7 +146,9 @@ export function NewThreadDialog() {
         worktree,
         workspaceId,
         undefined,
-        modelId || undefined
+        modelId || undefined,
+        undefined,
+        baseBranch
       )
     } catch (error) {
       console.error('Failed to create thread:', error)
@@ -115,6 +164,7 @@ export function NewThreadDialog() {
     createSession,
     selectedModelId,
     useWorktree,
+    selectedBaseBranch,
     setOpen
   ])
 
@@ -139,6 +189,9 @@ export function NewThreadDialog() {
                 } else {
                   setSelectedWorkspaceId(e.target.value || null)
                   setUseWorktree(false)
+                  setAvailableBranches([])
+                  setSelectedBaseBranch('')
+                  setBranchLoadError(null)
                 }
               }}
               className="w-full px-3 py-2 text-sm bg-surface-2 border border-border rounded-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
@@ -179,16 +232,54 @@ export function NewThreadDialog() {
 
         {/* Worktree toggle */}
         {selectedWorkspace?.isGitRepo && (
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useWorktree}
-                onChange={(e) => setUseWorktree(e.target.checked)}
-                className="rounded border-border"
-              />
-              Use git worktree
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useWorktree}
+                  onChange={(e) => {
+                    const enabled = e.target.checked
+                    setUseWorktree(enabled)
+                    if (!enabled) {
+                      setSelectedBaseBranch('')
+                    }
+                  }}
+                  className="rounded border-border"
+                />
+                Use git worktree
+              </label>
+            </div>
+
+            {useWorktree && (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                  Base branch
+                </label>
+                <select
+                  value={selectedBaseBranch}
+                  onChange={(e) => setSelectedBaseBranch(e.target.value)}
+                  disabled={branchesLoading || availableBranches.length === 0}
+                  className="w-full px-3 py-2 text-sm bg-surface-2 border border-border rounded-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+                >
+                  <option value="">
+                    {branchesLoading
+                      ? 'Loading branches...'
+                      : availableBranches.length === 0
+                        ? 'No branches found'
+                        : 'Select base branch'}
+                  </option>
+                  {availableBranches.map((branch) => (
+                    <option key={branch} value={branch}>
+                      {branch}
+                    </option>
+                  ))}
+                </select>
+                {branchLoadError && (
+                  <p className="text-[11px] text-error mt-1">{branchLoadError}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

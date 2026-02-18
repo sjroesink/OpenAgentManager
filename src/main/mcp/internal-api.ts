@@ -66,7 +66,8 @@ const routes: Record<string, RouteHandler> = {
       useWorktree: (body.useWorktree as boolean) || false,
       workspaceId: body.workspaceId as string,
       interactionMode: body.mode as 'ask' | 'code' | 'plan' | 'act' | undefined,
-      title: body.title as string | undefined
+      title: body.title as string | undefined,
+      baseBranch: body.baseBranch as string | undefined
     })
   },
 
@@ -334,3 +335,4 @@ export function stopInternalApi(): void {
 
   authToken = null
 }
+

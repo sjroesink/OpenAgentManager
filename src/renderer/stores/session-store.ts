@@ -29,6 +29,7 @@ export interface DraftThread {
   modelId: string | null
   interactionMode: InteractionMode | null
   useWorktree: boolean
+  baseBranch: string | null
 }
 
 export interface ComposerDraft {
@@ -57,6 +58,7 @@ interface SessionState {
     interactionMode?: InteractionMode,
     modelId?: string,
     title?: string,
+    baseBranch?: string,
     pendingPrompt?: string
   ) => Promise<SessionInfo>
   setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
@@ -85,7 +87,7 @@ interface SessionState {
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
   updateDraftThread: (
-    updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'interactionMode' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>
+    updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'interactionMode' | 'useWorktree' | 'baseBranch' | 'workspaceId' | 'workspacePath'>>
   ) => void
   discardDraftThread: () => void
   commitDraftThread: (promptContent?: ContentBlock[]) => Promise<void>
@@ -320,7 +322,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (connectionId, workingDir, useWorktree, workspaceId, interactionMode, modelId, title, pendingPrompt?) => {
+  createSession: async (connectionId, workingDir, useWorktree, workspaceId, interactionMode, modelId, title, baseBranch, pendingPrompt?) => {
     // Add a placeholder session immediately so the UI feels responsive
     const placeholderId = `creating-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -351,7 +353,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         workspaceId,
         interactionMode,
         modelId,
-        title
+        title,
+        baseBranch
       })
       // Replace placeholder with actual session
       set((state) => ({
@@ -606,7 +609,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       agentId: null,
       modelId: null,
       interactionMode: null,
-      useWorktree: false
+      useWorktree: false,
+      baseBranch: null
     }
     set({ draftThread: draft, activeDraftId: draft.id, activeSessionId: null })
   },
@@ -686,6 +690,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       messages: initialMessages,
       interactionMode: draftThread.interactionMode || undefined,
       useWorktree: draftThread.useWorktree,
+      baseBranch: draftThread.baseBranch || undefined,
       workspaceId: draftThread.workspaceId,
       pendingPrompt: pendingPromptText,
       pendingPromptContent: promptContent,
@@ -713,6 +718,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       interactionMode: draftThread.interactionMode || undefined,
       workspacePath: draftThread.workspacePath,
       useWorktree: draftThread.useWorktree,
+      baseBranch: draftThread.baseBranch || undefined,
       workspaceId: draftThread.workspaceId,
       promptContent,
       existingConnection: existingConnection || null
@@ -779,6 +785,7 @@ interface InitPipelineParams {
   interactionMode?: InteractionMode
   workspacePath: string
   useWorktree: boolean
+  baseBranch?: string
   workspaceId: string
   promptContent?: ContentBlock[]
   existingConnection: { connectionId: string } | null
@@ -813,7 +820,7 @@ async function runInitPipeline(
   placeholderId: string,
   params: InitPipelineParams
 ) {
-  const { agentId, modelId, workspacePath, useWorktree, workspaceId, promptContent, existingConnection } = params
+  const { agentId, modelId, workspacePath, useWorktree, baseBranch, workspaceId, promptContent, existingConnection } = params
   const agentStore = useAgentStore.getState()
   const queuedPrompts = () =>
     get().sessions.find((s) => s.sessionId === placeholderId)?.pendingPromptQueue
@@ -839,6 +846,7 @@ async function runInitPipeline(
       connectionId: connection.connectionId,
       workingDir: workspacePath,
       useWorktree,
+      baseBranch,
       workspaceId,
       interactionMode: params.interactionMode,
       modelId: modelId || undefined

@@ -17,5 +17,8 @@
     "userMessageCount": 1,
     "agentMessageCount": 1,
     "toolCallCount": 23
+  },
+  "metadata": {
+    "interactionMode": "read-only"
   }
 }

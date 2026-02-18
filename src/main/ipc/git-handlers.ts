@@ -37,6 +37,13 @@ export function registerGitHandlers(): void {
   )
 
   ipcMain.handle(
+    'git:list-branches',
+    async (_event, { projectPath }: { projectPath: string }) => {
+      return gitService.listBranches(projectPath)
+    }
+  )
+
+  ipcMain.handle(
     'git:commit',
     async (
       _event,

@@ -16,6 +16,8 @@ export interface SessionInfo {
   messages: Message[]
   interactionMode?: InteractionMode
   useWorktree: boolean
+  /** Selected base branch for worktree creation (UI-only while initializing). */
+  baseBranch?: string
   workspaceId: string
   /** ID of the parent session this was forked from. Undefined for root sessions. */
   parentSessionId?: string
@@ -226,6 +228,7 @@ export interface CreateSessionRequest {
   interactionMode?: InteractionMode
   modelId?: string
   title?: string
+  baseBranch?: string
   branchName?: string
 }
 
