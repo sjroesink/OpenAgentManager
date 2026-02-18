@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { getCliCommandsForAgent } from '@shared/config/agent-env'
 import { AgentIcon } from '../common/AgentIcon'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
 import { Spinner } from '../common/Spinner'
+import { AuthMethodPrompt } from '../thread/AuthMethodPrompt'
 
 export function AgentInstallStep() {
   const {
@@ -21,6 +22,7 @@ export function AgentInstallStep() {
   } = useAgentStore()
 
   const [installingId, setInstallingId] = useState<string | null>(null)
+  const [checkingIds, setCheckingIds] = useState<Record<string, boolean>>({})
   const [cliDetection, setCliDetection] = useState<Record<string, boolean>>({})
 
   // Detect CLI agents on PATH
@@ -56,11 +58,24 @@ export function AgentInstallStep() {
       })
   }, [registry])
 
+  const checkSingleAgent = useCallback(
+    async (agentId: string) => {
+      setCheckingIds((state) => ({ ...state, [agentId]: true }))
+      try {
+        await checkAgentAuth(agentId)
+      } finally {
+        setCheckingIds((state) => ({ ...state, [agentId]: false }))
+      }
+    },
+    [checkAgentAuth]
+  )
+
   const handleInstall = async (agentId: string) => {
     setInstallingId(agentId)
     try {
       await installAgent(agentId)
-      await checkAgentAuth(agentId)
+      // Automatically check auth after install
+      await checkSingleAgent(agentId)
     } catch (error) {
       console.error('Install error:', error)
     } finally {
@@ -95,9 +110,9 @@ export function AgentInstallStep() {
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
-      <h2 className="text-lg font-semibold text-text-primary mb-2">Install Agents</h2>
+      <h2 className="text-lg font-semibold text-text-primary mb-2">Install &amp; Configure Agents</h2>
       <p className="text-sm text-text-secondary mb-6">
-        Select the AI coding agents you want to use. Agents already found on your system are shown
+        Install agents and configure authentication. Agents already found on your system are shown
         first.
       </p>
 
@@ -128,6 +143,9 @@ export function AgentInstallStep() {
               const authCheckError = authCheck?.error || authCheckErrors[agent.id]
               const foundOnPath = cliDetection[agent.id] ?? false
               const isLoading = installingId === agent.id
+              const isChecking = checkingIds[agent.id] ?? false
+              const isAuthenticated = authCheck?.isAuthenticated ?? false
+              const requiresAuthentication = authCheck?.requiresAuthentication ?? false
 
               const distributionType = agent.distribution.npx
                 ? 'npx'
@@ -158,39 +176,79 @@ export function AgentInstallStep() {
                         <Badge variant="default">{distributionType}</Badge>
                         {foundOnPath && <Badge variant="success">Found on PATH</Badge>}
                         {agentInstalled && <Badge variant="accent">Installed</Badge>}
-                        {agentInstalled && authCheck?.isAuthenticated && (
+                        {isChecking && (
+                          <Badge variant="default">
+                            <span className="inline-flex items-center gap-1">
+                              <Spinner size="sm" />
+                              Checking
+                            </span>
+                          </Badge>
+                        )}
+                        {agentInstalled && !isChecking && isAuthenticated && (
                           <Badge variant="success">Authenticated</Badge>
                         )}
-                        {agentInstalled && authCheck && !authCheck.isAuthenticated && authCheck.requiresAuthentication && (
+                        {agentInstalled && !isChecking && requiresAuthentication && !isAuthenticated && (
                           <Badge variant="warning">Auth required</Badge>
                         )}
-                        {agentInstalled && authCheckError && !authCheck?.requiresAuthentication && (
+                        {agentInstalled && !isChecking && authCheckError && !requiresAuthentication && (
                           <Badge variant="error">Check failed</Badge>
                         )}
                       </div>
                       <p className="text-xs text-text-secondary mb-2 line-clamp-2">
                         {agent.description}
                       </p>
-                      {agentInstalled && authCheckError && (
+
+                      {/* Inline auth prompt for installed agents that need authentication */}
+                      {agentInstalled && !isChecking && requiresAuthentication && !isAuthenticated && authCheck && (
+                        <div className="mt-2 mb-2">
+                          <AuthMethodPrompt
+                            authMethods={authCheck.authMethods}
+                            connectionId={authCheck.connection.connectionId}
+                            agentId={agent.id}
+                            projectPath={authCheck.projectPath}
+                            onAuthFlowComplete={async () => {
+                              await checkSingleAgent(agent.id)
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {agentInstalled && !isChecking && isAuthenticated && (
+                        <p className="text-xs text-success mb-2">Ready to use.</p>
+                      )}
+
+                      {agentInstalled && !isChecking && authCheckError && (
                         <p className="text-[11px] text-error mb-2 break-words whitespace-pre-line">{authCheckError}</p>
                       )}
+
                       <div className="flex items-center gap-2 text-[10px] text-text-muted">
                         <span>{agent.authors.join(', ')}</span>
                         <span>|</span>
                         <span>{agent.license}</span>
                       </div>
                     </div>
-                    <Button
-                      variant={agentInstalled ? 'danger' : 'primary'}
-                      size="sm"
-                      loading={isLoading}
-                      onClick={() =>
-                        agentInstalled ? handleUninstall(agent.id) : handleInstall(agent.id)
-                      }
-                      className="shrink-0"
-                    >
-                      {agentInstalled ? 'Remove' : 'Install'}
-                    </Button>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <Button
+                        variant={agentInstalled ? 'danger' : 'primary'}
+                        size="sm"
+                        loading={isLoading}
+                        onClick={() =>
+                          agentInstalled ? handleUninstall(agent.id) : handleInstall(agent.id)
+                        }
+                      >
+                        {agentInstalled ? 'Remove' : 'Install'}
+                      </Button>
+                      {agentInstalled && !isChecking && !isAuthenticated && authCheck && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={isChecking}
+                          onClick={() => checkSingleAgent(agent.id)}
+                        >
+                          Re-check
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
