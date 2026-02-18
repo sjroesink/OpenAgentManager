@@ -2,11 +2,23 @@
 // Application Settings Types
 // ============================================================
 
+/** A user-defined reusable prompt template */
+export interface AgentSkill {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  /** If set, skill is only shown when this agent is active */
+  agentId?: string
+  createdAt: string
+}
+
 export interface AppSettings {
   general: GeneralSettings
   git: GitSettings
   agents: Record<string, AgentSettings>
   mcp: McpSettings
+  skills: AgentSkill[]
 }
 
 export interface GeneralSettings {
@@ -78,5 +90,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agents: {},
   mcp: {
     servers: []
-  }
+  },
+  skills: []
 }

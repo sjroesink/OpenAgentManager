@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/session-store'
 import { useAcpFeaturesStore } from '../../stores/acp-features-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useRouteStore } from '../../stores/route-store'
+import { useSkillsStore } from '../../stores/skills-store'
 import { Button } from '../common/Button'
 import type { SlashCommand, ContentBlock, ImageContent, ConfigOption } from '@shared/types/session'
 
@@ -155,6 +156,7 @@ export function PromptInput({
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
   const [commandQuery, setCommandQuery] = useState('')
+  const [skillsMenuOpen, setSkillsMenuOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [diffTotals, setDiffTotals] = useState({ additions: 0, deletions: 0, fileCount: 0 })
   const [committing, setCommitting] = useState(false)
@@ -165,6 +167,8 @@ export function PromptInput({
   const [branchRenameError, setBranchRenameError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const commandMenuRef = useRef<HTMLDivElement>(null)
+  const skillsMenuRef = useRef<HTMLDivElement>(null)
+  const skillsButtonRef = useRef<HTMLButtonElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const {
     activeSessionId,
@@ -180,6 +184,7 @@ export function PromptInput({
   const workspaces = useWorkspaceStore((s) => s.workspaces)
   const navigate = useRouteStore((s) => s.navigate)
   const currentRoute = useRouteStore((s) => s.current.route)
+  const { skills, loadSkills, getSkillsForAgent } = useSkillsStore()
   const composerDraftId = mode === 'session' ? activeSessionId : activeDraftId
 
   const session = getActiveSession()
@@ -236,6 +241,52 @@ export function PromptInput({
       })
     }
   }, [])
+
+  // Load skills on mount
+  useEffect(() => {
+    if (skills.length === 0) {
+      loadSkills()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const agentSkills = useMemo(
+    () => getSkillsForAgent(getActiveSession()?.agentId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skills, activeSessionId]
+  )
+
+  const selectSkill = useCallback(
+    (prompt: string) => {
+      setText(prompt)
+      setSkillsMenuOpen(false)
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = prompt.length
+            textareaRef.current.selectionEnd = prompt.length
+          }
+        })
+      }
+    },
+    []
+  )
+
+  // Close skills menu on outside click
+  useEffect(() => {
+    if (!skillsMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (
+        skillsMenuRef.current && !skillsMenuRef.current.contains(e.target as Node) &&
+        skillsButtonRef.current && !skillsButtonRef.current.contains(e.target as Node)
+      ) {
+        setSkillsMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [skillsMenuOpen])
 
   // Close command menu on outside click
   useEffect(() => {
@@ -841,6 +892,43 @@ export function PromptInput({
                     disabled={isInitializing || isCreating}
                   />
                 ))}
+
+                {/* Skills picker */}
+                {agentSkills.length > 0 && (
+                  <div className="relative">
+                    <button
+                      ref={skillsButtonRef}
+                      onClick={() => setSkillsMenuOpen((prev) => !prev)}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-surface-1 rounded-md transition-colors"
+                      title="Insert a skill prompt"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <span>Skills</span>
+                    </button>
+
+                    {skillsMenuOpen && (
+                      <div
+                        ref={skillsMenuRef}
+                        className="absolute bottom-full left-0 mb-1 w-72 bg-surface-2 border border-border rounded-lg shadow-lg py-1 z-50 max-h-64 overflow-y-auto"
+                      >
+                        {agentSkills.map((skill) => (
+                          <button
+                            key={skill.id}
+                            onClick={() => selectSkill(skill.prompt)}
+                            className="w-full flex flex-col gap-0.5 px-3 py-2 text-left hover:bg-surface-3 transition-colors"
+                          >
+                            <span className="text-sm font-medium text-text-primary">{skill.name}</span>
+                            {skill.description && (
+                              <span className="text-xs text-text-secondary">{skill.description}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
