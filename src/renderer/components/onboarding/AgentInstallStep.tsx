@@ -217,7 +217,7 @@ export function AgentInstallStep() {
                         <p className="text-xs text-success mb-2">Ready to use.</p>
                       )}
 
-                      {agentInstalled && !isChecking && authCheckError && (
+                      {agentInstalled && !isChecking && authCheckError && !requiresAuthentication && (
                         <p className="text-[11px] text-error mb-2 break-words whitespace-pre-line">{authCheckError}</p>
                       )}
 
