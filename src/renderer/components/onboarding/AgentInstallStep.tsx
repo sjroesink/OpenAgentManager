@@ -79,14 +79,26 @@ export function AgentInstallStep() {
     }
   }
 
-  const agents = registry?.agents ?? []
+  // Sort agents: CLI found on PATH first, then already installed, then the rest
+  const agents = React.useMemo(() => {
+    const raw = registry?.agents ?? []
+    return [...raw].sort((a, b) => {
+      const aOnPath = cliDetection[a.id] ? 1 : 0
+      const bOnPath = cliDetection[b.id] ? 1 : 0
+      if (aOnPath !== bOnPath) return bOnPath - aOnPath
+
+      const aInstalled = isInstalled(a.id) ? 1 : 0
+      const bInstalled = isInstalled(b.id) ? 1 : 0
+      return bInstalled - aInstalled
+    })
+  }, [registry, cliDetection, isInstalled])
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
       <h2 className="text-lg font-semibold text-text-primary mb-2">Install Agents</h2>
       <p className="text-sm text-text-secondary mb-6">
-        Select the AI coding agents you want to use. Agents marked &quot;Found on PATH&quot; are
-        already installed on your system.
+        Select the AI coding agents you want to use. Agents already found on your system are shown
+        first.
       </p>
 
       {registryLoading && (
