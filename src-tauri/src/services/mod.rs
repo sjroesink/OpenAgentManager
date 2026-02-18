@@ -1,0 +1,10 @@
+pub mod acp_client;
+pub mod agent_manager;
+pub mod download_service;
+pub mod git_service;
+pub mod registry_service;
+pub mod session_manager;
+pub mod settings_service;
+pub mod terminal_service;
+pub mod thread_store;
+pub mod workspace_service;

@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback } from 'react'
+import { invoke } from './lib/ipc-client'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { AppLayout } from './components/layout/AppLayout'
 import { PermissionDialog } from './components/thread/PermissionDialog'
@@ -87,7 +88,7 @@ export default function App() {
 
   // Check if onboarding needs to be shown on first launch
   useEffect(() => {
-    window.api.invoke('settings:get', undefined).then((settings) => {
+    invoke('settings:get', undefined).then((settings) => {
       if (!settings.general.completedOnboarding) {
         useRouteStore.getState().navigate('onboarding')
       }

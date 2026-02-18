@@ -175,9 +175,10 @@ export interface IpcEvents {
 }
 
 // ============================================================
-// Type helper for the preload API
+// Legacy type — kept for reference only; removed from window.api
+// IPC is now handled via @tauri-apps/api (invoke/listen)
 // ============================================================
-export interface ElectronAPI {
+export interface TauriAPI {
   invoke<T extends keyof IpcChannels>(
     channel: T,
     data: IpcChannels[T]['request']
@@ -187,15 +188,4 @@ export interface ElectronAPI {
     channel: T,
     callback: (data: IpcEvents[T]) => void
   ): () => void
-
-  off<T extends keyof IpcEvents>(
-    channel: T,
-    callback: (data: IpcEvents[T]) => void
-  ): void
-}
-
-declare global {
-  interface Window {
-    api: ElectronAPI
-  }
 }
