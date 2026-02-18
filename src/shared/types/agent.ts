@@ -84,6 +84,21 @@ export interface AgentConnection {
   error?: string
 }
 
+/**
+ * Result of spawning + probing an installed agent to determine
+ * whether the user still needs to complete authentication.
+ */
+export interface AgentAuthCheckResult {
+  agentId: string
+  checkedAt: string
+  projectPath: string
+  isAuthenticated: boolean
+  requiresAuthentication: boolean
+  authMethods: AuthMethod[]
+  connection: AgentConnection
+  error?: string
+}
+
 export interface AgentModelInfo {
   modelId: string
   name: string

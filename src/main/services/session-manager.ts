@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import type { BrowserWindow } from 'electron'
+import type { AgentConnection } from '@shared/types/agent'
 import type { SessionInfo, CreateSessionRequest, PermissionResponse, PermissionRequestEvent, InteractionMode, SessionUpdateEvent, WorktreeHookProgressEvent, HookStep, ContentBlock } from '@shared/types/session'
 import { applyUpdateToMessages } from '@shared/util/session-util'
 import { agentManager } from './agent-manager'
@@ -37,6 +38,14 @@ export class SessionManagerService {
         ...(s.url ? { url: s.url } : {}),
         ...(s.env && Object.keys(s.env).length ? { env: s.env } : {})
       }))
+  }
+
+  private async ensureAuthenticatedConnection(agentId: string, workingDir: string): Promise<AgentConnection> {
+    const authResult = await agentManager.checkAuthentication(agentId, workingDir)
+    if (!authResult.isAuthenticated) {
+      throw new Error(authResult.error || 'Authentication required')
+    }
+    return authResult.connection
   }
 
   private sendHookProgress(event: WorktreeHookProgressEvent): void {
@@ -124,7 +133,16 @@ export class SessionManagerService {
 
     // Create ACP session with our stable sessionId for mapping
     const mcpServers = this.getEnabledMcpServers()
-    await client.newSession(workingDir, mcpServers, sessionId)
+    await client.newSession(workingDir, mcpServers, sessionId, {
+      preferredModeId: request.interactionMode
+    })
+    if (request.interactionMode) {
+      try {
+        await client.setMode(sessionId, request.interactionMode)
+      } catch (error) {
+        logger.warn(`Failed to set interaction mode "${request.interactionMode}" for session ${sessionId}:`, error)
+      }
+    }
     if (request.modelId) {
       try {
         await client.setModel(sessionId, request.modelId)
@@ -208,7 +226,7 @@ export class SessionManagerService {
     let client = agentManager.getClient(source.connectionId)
     if (!client) {
       logger.info(`Agent connection lost for source session ${sourceSessionId}, re-launching agent ${source.agentId}...`)
-      const connection = await agentManager.launch(source.agentId, source.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(source.agentId, source.workingDir)
       source.connectionId = connection.connectionId
       this.sessions.set(sourceSessionId, source)
       client = agentManager.getClient(source.connectionId)!
@@ -285,7 +303,7 @@ export class SessionManagerService {
     // Recovery: if connection lost, re-launch agent
     if (!client) {
       logger.info(`Agent connection lost for session ${sessionId}, re-launching agent ${session.agentId}...`)
-      const connection = await agentManager.launch(session.agentId, session.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(session.agentId, session.workingDir)
       session.connectionId = connection.connectionId
       client = agentManager.getClient(session.connectionId)!
       
@@ -343,6 +361,13 @@ export class SessionManagerService {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error(`Session not found: ${sessionId}`)
 
+    // If the prompt is currently blocked on permissions, dismiss them as cancelled.
+    const pendingForSession = Array.from(this.pendingPermissions.values())
+      .filter((permission) => permission.sessionId === sessionId)
+    for (const permission of pendingForSession) {
+      this.resolvePermission({ requestId: permission.requestId, optionId: '__cancelled__' })
+    }
+
     const client = agentManager.getClient(session.connectionId)
     if (client) {
       client.cancel(sessionId)
@@ -354,6 +379,11 @@ export class SessionManagerService {
   resolvePermission(response: PermissionResponse): void {
     // Remove from pending tracking
     this.pendingPermissions.delete(response.requestId)
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('session:permission-resolved', {
+        requestId: response.requestId
+      })
+    }
 
     // Forward the permission response to all active agent connections.
     // Each client will check if it has a pending resolver for this requestId.
@@ -461,14 +491,16 @@ export class SessionManagerService {
 
     // Build a summary of the conversation for the title prompt
     const conversationText = session.messages
-      .filter((m) => m.content.length > 0)
       .map((m) => {
         const text = m.content
           .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
           .map((b) => b.text)
           .join('\n')
+          .trim()
+        if (!text) return null
         return `${m.role === 'user' ? 'User' : 'Agent'}: ${text}`
       })
+      .filter((line): line is string => !!line)
       .join('\n\n')
 
     if (!conversationText.trim()) {
@@ -488,7 +520,7 @@ export class SessionManagerService {
         (c) => c.agentId === agentId && c.status === 'connected'
       )
       if (!connection) {
-        connection = await agentManager.launch(agentId, session.workingDir)
+        connection = await this.ensureAuthenticatedConnection(agentId, session.workingDir)
       }
 
       const client = agentManager.getClient(connection.connectionId)
@@ -587,12 +619,19 @@ export class SessionManagerService {
     }
 
     try {
-      const connection = await agentManager.launch(session.agentId, session.workingDir)
+      const connection = await this.ensureAuthenticatedConnection(session.agentId, session.workingDir)
       session.connectionId = connection.connectionId
       this.sessions.set(sessionId, session)
 
       const client = agentManager.getClient(session.connectionId)!
       await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      if (session.interactionMode) {
+        try {
+          await client.setMode(sessionId, session.interactionMode)
+        } catch (error) {
+          logger.warn(`Failed to restore interaction mode "${session.interactionMode}" for session ${sessionId}:`, error)
+        }
+      }
       this.ensureListener(session.connectionId)
       client.setSessionContext(sessionId, session.workspaceId)
 

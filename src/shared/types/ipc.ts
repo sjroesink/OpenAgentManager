@@ -7,6 +7,7 @@ import type {
   AcpRegistry,
   InstalledAgent,
   AgentConnection,
+  AgentAuthCheckResult,
   AgentModelCatalog,
   AgentModeCatalog
 } from './agent'
@@ -19,6 +20,7 @@ import type {
   PermissionRequestEvent,
   PermissionResponse,
   PermissionRule,
+  PermissionResolvedEvent,
   InteractionMode,
   WorktreeHookProgressEvent,
   ConfigOption,
@@ -37,12 +39,14 @@ export interface IpcChannels {
   // --- Registry ---
   'registry:fetch': { request: void; response: AcpRegistry }
   'registry:get-cached': { request: void; response: AcpRegistry | null }
+  'registry:get-icon-svg': { request: { agentId: string; icon?: string }; response: string | null }
 
   // --- Agent Management ---
   'agent:install': { request: { agentId: string }; response: InstalledAgent }
   'agent:uninstall': { request: { agentId: string }; response: void }
   'agent:list-installed': { request: void; response: InstalledAgent[] }
   'agent:launch': { request: { agentId: string; projectPath: string; extraEnv?: Record<string, string> }; response: AgentConnection }
+  'agent:check-auth': { request: { agentId: string; projectPath?: string }; response: AgentAuthCheckResult }
   'agent:terminate': { request: { connectionId: string }; response: void }
   'agent:authenticate': {
     request: { connectionId: string; method: string; credentials?: Record<string, string> }
@@ -113,7 +117,7 @@ export interface IpcChannels {
   // --- Workspaces ---
   'workspace:list': { request: void; response: WorkspaceInfo[] }
   'workspace:create': { request: { path: string; name?: string }; response: WorkspaceInfo }
-  'workspace:remove': { request: { id: string }; response: void }
+  'workspace:remove': { request: { id: string; cleanupWorktrees?: boolean }; response: void }
   'workspace:update': {
     request: {
         id: string
@@ -123,6 +127,7 @@ export interface IpcChannels {
   }
   'workspace:select-directory': { request: void; response: string | null }
   'workspace:open-in-vscode': { request: { path: string }; response: void }
+  'workspace:open-directory': { request: { path: string }; response: void }
   'workspace:get-config': { request: { workspacePath: string }; response: AgentProjectConfig | null }
   'workspace:set-config': {
     request: { workspacePath: string; config: AgentProjectConfig }
@@ -146,6 +151,12 @@ export interface IpcChannels {
   'permission:remove-rule': {
     request: { ruleId: string }
     response: void
+  }
+
+  // --- Agent CLI Detection ---
+  'agent:detect-cli': {
+    request: { commands: string[] }
+    response: Record<string, boolean>
   }
 
   // --- System ---
@@ -172,6 +183,7 @@ export interface IpcChannels {
 export interface IpcEvents {
   'session:update': SessionUpdateEvent
   'session:permission-request': PermissionRequestEvent
+  'session:permission-resolved': PermissionResolvedEvent
   'session:hook-progress': WorktreeHookProgressEvent
   'terminal:data': { terminalId: string; data: string }
   'agent:status-change': { connectionId: string; status: AgentConnection['status']; error?: string }

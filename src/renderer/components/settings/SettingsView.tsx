@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react'
+
+import { getApiKeyEnvVarsForAgent } from '@shared/config/agent-env'
+import type { AppSettings, McpServerConfig } from '@shared/types/settings'
+import { DEFAULT_SETTINGS } from '@shared/types/settings'
+
 import { useRouteStore } from '../../stores/route-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../common/Button'
-import type { AppSettings, McpServerConfig } from '@shared/types/settings'
-import { DEFAULT_SETTINGS } from '@shared/types/settings'
 import type { PermissionRule } from '@shared/types/session'
+import { ModelPicker } from '../common/ModelPicker'
 
 function SettingsField({
   label,
@@ -17,11 +21,13 @@ function SettingsField({
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <div>
+      <div className="shrink-0">
         <label className="text-sm text-text-primary">{label}</label>
         {description && <p className="text-[11px] text-text-muted mt-0.5">{description}</p>}
       </div>
-      {children}
+      <div className="flex min-w-0 flex-1 justify-end [&>*]:min-w-0 [&>*]:max-w-full">
+        {children}
+      </div>
     </div>
   )
 }
@@ -32,6 +38,7 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false)
   const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp' | 'permissions'>('general')
   const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([])
+  const [modelPickerProjectPath, setModelPickerProjectPath] = useState('')
   const [wslInfo, setWslInfo] = useState<{ available: boolean; distributions: string[] }>({
     available: false,
     distributions: []
@@ -42,6 +49,16 @@ export function SettingsView() {
     window.api.invoke('settings:get', undefined).then(setSettings)
     window.api.invoke('system:wsl-info', undefined).then(setWslInfo).catch(() => {})
     window.api.invoke('permission:list-rules', {}).then(setPermissionRules).catch(() => {})
+    window.api
+      .invoke('workspace:list', undefined)
+      .then((workspaces) => {
+        if (workspaces.length === 0) return
+        const mostRecent = [...workspaces].sort((a, b) => {
+          return new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime()
+        })[0]
+        setModelPickerProjectPath(mostRecent.path)
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -125,6 +142,17 @@ export function SettingsView() {
     return env
   }
 
+  const updateAgentSettings = (agentId: string, updater: (current: NonNullable<AppSettings['agents'][string]>) => AppSettings['agents'][string]) => {
+    const current = settings.agents[agentId] ?? {}
+    setSettings({
+      ...settings,
+      agents: {
+        ...settings.agents,
+        [agentId]: updater(current)
+      }
+    })
+  }
+
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full">
       {/* Header */}
@@ -143,10 +171,10 @@ export function SettingsView() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex gap-6">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="flex flex-col gap-6 md:flex-row">
             {/* Section nav */}
-            <div className="w-40 shrink-0 space-y-0.5">
+            <div className="w-full shrink-0 space-y-0.5 md:w-40">
               {sections.map((section) => (
                 <button
                   key={section.id}
@@ -217,7 +245,11 @@ export function SettingsView() {
                       onChange={(e) =>
                         setSettings({
                           ...settings,
-                          general: { ...settings.general, summarizationAgentId: e.target.value || undefined }
+                          general: {
+                            ...settings.general,
+                            summarizationAgentId: e.target.value || undefined,
+                            summarizationModel: undefined
+                          }
                         })
                       }
                       className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
@@ -229,6 +261,33 @@ export function SettingsView() {
                         </option>
                       ))}
                     </select>
+                  </SettingsField>
+
+                  <SettingsField
+                    label="Title Generation Model"
+                    description={
+                      modelPickerProjectPath
+                        ? 'Optional model override for title generation.'
+                        : 'Add a workspace to load available models for the selected agent.'
+                    }
+                  >
+                    <ModelPicker
+                      agentId={settings.general.summarizationAgentId || null}
+                      projectPath={modelPickerProjectPath}
+                      value={settings.general.summarizationModel}
+                      onChange={(modelId) =>
+                        setSettings({
+                          ...settings,
+                          general: {
+                            ...settings.general,
+                            summarizationModel: modelId || undefined
+                          }
+                        })
+                      }
+                      emptyLabel="Agent default model"
+                      showLabel={false}
+                      className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                    />
                   </SettingsField>
                 </>
               )}
@@ -294,28 +353,41 @@ export function SettingsView() {
 
               {activeSection === 'agents' && (
                 <div className="text-sm text-text-muted">
-                  Agent-specific settings (API keys, custom arguments) can be configured per agent after installation.
+                  Agent-specific settings are shown from a static env-var mapping per installed agent.
                   <div className="mt-4 space-y-3">
-                    {Object.entries(settings.agents).map(([agentId, agentSettings]) => (
-                      <div key={agentId} className="border border-border rounded-lg p-3">
-                        <div className="text-sm font-medium text-text-primary mb-2">{agentId}</div>
-                        <SettingsField label="API Key">
-                          <input
-                            type="password"
-                            value={agentSettings.apiKey || ''}
-                            onChange={(e) =>
-                              setSettings({
-                                ...settings,
-                                agents: {
-                                  ...settings.agents,
-                                  [agentId]: { ...agentSettings, apiKey: e.target.value || undefined }
-                                }
-                              })
-                            }
-                            placeholder="Enter API key"
-                            className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
-                          />
-                        </SettingsField>
+                    {installedAgents.map((agent) => {
+                      const agentId = agent.registryId
+                      const agentSettings = settings.agents[agentId] ?? {}
+                      const apiKeyEnvVars = getApiKeyEnvVarsForAgent(agentId)
+
+                      return (
+                        <div key={agentId} className="border border-border rounded-lg p-3">
+                          <div className="text-sm font-medium text-text-primary mb-2">{agent.name} ({agentId})</div>
+                          {apiKeyEnvVars.length > 0 ? (
+                            apiKeyEnvVars.map((envVarName) => (
+                              <SettingsField key={envVarName} label={envVarName}>
+                                <input
+                                  type="password"
+                                  value={agentSettings.apiKeys?.[envVarName] || ''}
+                                  onChange={(e) =>
+                                    updateAgentSettings(agentId, (current) => ({
+                                      ...current,
+                                      apiKeys: {
+                                        ...(current.apiKeys || {}),
+                                        [envVarName]: e.target.value || ''
+                                      }
+                                    }))
+                                  }
+                                  placeholder={`Enter ${envVarName}`}
+                                  className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                                />
+                              </SettingsField>
+                            ))
+                          ) : (
+                            <p className="text-text-muted text-xs mb-2">
+                              No API key env vars mapped for this agent yet.
+                            </p>
+                          )}
                         {wslInfo.available && (
                           <>
                             <SettingsField label="Run in WSL" description="Run this agent inside Windows Subsystem for Linux">
@@ -323,13 +395,10 @@ export function SettingsView() {
                                 type="checkbox"
                                 checked={agentSettings.runInWsl || false}
                                 onChange={(e) =>
-                                  setSettings({
-                                    ...settings,
-                                    agents: {
-                                      ...settings.agents,
-                                      [agentId]: { ...agentSettings, runInWsl: e.target.checked }
-                                    }
-                                  })
+                                  updateAgentSettings(agentId, (current) => ({
+                                    ...current,
+                                    runInWsl: e.target.checked
+                                  }))
                                 }
                               />
                             </SettingsField>
@@ -338,16 +407,10 @@ export function SettingsView() {
                                 <select
                                   value={agentSettings.wslDistribution || ''}
                                   onChange={(e) =>
-                                    setSettings({
-                                      ...settings,
-                                      agents: {
-                                        ...settings.agents,
-                                        [agentId]: {
-                                          ...agentSettings,
-                                          wslDistribution: e.target.value || undefined
-                                        }
-                                      }
-                                    })
+                                    updateAgentSettings(agentId, (current) => ({
+                                      ...current,
+                                      wslDistribution: e.target.value || undefined
+                                    }))
                                   }
                                   className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
                                 >
@@ -362,10 +425,11 @@ export function SettingsView() {
                             )}
                           </>
                         )}
-                      </div>
-                    ))}
-                    {Object.keys(settings.agents).length === 0 && (
-                      <p className="text-text-muted text-xs">No agent-specific settings configured yet.</p>
+                        </div>
+                      )
+                    })}
+                    {installedAgents.length === 0 && (
+                      <p className="text-text-muted text-xs">No installed agents yet.</p>
                     )}
                   </div>
                 </div>

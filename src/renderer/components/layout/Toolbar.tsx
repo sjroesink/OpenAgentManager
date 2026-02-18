@@ -75,6 +75,8 @@ function useAppMenu(): MenuGroup[] {
     {
       label: 'Help',
       items: [
+        { label: 'Setup Wizard', action: () => navigate('onboarding') },
+        { label: '', separator: true },
         { label: 'About AgentManager' }
       ]
     }
@@ -152,7 +154,7 @@ function MenuBar({ onClose }: { onClose: () => void }) {
 }
 
 export function Toolbar() {
-  const { toggleSidebar, toggleReviewPanel, toggleTerminal } = useUiStore()
+  const { toggleSidebar } = useUiStore()
   const { navigate, goBack, goForward, canGoBack, canGoForward } = useRouteStore()
   const currentRoute = useRouteStore((s) => s.current.route)
 
@@ -256,43 +258,6 @@ export function Toolbar() {
         </svg>
         Agents
       </Button>
-
-      {/* Diff view toggle */}
-      <button
-        onClick={() => navigate(currentRoute === 'diff' ? 'home' : 'diff')}
-        className={`titlebar-no-drag p-1.5 rounded transition-colors ${
-          currentRoute === 'diff'
-            ? 'bg-accent/20 text-accent'
-            : 'hover:bg-surface-2 text-text-secondary hover:text-text-primary'
-        }`}
-        title="Diff view (Ctrl+Shift+D)"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v16M20 4v16" />
-        </svg>
-      </button>
-
-      {/* Toggle panels */}
-      <button
-        onClick={toggleReviewPanel}
-        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
-        title="Toggle review panel"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-      </button>
-
-      <button
-        onClick={toggleTerminal}
-        className="titlebar-no-drag p-1.5 rounded hover:bg-surface-2 text-text-secondary hover:text-text-primary transition-colors"
-        title="Toggle terminal"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      </button>
 
       {/* Settings */}
       <button

@@ -1,0 +1,24 @@
+{
+  "specVersion": "1.1",
+  "threadId": "00882a1a-a5c1-4261-9d51-b33c1d09539a",
+  "title": "Samenvatting na eerste agentbericht",
+  "createdAt": "2026-02-17T10:02:19.681Z",
+  "updatedAt": "2026-02-17T10:02:25.066Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 30
+  },
+  "metadata": {
+    "interactionMode": "full-access"
+  }
+}

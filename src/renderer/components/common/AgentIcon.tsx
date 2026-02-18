@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ACP_CDN_URL, getAgentIconUrl } from '@shared/constants'
 
 interface AgentIconProps {
@@ -18,40 +18,39 @@ const sizeClasses = {
 export function AgentIcon({ agentId, icon, name, size = 'md', className = '' }: AgentIconProps) {
   const [inlineSvg, setInlineSvg] = useState<string | null>(null)
   const [inlineSvgError, setInlineSvgError] = useState(false)
-  const [imgError, setImgError] = useState(false)
 
   const iconUrl = getAgentIconUrl(agentId, icon)
-  const isTrustedSvg =
+  const isTrustedRegistryIcon =
     typeof iconUrl === 'string' &&
-    iconUrl.startsWith(ACP_CDN_URL) &&
-    iconUrl.toLowerCase().endsWith('.svg')
-  const canInlineSvg = isTrustedSvg && !inlineSvgError && !imgError
+    iconUrl.startsWith(ACP_CDN_URL)
 
   useEffect(() => {
     setInlineSvgError(false)
-    setImgError(false)
   }, [iconUrl])
 
   useEffect(() => {
-    if (!canInlineSvg || !iconUrl) {
+    if (!isTrustedRegistryIcon || !iconUrl) {
       setInlineSvg(null)
       return
     }
 
     let cancelled = false
 
-    void fetch(iconUrl)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch icon: ${response.status}`)
-        }
-        return response.text()
-      })
+    void window.api
+      .invoke('registry:get-icon-svg', { agentId, icon })
       .then((svgText) => {
+        if (!svgText) {
+          throw new Error('No SVG icon returned')
+        }
+
         if (cancelled || !svgText.includes('<svg')) return
         const sanitizedSvg = svgText
           .replace(/<\?xml[\s\S]*?\?>/gi, '')
           .replace(/<!doctype[\s\S]*?>/gi, '')
+          .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+          .replace(/\son[a-z]+\s*=\s*(["']).*?\1/gi, '')
+          .replace(/\sfill\s*=\s*(["'])(?!none\1|currentColor\1|url\(#).*?\1/gi, ' fill="currentColor"')
+          .replace(/\sstroke\s*=\s*(["'])(?!none\1|currentColor\1|url\(#).*?\1/gi, ' stroke="currentColor"')
         setInlineSvg(sanitizedSvg)
       })
       .catch(() => {
@@ -63,12 +62,12 @@ export function AgentIcon({ agentId, icon, name, size = 'md', className = '' }: 
     return () => {
       cancelled = true
     }
-  }, [canInlineSvg, iconUrl])
+  }, [agentId, icon, iconUrl, isTrustedRegistryIcon])
 
   if (inlineSvg) {
     return (
       <span
-        className={`${sizeClasses[size]} rounded bg-surface-2 shrink-0 [&_svg]:w-full [&_svg]:h-full [&_svg]:block ${className}`}
+        className={`${sizeClasses[size]} agent-icon-inline rounded shrink-0 text-white [&_svg]:w-full [&_svg]:h-full [&_svg]:block [&_svg]:text-current ${className}`}
         role="img"
         aria-label={name}
         dangerouslySetInnerHTML={{ __html: inlineSvg }}
@@ -76,15 +75,37 @@ export function AgentIcon({ agentId, icon, name, size = 'md', className = '' }: 
     )
   }
 
-  const showImage = iconUrl && !imgError
+  if (isTrustedRegistryIcon && (inlineSvgError || !inlineSvg)) {
+    return (
+      <span
+        className={`
+          ${sizeClasses[size]} rounded bg-accent/20 flex items-center justify-center 
+          font-bold text-accent shrink-0 ${className}
+        `}
+      >
+        {name[0]}
+      </span>
+    )
+  }
+
+  const showImage = iconUrl
 
   if (showImage) {
     return (
-      <img
-        src={iconUrl}
-        alt={name}
-        className={`${sizeClasses[size]} rounded object-contain bg-surface-2 ${className}`}
-        onError={() => setImgError(true)}
+      <span
+        role="img"
+        aria-label={name}
+        className={`${sizeClasses[size]} rounded shrink-0 bg-current text-white ${className}`}
+        style={{
+          WebkitMaskImage: `url("${iconUrl}")`,
+          maskImage: `url("${iconUrl}")`,
+          WebkitMaskRepeat: 'no-repeat',
+          maskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+          maskPosition: 'center',
+          WebkitMaskSize: 'contain',
+          maskSize: 'contain'
+        }}
       />
     )
   }

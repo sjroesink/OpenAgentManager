@@ -81,7 +81,8 @@ export class AcpClient extends EventEmitter {
   private nextId = 1
   private pendingRequests = new Map<number, PendingRequest>()
   private requestMetadata = new Map<number, RequestMetadata>()
-  private buffer = ''
+  private stdoutBuffer = ''
+  private stderrBuffer = ''
   private mainWindow: BrowserWindow | null = null
   private permissionResolvers = new Map<string, PermissionResolver>()
   private terminals = new Map<string, TerminalProcess>()
@@ -137,18 +138,19 @@ export class AcpClient extends EventEmitter {
 
     // Handle stdout (JSON-RPC messages from agent)
     this.childProcess.stdout!.on('data', (data: Buffer) => {
-      this.handleData(data.toString())
+      this.handleData(data.toString(), 'stdout')
     })
 
     // Log stderr and collect for error reporting
     const stderrChunks: string[] = []
     this.childProcess.stderr!.on('data', (data: Buffer) => {
-      const text = data.toString().trim()
+      const raw = data.toString()
+      const text = raw.trim()
       if (text) {
         stderrChunks.push(text)
         logger.warn(`[${this.agentId}:stderr] ${text}`)
         // Try parsing as JSON-RPC (some agents write to stderr)
-        this.handleData(text)
+        this.handleData(raw, 'stderr')
       }
     })
 
@@ -215,7 +217,19 @@ export class AcpClient extends EventEmitter {
 
   /** Authenticate with the agent */
   async authenticate(method: string, credentials?: Record<string, string>): Promise<void> {
-    await this.sendRequest('authenticate', { methodId: method, ...credentials })
+    const modernParams = { authMethodId: method, ...credentials }
+    const legacyParams = { methodId: method, ...credentials }
+
+    try {
+      await this.sendRequest('connection/authenticate', modernParams)
+      return
+    } catch (error) {
+      if (!this.isMethodNotFoundError(error)) {
+        throw error
+      }
+    }
+
+    await this.sendRequest('authenticate', legacyParams)
   }
 
   /** Create a new session */
@@ -223,7 +237,7 @@ export class AcpClient extends EventEmitter {
     cwd: string,
     mcpServers: unknown[] = [],
     internalSessionId?: string,
-    options?: { suppressInitialUpdates?: boolean }
+    options?: { suppressInitialUpdates?: boolean; preferredModeId?: string }
   ): Promise<string> {
     const result = (await this.sendRequest(
       'session/new',
@@ -246,6 +260,7 @@ export class AcpClient extends EventEmitter {
     }
     const remoteId = result.sessionId
     const suppressInitialUpdates = options?.suppressInitialUpdates === true
+    const preferredModeId = options?.preferredModeId
     this.updateModelCatalogFromSessionNewResult(result)
     this.updateModeCatalogFromSessionNewResult(result)
 
@@ -260,12 +275,16 @@ export class AcpClient extends EventEmitter {
       const modes = result.modes
       // Build configOptions from legacy modes field for backward compat
       if (modes.availableModes && modes.availableModes.length > 0) {
+        const resolvedModeId =
+          preferredModeId && modes.availableModes.some((mode) => mode.id === preferredModeId)
+            ? preferredModeId
+            : modes.currentModeId || modes.availableModes[0].id
         const modeConfigOption = {
           id: '_mode',
           name: 'Mode',
           category: 'mode' as const,
           type: 'select' as const,
-          currentValue: modes.currentModeId || modes.availableModes[0].id,
+          currentValue: resolvedModeId,
           options: modes.availableModes.map((m) => ({
             value: m.id,
             name: m.name,
@@ -289,10 +308,10 @@ export class AcpClient extends EventEmitter {
         }
 
         // Also emit current_mode_update
-        if (modes.currentModeId) {
+        if (resolvedModeId) {
           const modeEvent: SessionUpdateEvent = {
             sessionId,
-            update: { type: 'current_mode_update', modeId: modes.currentModeId }
+            update: { type: 'current_mode_update', modeId: resolvedModeId }
           }
           this.emit('session-update', modeEvent)
           if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -558,6 +577,15 @@ export class AcpClient extends EventEmitter {
 
   /** Logout - invalidate credentials (RFD) */
   async logout(): Promise<void> {
+    try {
+      await this.sendRequest('connection/logout', {})
+      return
+    } catch (error) {
+      if (!this.isMethodNotFoundError(error)) {
+        throw error
+      }
+    }
+
     await this.sendRequest('logout', {})
   }
 
@@ -623,7 +651,7 @@ export class AcpClient extends EventEmitter {
       })
 
       const json = JSON.stringify(request) + '\n'
-      logger.info(`[${this.agentId}:send] ${json.trim()}`)
+      logger.debug(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
   }
@@ -661,7 +689,7 @@ export class AcpClient extends EventEmitter {
       this.requestMetadata.set(id, { method })
 
       const json = JSON.stringify(request) + '\n'
-      logger.info(`[${this.agentId}:send] ${json.trim()}`)
+      logger.debug(`[${this.agentId}:send] ${json.trim()}`)
       this.childProcess.stdin.write(json)
     })
   }
@@ -671,7 +699,7 @@ export class AcpClient extends EventEmitter {
     if (!this.childProcess || !this.childProcess.stdin) return
     const notification = { jsonrpc: '2.0', method, params }
     const json = JSON.stringify(notification) + '\n'
-    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    logger.debug(`[${this.agentId}:send] ${json.trim()}`)
     this.childProcess.stdin.write(json)
   }
 
@@ -685,7 +713,7 @@ export class AcpClient extends EventEmitter {
     }
 
     const json = JSON.stringify(response) + '\n'
-    logger.info(`[${this.agentId}:send] ${json.trim()}`)
+    logger.debug(`[${this.agentId}:send] ${json.trim()}`)
     this.childProcess.stdin.write(json)
   }
 
@@ -701,10 +729,17 @@ export class AcpClient extends EventEmitter {
     this.childProcess.stdin.write(JSON.stringify(response) + '\n')
   }
 
-  private handleData(data: string): void {
-    this.buffer += data
-    const lines = this.buffer.split('\n')
-    this.buffer = lines.pop() || ''
+  private handleData(data: string, stream: 'stdout' | 'stderr' = 'stdout'): void {
+    const isStdout = stream === 'stdout'
+    const currentBuffer = (isStdout ? this.stdoutBuffer : this.stderrBuffer) + data
+    const lines = currentBuffer.split('\n')
+    const remaining = lines.pop() || ''
+
+    if (isStdout) {
+      this.stdoutBuffer = remaining
+    } else {
+      this.stderrBuffer = remaining
+    }
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -713,14 +748,14 @@ export class AcpClient extends EventEmitter {
         const msg = JSON.parse(trimmed) as JsonRpcResponse
         this.handleMessage(msg)
       } catch {
-        logger.debug(`[${this.agentId}] Non-JSON output: ${trimmed}`)
+        logger.debug(`[${this.agentId}] Non-JSON output (${stream}): ${trimmed}`)
       }
     }
   }
 
   private handleMessage(msg: any): void {
-    // Log all incoming messages
-    logger.info(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
+    // Log raw incoming JSON-RPC messages only at debug level.
+    logger.debug(`[${this.agentId}:recv] ${JSON.stringify(msg)}`)
 
     // Response to our request
     if (msg.id !== undefined && msg.method === undefined) {
@@ -1374,5 +1409,10 @@ export class AcpClient extends EventEmitter {
   private registerSessionMapping(remoteId: string, internalSessionId: string): void {
     this.remoteToInternal.set(remoteId, internalSessionId)
     this.internalToRemote.set(internalSessionId, remoteId)
+  }
+
+  private isMethodNotFoundError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false
+    return /ACP error -32601/i.test(error.message) || /Method not found/i.test(error.message)
   }
 }

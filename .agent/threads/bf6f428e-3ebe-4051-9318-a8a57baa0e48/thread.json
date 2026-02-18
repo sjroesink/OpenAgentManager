@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "bf6f428e-3ebe-4051-9318-a8a57baa0e48",
+  "title": "Gefixt gesplitste berichten en indicatorbug",
+  "createdAt": "2026-02-17T09:51:45.051Z",
+  "updatedAt": "2026-02-17T09:51:49.060Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 28
+  }
+}

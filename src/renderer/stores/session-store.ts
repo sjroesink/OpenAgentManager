@@ -7,15 +7,18 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
+  PermissionResolvedEvent,
   WorktreeHookProgressEvent,
   HookStep,
   Message,
   ContentBlock,
-  InteractionMode
+  InteractionMode,
+  ImageContent
 } from '@shared/types/session'
 import { useWorkspaceStore } from './workspace-store'
 import { useProjectStore } from './project-store'
 import { useAgentStore } from './agent-store'
+import { useAcpFeaturesStore } from './acp-features-store'
 
 /** A draft thread that hasn't been created yet — lives only in UI state. */
 export interface DraftThread {
@@ -28,6 +31,11 @@ export interface DraftThread {
   useWorktree: boolean
 }
 
+export interface ComposerDraft {
+  text: string
+  attachments: ImageContent[]
+}
+
 interface SessionState {
   sessions: SessionInfo[]
   activeSessionId: string | null
@@ -38,6 +46,7 @@ interface SessionState {
   // Draft thread (inline "new thread" in sidebar)
   draftThread: DraftThread | null
   activeDraftId: string | null
+  composerDrafts: Record<string, ComposerDraft>
 
   // Actions
   createSession: (
@@ -53,10 +62,14 @@ interface SessionState {
   setSessionInteractionMode: (sessionId: string, mode: InteractionMode) => Promise<void>
   setActiveSession: (sessionId: string | null) => void
   setActiveDraft: (draftId: string | null) => void
-  sendPrompt: (content: ContentBlock[], mode?: InteractionMode) => Promise<void>
+  getComposerDraft: (threadId: string) => ComposerDraft
+  setComposerDraft: (threadId: string, draft: ComposerDraft) => void
+  clearComposerDraft: (threadId: string) => void
+  sendPrompt: (content: ContentBlock[], mode?: InteractionMode, sessionId?: string) => Promise<void>
   cancelPrompt: () => Promise<void>
   handleSessionUpdate: (event: SessionUpdateEvent) => void
   handlePermissionRequest: (event: PermissionRequestEvent) => void
+  handlePermissionResolved: (event: PermissionResolvedEvent) => void
   handleHookProgress: (event: WorktreeHookProgressEvent) => void
   respondToPermission: (requestId: string, optionId: string) => void
 
@@ -67,6 +80,7 @@ interface SessionState {
   renameWorktreeBranch: (sessionId: string, newBranch: string) => Promise<void>
   generateTitle: (sessionId: string) => Promise<string | null>
   forkSession: (sessionId: string, title?: string) => Promise<SessionInfo>
+  removeSessionsByWorkspace: (workspaceId: string) => void
 
   // Draft thread actions
   startDraftThread: (workspaceId: string, workspacePath: string) => void
@@ -74,7 +88,7 @@ interface SessionState {
     updates: Partial<Pick<DraftThread, 'agentId' | 'modelId' | 'interactionMode' | 'useWorktree' | 'workspaceId' | 'workspacePath'>>
   ) => void
   discardDraftThread: () => void
-  commitDraftThread: (prompt?: string) => Promise<void>
+  commitDraftThread: (promptContent?: ContentBlock[]) => Promise<void>
   retryInitialization: (sessionId: string) => void
 
   // Helpers
@@ -86,6 +100,86 @@ interface SessionState {
 const reconnectingIds = new Set<string>()
 const promptQueueBySession = new Map<string, Array<{ content: ContentBlock[]; mode?: InteractionMode }>>()
 const processingPromptSessions = new Set<string>()
+const autoTitleRequestedSessionIds = new Set<string>()
+
+function getPendingPromptText(content?: ContentBlock[]): string | undefined {
+  if (!content || content.length === 0) return undefined
+  const firstTextBlock = content.find(
+    (block) => block.type === 'text' && block.text.trim().length > 0
+  )
+  return firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
+}
+
+function enqueuePrompt(sessionId: string, item: { content: ContentBlock[]; mode?: InteractionMode }): void {
+  const queue = promptQueueBySession.get(sessionId) ?? []
+  queue.push(item)
+  promptQueueBySession.set(sessionId, queue)
+}
+
+async function processPromptQueue(set: SetFn, get: GetFn, sessionId: string): Promise<void> {
+  if (processingPromptSessions.has(sessionId)) {
+    return
+  }
+
+  processingPromptSessions.add(sessionId)
+
+  try {
+    while ((promptQueueBySession.get(sessionId)?.length ?? 0) > 0) {
+      const next = promptQueueBySession.get(sessionId)?.shift()
+      if (!next) continue
+
+      const currentSession = get().sessions.find((s) => s.sessionId === sessionId)
+      const effectiveMode = next.mode ?? currentSession?.interactionMode
+
+      try {
+        await window.api.invoke('session:prompt', {
+          sessionId,
+          content: next.content,
+          mode: effectiveMode
+        })
+
+        const hasPendingItems = (promptQueueBySession.get(sessionId)?.length ?? 0) > 0
+        // Prompt completed successfully. Treat this as a hard turn boundary:
+        // if an agent failed to emit terminal tool updates, close remaining open calls.
+        set((state) => ({
+          sessions: state.sessions.map((s) => {
+            if (s.sessionId !== sessionId) return s
+            const messages = s.messages.map((m) => {
+              const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
+              if (!m.isStreaming && !hasOpenToolCalls) return m
+              return {
+                ...m,
+                isStreaming: false,
+                toolCalls: m.toolCalls?.map((tc) => ({
+                  ...tc,
+                  status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
+                }))
+              }
+            })
+            return {
+              ...s,
+              status: hasPendingItems ? ('prompting' as const) : ('active' as const),
+              lastError: undefined,
+              messages
+            }
+          })
+        }))
+      } catch (error) {
+        const errorMessage = (error as Error).message || 'Prompt failed'
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.sessionId === sessionId
+              ? { ...s, status: 'error' as const, lastError: errorMessage }
+              : s
+          )
+        }))
+      }
+    }
+  } finally {
+    processingPromptSessions.delete(sessionId)
+    promptQueueBySession.delete(sessionId)
+  }
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -95,6 +189,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deletingSessionIds: new Set<string>(),
   draftThread: null,
   activeDraftId: null,
+  composerDrafts: {},
 
   loadPersistedSessions: async () => {
     try {
@@ -139,6 +234,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set((state) => {
         const next = new Set(state.deletingSessionIds)
         next.delete(sessionId)
+        const nextComposerDrafts = { ...state.composerDrafts }
+        delete nextComposerDrafts[sessionId]
         return {
           // Remove the session and promote orphaned children to root level
           sessions: state.sessions
@@ -149,6 +246,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
                 : s
             ),
           activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+          composerDrafts: nextComposerDrafts,
           deletingSessionIds: next
         }
       })
@@ -260,7 +358,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessions: state.sessions.map((s) =>
           s.sessionId === placeholderId ? session : s
         ),
-        activeSessionId: session.sessionId
+        activeSessionId:
+          state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
       }))
       return session
     } catch (error) {
@@ -315,13 +414,69 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
+  removeSessionsByWorkspace: (workspaceId) => {
+    set((state) => {
+      const removedSessionIds = new Set(
+        state.sessions
+          .filter((session) => session.workspaceId === workspaceId)
+          .map((session) => session.sessionId)
+      )
+
+      if (removedSessionIds.size === 0) {
+        return state
+      }
+
+      const nextComposerDrafts = { ...state.composerDrafts }
+      for (const sessionId of removedSessionIds) {
+        delete nextComposerDrafts[sessionId]
+      }
+
+      return {
+        sessions: state.sessions.filter((session) => session.workspaceId !== workspaceId),
+        activeSessionId:
+          state.activeSessionId && removedSessionIds.has(state.activeSessionId)
+            ? null
+            : state.activeSessionId,
+        composerDrafts: nextComposerDrafts
+      }
+    })
+  },
+
   setActiveDraft: (draftId) => {
     set({ activeDraftId: draftId, activeSessionId: null })
   },
 
-sendPrompt: async (content, mode) => {
-    const { activeSessionId } = get()
-    if (!activeSessionId) return
+  getComposerDraft: (threadId) => {
+    const draft = get().composerDrafts[threadId]
+    return draft ?? { text: '', attachments: [] }
+  },
+
+  setComposerDraft: (threadId, draft) => {
+    set((state) => ({
+      composerDrafts: {
+        ...state.composerDrafts,
+        [threadId]: draft
+      }
+    }))
+  },
+
+  clearComposerDraft: (threadId) => {
+    set((state) => {
+      if (!state.composerDrafts[threadId]) {
+        return state
+      }
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[threadId]
+      return { composerDrafts: nextComposerDrafts }
+    })
+  },
+
+  sendPrompt: async (content, mode, sessionId) => {
+    const targetSessionId = sessionId ?? get().activeSessionId
+    if (!targetSessionId) return
+
+    const targetSession = get().sessions.find((s) => s.sessionId === targetSessionId)
+    if (!targetSession) return
 
     // Optimistically add user message
     const userMessage: Message = {
@@ -331,92 +486,34 @@ sendPrompt: async (content, mode) => {
       timestamp: new Date().toISOString()
     }
 
+    if (targetSession.status === 'initializing' || targetSession.status === 'creating') {
+      set((state) => ({
+        sessions: state.sessions.map((s) => {
+          if (s.sessionId !== targetSessionId) return s
+          const nextPendingPromptQueue = [...(s.pendingPromptQueue ?? []), { content, mode }]
+          return {
+            ...s,
+            lastError: undefined,
+            messages: [...s.messages, userMessage],
+            pendingPromptQueue: nextPendingPromptQueue,
+            pendingPromptContent: nextPendingPromptQueue[0]?.content,
+            pendingPrompt: getPendingPromptText(nextPendingPromptQueue[0]?.content)
+          }
+        })
+      }))
+      return
+    }
+
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.sessionId === activeSessionId
+        s.sessionId === targetSessionId
           ? { ...s, status: 'prompting' as const, lastError: undefined, messages: [...s.messages, userMessage] }
           : s
       )
     }))
 
-    const queue = promptQueueBySession.get(activeSessionId) ?? []
-    queue.push({ content, mode })
-    promptQueueBySession.set(activeSessionId, queue)
-
-    if (processingPromptSessions.has(activeSessionId)) {
-      return
-    }
-
-    processingPromptSessions.add(activeSessionId)
-
-    try {
-      while ((promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0) {
-        const next = promptQueueBySession.get(activeSessionId)?.shift()
-        if (!next) continue
-
-        const currentSession = get().sessions.find((s) => s.sessionId === activeSessionId)
-        const effectiveMode = next.mode ?? currentSession?.interactionMode
-
-        try {
-          await window.api.invoke('session:prompt', {
-            sessionId: activeSessionId,
-            content: next.content,
-            mode: effectiveMode
-          })
-
-          const hasPendingItems = (promptQueueBySession.get(activeSessionId)?.length ?? 0) > 0
-          // Prompt completed successfully. Treat this as a hard turn boundary:
-          // if an agent failed to emit terminal tool updates, close remaining open calls.
-          set((state) => ({
-            sessions: state.sessions.map((s) => {
-              if (s.sessionId !== activeSessionId) return s
-              const messages = s.messages.map((m) => {
-                const hasOpenToolCalls = m.toolCalls?.some((tc) => isOpenToolCallStatus(tc.status)) ?? false
-                if (!m.isStreaming && !hasOpenToolCalls) return m
-                return {
-                  ...m,
-                  isStreaming: false,
-                  toolCalls: m.toolCalls?.map((tc) => ({
-                    ...tc,
-                    status: isOpenToolCallStatus(tc.status) ? ('completed' as const) : tc.status
-                  }))
-                }
-              })
-              return {
-                ...s,
-                status: hasPendingItems ? ('prompting' as const) : ('active' as const),
-                lastError: undefined,
-                messages
-              }
-            })
-          }))
-
-          // Auto-generate title after first agent response if title is still default
-          const session = get().sessions.find((s) => s.sessionId === activeSessionId)
-          if (session) {
-            const isDefaultTitle =
-              session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
-            const userMessages = session.messages.filter((m) => m.role === 'user')
-            if (isDefaultTitle && userMessages.length === 1) {
-              // Fire-and-forget: title comes back via session_info_update event
-              window.api.invoke('session:generate-title', { sessionId: activeSessionId }).catch(() => {})
-            }
-          }
-        } catch (error) {
-          const errorMessage = (error as Error).message || 'Prompt failed'
-          set((state) => ({
-            sessions: state.sessions.map((s) =>
-              s.sessionId === activeSessionId
-                ? { ...s, status: 'error' as const, lastError: errorMessage }
-                : s
-            )
-          }))
-        }
-      }
-    } finally {
-      processingPromptSessions.delete(activeSessionId)
-      promptQueueBySession.delete(activeSessionId)
-    }
+    enqueuePrompt(targetSessionId, { content, mode })
+    await processPromptQueue(set, get, targetSessionId)
   },
 
   cancelPrompt: async () => {
@@ -441,6 +538,17 @@ sendPrompt: async (content, mode) => {
           }
         })
       }))
+
+      // Trigger title generation as soon as the first agent text arrives.
+      if (update.type === 'text_chunk' && !autoTitleRequestedSessionIds.has(sessionId)) {
+        const session = get().sessions.find((s) => s.sessionId === sessionId)
+        if (session && shouldAutoGenerateTitle(session)) {
+          autoTitleRequestedSessionIds.add(sessionId)
+          window.api.invoke('session:generate-title', { sessionId }).catch(() => {
+            autoTitleRequestedSessionIds.delete(sessionId)
+          })
+        }
+      }
     } catch (err) {
       console.error('[session-store] Error handling session update:', err)
     }
@@ -465,6 +573,17 @@ sendPrompt: async (content, mode) => {
       }))
     } catch (err) {
       console.error('[session-store] Error handling hook progress:', err)
+    }
+  },
+
+  handlePermissionResolved: (event) => {
+    try {
+      if (!event || !event.requestId) return
+      set((state) => ({
+        pendingPermissions: state.pendingPermissions.filter((p) => p.requestId !== event.requestId)
+      }))
+    } catch (err) {
+      console.error('[session-store] Error handling permission resolution:', err)
     }
   },
 
@@ -500,10 +619,22 @@ sendPrompt: async (content, mode) => {
   },
 
   discardDraftThread: () => {
-    set({ draftThread: null, activeDraftId: null })
+    set((state) => {
+      const draftId = state.draftThread?.id
+      if (!draftId) {
+        return { draftThread: null, activeDraftId: null }
+      }
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[draftId]
+      return {
+        draftThread: null,
+        activeDraftId: null,
+        composerDrafts: nextComposerDrafts
+      }
+    })
   },
 
-  commitDraftThread: async (prompt?: string) => {
+  commitDraftThread: async (promptContent?: ContentBlock[]) => {
     const { draftThread } = get()
     if (!draftThread || !draftThread.agentId) return
 
@@ -530,6 +661,17 @@ sendPrompt: async (content, mode) => {
       (a: { registryId: string }) => a.registryId === agentId
     )
 
+    const pendingPromptText = getPendingPromptText(promptContent)
+    const pendingPromptQueue = promptContent?.length ? [{ content: promptContent }] : undefined
+    const initialMessages: Message[] = promptContent?.length
+      ? [{
+          id: uuid(),
+          role: 'user',
+          content: promptContent,
+          timestamp: new Date().toISOString()
+        }]
+      : []
+
     // Create placeholder immediately so the chat shows right away
     const placeholderId = `init-${uuid().slice(0, 8)}`
     const placeholder: SessionInfo = {
@@ -541,37 +683,45 @@ sendPrompt: async (content, mode) => {
       createdAt: new Date().toISOString(),
       workingDir: draftThread.workspacePath,
       status: 'initializing',
-      messages: [],
+      messages: initialMessages,
       interactionMode: draftThread.interactionMode || undefined,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
-      pendingPrompt: prompt,
+      pendingPrompt: pendingPromptText,
+      pendingPromptContent: promptContent,
+      pendingPromptQueue,
       initProgress: initSteps
     }
 
     // Clear draft and show placeholder — user sees the thread immediately
-    set({
-      draftThread: null,
-      activeDraftId: null,
-      sessions: [...get().sessions, placeholder],
-      activeSessionId: placeholderId
+    set((state) => {
+      const nextComposerDrafts = { ...state.composerDrafts }
+      delete nextComposerDrafts[draftThread.id]
+      return {
+        draftThread: null,
+        activeDraftId: null,
+        sessions: [...state.sessions, placeholder],
+        activeSessionId: placeholderId,
+        composerDrafts: nextComposerDrafts
+      }
     })
 
     // Run the initialization pipeline in the background
     runInitPipeline(set, get, placeholderId, {
       agentId,
       modelId: draftThread.modelId,
+      interactionMode: draftThread.interactionMode || undefined,
       workspacePath: draftThread.workspacePath,
       useWorktree: draftThread.useWorktree,
       workspaceId: draftThread.workspaceId,
-      prompt,
+      promptContent,
       existingConnection: existingConnection || null
     })
   },
 
   retryInitialization: (sessionId: string) => {
     const session = get().sessions.find((s) => s.sessionId === sessionId)
-    if (!session || !session.pendingPrompt) return
+    if (!session || (!session.pendingPromptQueue?.length && !session.pendingPrompt && !session.pendingPromptContent?.length)) return
 
     const agentStore = useAgentStore.getState()
     const existingConnection = agentStore.connections.find(
@@ -598,10 +748,13 @@ sendPrompt: async (content, mode) => {
     runInitPipeline(set, get, sessionId, {
       agentId: session.agentId,
       modelId: undefined,
+      interactionMode: session.interactionMode,
       workspacePath: session.workingDir,
       useWorktree: session.useWorktree,
       workspaceId: session.workspaceId,
-      prompt: session.pendingPrompt,
+      promptContent: session.pendingPromptQueue?.[0]?.content
+        ?? session.pendingPromptContent
+        ?? (session.pendingPrompt ? [{ type: 'text', text: session.pendingPrompt }] : undefined),
       existingConnection: existingConnection || null
     })
   },
@@ -627,7 +780,7 @@ interface InitPipelineParams {
   workspacePath: string
   useWorktree: boolean
   workspaceId: string
-  prompt?: string
+  promptContent?: ContentBlock[]
   existingConnection: { connectionId: string } | null
 }
 
@@ -660,8 +813,11 @@ async function runInitPipeline(
   placeholderId: string,
   params: InitPipelineParams
 ) {
-  const { agentId, modelId, workspacePath, useWorktree, workspaceId, prompt, existingConnection } = params
+  const { agentId, modelId, workspacePath, useWorktree, workspaceId, promptContent, existingConnection } = params
   const agentStore = useAgentStore.getState()
+  const queuedPrompts = () =>
+    get().sessions.find((s) => s.sessionId === placeholderId)?.pendingPromptQueue
+    ?? (promptContent?.length ? [{ content: promptContent }] : [])
 
   try {
     let connection = existingConnection
@@ -689,18 +845,63 @@ async function runInitPipeline(
     })
     updateInitStep(set, placeholderId, 'Creating session', 'completed')
 
+    const pendingQueue = queuedPrompts()
+    const pendingPromptText = getPendingPromptText(pendingQueue[0]?.content)
+
     // Replace placeholder with real session
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.sessionId === placeholderId ? { ...session, pendingPrompt: prompt } : s
+        s.sessionId === placeholderId
+          ? {
+              ...session,
+              // Preserve optimistic user messages entered while initializing.
+              messages: s.messages,
+              pendingPromptQueue: pendingQueue,
+              pendingPromptContent: pendingQueue[0]?.content,
+              pendingPrompt: pendingPromptText
+            }
+          : s
       ),
       activeSessionId:
         state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
     }))
 
-    // Send the first prompt if one was provided.
-    if (prompt && prompt.trim().length > 0) {
-      await get().sendPrompt([{ type: 'text', text: prompt }])
+    if (params.interactionMode) {
+      useAcpFeaturesStore.getState().applyUpdate(session.sessionId, {
+        type: 'current_mode_update',
+        modeId: params.interactionMode
+      })
+    }
+
+    // Flush prompts queued during initialization, preserving submit order.
+    if (pendingQueue.length > 0) {
+      for (const queued of pendingQueue) {
+        enqueuePrompt(session.sessionId, queued)
+      }
+
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === session.sessionId
+            ? {
+                ...s,
+                pendingPromptQueue: undefined,
+                pendingPromptContent: undefined,
+                pendingPrompt: undefined,
+                status: 'prompting' as const
+              }
+            : s
+        )
+      }))
+
+      await processPromptQueue(set, get, session.sessionId)
+    } else {
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.sessionId === session.sessionId
+            ? { ...s, status: 'active' as const, pendingPromptQueue: undefined, pendingPromptContent: undefined, pendingPrompt: undefined }
+            : s
+        )
+      }))
     }
   } catch (error) {
     // Mark the running step as failed and set error status
@@ -733,8 +934,22 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   switch (update.type) {
     case 'message_start': {
       const normalizedSession = finalizeOpenToolCalls(session)
+      const lastUserIdx = findLastIndex(normalizedSession.messages, (m) => m.role === 'user')
+      const hasOpenStreamingAgent = normalizedSession.messages.some(
+        (m, index) => index > lastUserIdx && m.role === 'agent' && m.isStreaming
+      )
+      if (update.messageId === 'current' && hasOpenStreamingAgent) {
+        // Some agents emit duplicate/late message_start("current"). Reuse the active bubble.
+        return normalizedSession
+      }
+      const hasExplicitMessage = update.messageId !== 'current' && normalizedSession.messages.some(
+        (m, index) => index > lastUserIdx && m.id === update.messageId
+      )
+      if (hasExplicitMessage) {
+        return normalizedSession
+      }
       const newMsg: Message = {
-        id: update.messageId,
+        id: update.messageId === 'current' ? uuid() : update.messageId,
         role: 'agent',
         content: [],
         timestamp: new Date().toISOString(),
@@ -984,4 +1199,17 @@ function finalizeOpenToolCalls(session: SessionInfo): SessionInfo {
     return normalized
   })
   return didChange ? { ...session, messages } : session
+}
+
+function shouldAutoGenerateTitle(session: SessionInfo): boolean {
+  const isDefaultTitle =
+    session.title === 'New Thread' || /^Session [a-f0-9]{8}$/.test(session.title)
+  if (!isDefaultTitle) return false
+
+  const userMessages = session.messages.filter((m) => m.role === 'user')
+  if (userMessages.length !== 1) return false
+
+  return session.messages.some(
+    (m) => m.role === 'agent' && m.content.some((block) => block.type === 'text' && block.text.trim().length > 0)
+  )
 }

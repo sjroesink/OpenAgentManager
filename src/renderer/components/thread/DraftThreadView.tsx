@@ -1,10 +1,13 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useMemo } from 'react'
 import { useSessionStore, type DraftThread } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useAgentStore } from '../../stores/agent-store'
 import { AgentSelector } from '../sidebar/AgentSelector'
 import { ModelPicker } from '../common/ModelPicker'
 import { Button } from '../common/Button'
+import { PromptInput } from './PromptInput'
 import type { InstalledAgent } from '@shared/types/agent'
+import type { ContentBlock } from '@shared/types/session'
 
 interface DraftThreadViewProps {
   draft: DraftThread
@@ -13,11 +16,56 @@ interface DraftThreadViewProps {
 export function DraftThreadView({ draft }: DraftThreadViewProps) {
   const { updateDraftThread, commitDraftThread, discardDraftThread } = useSessionStore()
   const { workspaces, createWorkspace } = useWorkspaceStore()
+  const loadAgentModes = useAgentStore((s) => s.loadAgentModes)
+  const modesByAgent = useAgentStore((s) => s.modesByAgent)
+  const modesLoadingByAgent = useAgentStore((s) => s.modesLoadingByAgent)
+  const modeErrorsByAgent = useAgentStore((s) => s.modeErrorsByAgent)
+  const modelErrorsByAgent = useAgentStore((s) => s.modelErrorsByAgent)
   const workspace = workspaces.find((w) => w.id === draft.workspaceId)
+  const modeCatalog = draft.agentId ? modesByAgent[draft.agentId] : undefined
+  const modeOptions = useMemo(() => modeCatalog?.availableModes || [], [modeCatalog])
+  const isLoadingModes = draft.agentId ? modesLoadingByAgent[draft.agentId] === true : false
+  const modeError = draft.agentId ? modeErrorsByAgent[draft.agentId] : undefined
+  const modelError = draft.agentId ? modelErrorsByAgent[draft.agentId] : undefined
+  const probeError = modeError || modelError
 
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canCreate = !!draft.agentId && !creating
+
+  useEffect(() => {
+    if (!draft.agentId || !draft.workspacePath) return
+
+    loadAgentModes(draft.agentId, draft.workspacePath)
+      .then((catalog) => {
+        if (catalog.availableModes.length === 0) {
+          if (draft.interactionMode) {
+            updateDraftThread({ interactionMode: null })
+          }
+          return
+        }
+
+        const hasCurrentSelection = !!draft.interactionMode
+        const selectionStillValid = hasCurrentSelection
+          ? catalog.availableModes.some((mode) => mode.modeId === draft.interactionMode)
+          : false
+
+        if (selectionStillValid) return
+
+        updateDraftThread({
+          interactionMode: catalog.currentModeId || catalog.availableModes[0]?.modeId || null
+        })
+      })
+      .catch((err) => {
+        console.error('Failed to load agent modes:', err)
+      })
+  }, [
+    draft.agentId,
+    draft.workspacePath,
+    draft.interactionMode,
+    loadAgentModes,
+    updateDraftThread
+  ])
 
   const handleWorkspaceChange = useCallback(
     async (value: string) => {
@@ -42,16 +90,33 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               useWorktree: !!ws.defaultUseWorktree
             })
           }
+          const baselineDraft = useSessionStore.getState().draftThread
+          const draftId = baselineDraft?.id
 
           // Then try to fetch from config file (shared)
           try {
             const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
             if (config?.defaults) {
+              const currentDraft = useSessionStore.getState().draftThread
+              if (!currentDraft || currentDraft.id !== draftId) return
+
               updateDraftThread({
-                agentId: config.defaults.agentId || ws.defaultAgentId || null,
-                modelId: config.defaults.modelId || ws.defaultModelId || null,
-                interactionMode: config.defaults.interactionMode || ws.defaultInteractionMode || null,
-                useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+                agentId:
+                  currentDraft.agentId === baselineDraft?.agentId
+                    ? config.defaults.agentId || ws.defaultAgentId || null
+                    : currentDraft.agentId,
+                modelId:
+                  currentDraft.modelId === baselineDraft?.modelId
+                    ? config.defaults.modelId || ws.defaultModelId || null
+                    : currentDraft.modelId,
+                interactionMode:
+                  currentDraft.interactionMode === baselineDraft?.interactionMode
+                    ? config.defaults.interactionMode || ws.defaultInteractionMode || null
+                    : currentDraft.interactionMode,
+                useWorktree:
+                  currentDraft.useWorktree === baselineDraft?.useWorktree
+                    ? config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+                    : currentDraft.useWorktree
               })
             }
           } catch (err) {
@@ -79,16 +144,33 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               useWorktree: !!ws.defaultUseWorktree
             })
           }
+          const baselineDraft = useSessionStore.getState().draftThread
+          const draftId = baselineDraft?.id
 
           // Then try to fetch from config file (shared)
           try {
             const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
             if (config?.defaults) {
+              const currentDraft = useSessionStore.getState().draftThread
+              if (!currentDraft || currentDraft.id !== draftId) return
+
               updateDraftThread({
-                agentId: config.defaults.agentId || ws.defaultAgentId || null,
-                modelId: config.defaults.modelId || ws.defaultModelId || null,
-                interactionMode: config.defaults.interactionMode || ws.defaultInteractionMode || null,
-                useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+                agentId:
+                  currentDraft.agentId === baselineDraft?.agentId
+                    ? config.defaults.agentId || ws.defaultAgentId || null
+                    : currentDraft.agentId,
+                modelId:
+                  currentDraft.modelId === baselineDraft?.modelId
+                    ? config.defaults.modelId || ws.defaultModelId || null
+                    : currentDraft.modelId,
+                interactionMode:
+                  currentDraft.interactionMode === baselineDraft?.interactionMode
+                    ? config.defaults.interactionMode || ws.defaultInteractionMode || null
+                    : currentDraft.interactionMode,
+                useWorktree:
+                  currentDraft.useWorktree === baselineDraft?.useWorktree
+                    ? config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+                    : currentDraft.useWorktree
               })
             }
           } catch (err) {
@@ -102,17 +184,17 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
 
   const handleAgentSelect = useCallback(
     (agent: InstalledAgent) => {
-      updateDraftThread({ agentId: agent.registryId, modelId: null })
+      updateDraftThread({ agentId: agent.registryId, modelId: null, interactionMode: null })
     },
     [updateDraftThread]
   )
 
-  const handleCreateThread = useCallback(async () => {
-    if (!canCreate) return
+  const handleCreateThread = useCallback(async (content: ContentBlock[]) => {
+    if (!canCreate || content.length === 0) return
     setCreating(true)
     setError(null)
     try {
-      await commitDraftThread()
+      await commitDraftThread(content)
     } catch (err) {
       setError((err as Error).message || 'Failed to create thread')
       setCreating(false)
@@ -172,6 +254,9 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             </label>
             <AgentSelector selectedAgentId={draft.agentId} onSelect={handleAgentSelect} />
           </div>
+          {probeError && (
+            <p className="text-[11px] text-error break-words whitespace-pre-line">{probeError}</p>
+          )}
 
           <ModelPicker
             agentId={draft.agentId}
@@ -179,7 +264,35 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             value={draft.modelId}
             onChange={(modelId) => updateDraftThread({ modelId })}
             emptyLabel="Default model"
+            showError={false}
           />
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              Mode
+            </label>
+            <select
+              value={draft.interactionMode || ''}
+              onChange={(e) => updateDraftThread({ interactionMode: e.target.value || null })}
+              disabled={!draft.agentId || isLoadingModes || modeOptions.length === 0}
+              className="w-full px-3 py-2 text-sm bg-surface-1 border border-border rounded-md text-text-primary focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+            >
+              <option value="">
+                {!draft.agentId
+                  ? 'Select an agent first'
+                  : isLoadingModes
+                    ? 'Loading modes...'
+                    : modeOptions.length === 0
+                      ? 'No modes reported by agent'
+                      : 'Default mode'}
+              </option>
+              {modeOptions.map((mode) => (
+                <option key={mode.modeId} value={mode.modeId}>
+                  {mode.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Worktree toggle */}
           {workspace?.isGitRepo && (
@@ -194,27 +307,18 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             </label>
           )}
 
-          {/* Thread creation */}
+          {/* First message */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
               Start chat
             </label>
-            <div className="bg-surface-1 border border-border rounded-xl p-4">
-              <p className="text-xs text-text-muted mb-3">
-                Create the thread first. Then you can use the full chat input to select a model
-                and attach images before sending your first message.
-              </p>
-              <Button
-                variant="primary"
-                size="md"
-                disabled={!canCreate}
-                loading={creating}
-                onClick={handleCreateThread}
-                className="w-full"
-              >
-                Create Thread
-              </Button>
-            </div>
+            <PromptInput
+              mode="draft"
+              onDraftSubmit={handleCreateThread}
+              draftDisabled={creating}
+              draftCanSubmit={!!draft.agentId}
+              draftPlaceholder="Type your first message... (Enter to create thread and send, Shift+Enter for new line, Ctrl+V to paste images)"
+            />
 
             {error && (
               <p className="text-xs text-error mt-1.5">{error}</p>

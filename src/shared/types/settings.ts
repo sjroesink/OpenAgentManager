@@ -20,6 +20,8 @@ export interface GeneralSettings {
   summarizationModel?: string
   /** Terminal shell to use (auto-detected by default based on OS) */
   terminalShell?: string
+  /** Whether the user has completed (or skipped) the onboarding wizard */
+  completedOnboarding?: boolean
 }
 
 export interface GitSettings {
@@ -31,6 +33,12 @@ export interface GitSettings {
 }
 
 export interface AgentSettings {
+  /**
+   * Agent-specific API key values keyed by environment variable name.
+   * Example: { GH_COPILOT_TOKEN: "..." }
+   */
+  apiKeys?: Record<string, string>
+  /** @deprecated Use apiKeys instead. */
   apiKey?: string
   model?: string
   customArgs?: string[]

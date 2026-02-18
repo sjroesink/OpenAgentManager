@@ -1,11 +1,14 @@
 #!/bin/sh
 # OpenAgentManager installer for macOS and Linux
 # Usage: curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | sh
+# Optional preview channel:
+#   curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | env OAM_CHANNEL=preview sh
 
 set -e
 
 REPO="sjroesink/OpenAgentManager"
 NAME="OpenAgentManager"
+CHANNEL="$(printf '%s' "${OAM_CHANNEL:-stable}" | tr '[:upper:]' '[:lower:]')"
 
 echo ""
 echo "  Installing $NAME..."
@@ -41,8 +44,25 @@ case "$OS" in
 esac
 
 FILENAME="$NAME-$PLATFORM-$ARCH.$EXT"
-URL="https://github.com/$REPO/releases/latest/download/$FILENAME"
 OUTFILE="/tmp/$FILENAME"
+
+if [ "$CHANNEL" = "preview" ]; then
+  TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | awk -F'"' '
+    /"tag_name":/ { tag=$4 }
+    /"prerelease": true/ { if (tag != "") { print tag; exit } }
+  ')"
+
+  if [ -z "$TAG" ]; then
+    echo "  Error: Could not find a preview release."
+    exit 1
+  fi
+
+  URL="https://github.com/$REPO/releases/download/$TAG/$FILENAME"
+  echo "  Channel: preview ($TAG)"
+else
+  URL="https://github.com/$REPO/releases/latest/download/$FILENAME"
+  echo "  Channel: stable (latest)"
+fi
 
 echo "  Downloading $FILENAME..."
 curl -fSL "$URL" -o "$OUTFILE"

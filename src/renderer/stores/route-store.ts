@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Route = 'home' | 'new-thread' | 'settings' | 'agents' | 'diff' | 'threads'
+export type Route = 'home' | 'new-thread' | 'settings' | 'agents' | 'diff' | 'threads' | 'onboarding'
 
 export interface RouteParams {
   diffFile?: string

@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "0203861d-b09f-43e7-a021-bab363de7cf5",
+  "title": "Agent modes leidend per thread",
+  "createdAt": "2026-02-16T20:59:53.936Z",
+  "updatedAt": "2026-02-16T21:11:25.411Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 4,
+    "userMessageCount": 2,
+    "agentMessageCount": 2,
+    "toolCallCount": 103
+  }
+}

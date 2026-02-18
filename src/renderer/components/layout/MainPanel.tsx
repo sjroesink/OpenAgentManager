@@ -8,6 +8,8 @@ import { DraftThreadView } from '../thread/DraftThreadView'
 import { Button } from '../common/Button'
 import { AgentIcon } from '../common/AgentIcon'
 import { useRouteStore } from '../../stores/route-store'
+import { useUiStore } from '../../stores/ui-store'
+import vscodeIcon from '../../assets/icons/vscode.svg'
 
 /**
  * Shows worktree hook progress during session creation as a checklist.
@@ -80,21 +82,28 @@ export function MainPanel() {
     deleteSession
   } = useSessionStore()
   const { workspaces, createWorkspace, openInVSCode } = useWorkspaceStore()
+  const toggleTerminal = useUiStore((s) => s.toggleTerminal)
   const navigate = useRouteStore((s) => s.navigate)
   const installedAgents = useAgentStore((s) => s.installed)
   const activeSession = getActiveSession()
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
+  const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
   const threadMenuRef = useRef<HTMLDivElement>(null)
+  const openInMenuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!threadMenuOpen) return
+    if (!threadMenuOpen && !openInMenuOpen) return
     const handleClickOutside = (event: MouseEvent) => {
       if (threadMenuRef.current && !threadMenuRef.current.contains(event.target as Node)) {
         setThreadMenuOpen(false)
+      }
+      if (openInMenuRef.current && !openInMenuRef.current.contains(event.target as Node)) {
+        setOpenInMenuOpen(false)
       }
     }
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setThreadMenuOpen(false)
+        setOpenInMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -103,7 +112,7 @@ export function MainPanel() {
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [threadMenuOpen])
+  }, [threadMenuOpen, openInMenuOpen])
 
   // Draft thread view — workspace + agent configuration before creating a thread
   if (activeDraftId && draftThread) {
@@ -126,6 +135,13 @@ export function MainPanel() {
           <p className="text-sm">Create a new thread to start working with an agent</p>
         </div>
         <Button variant="primary" onClick={async () => {
+          const existingDraft = useSessionStore.getState().draftThread
+          if (existingDraft) {
+            useSessionStore.getState().setActiveDraft(existingDraft.id)
+            navigate('new-thread', { draftId: existingDraft.id })
+            return
+          }
+
           const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
           if (sorted.length > 0) {
             startDraftThread(sorted[0].id, sorted[0].path)
@@ -186,6 +202,16 @@ export function MainPanel() {
     deleteSession(activeSession.sessionId, cleanupWorktree)
     setThreadMenuOpen(false)
   }
+  const currentDirectory = activeSession.worktreePath || activeSession.workingDir
+
+  const handleOpenFolder = async () => {
+    try {
+      await window.api.invoke('workspace:open-directory', { path: currentDirectory })
+      setOpenInMenuOpen(false)
+    } catch (error) {
+      console.error('Failed to open directory:', error)
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full min-w-0">
@@ -208,20 +234,68 @@ export function MainPanel() {
             {activeSession.worktreeBranch}
           </span>
         )}
-        <button
-          onClick={() => openInVSCode(activeSession.worktreePath || activeSession.workingDir)}
-          className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
-          title="Open in VS Code"
+        <span
+          className="text-xs text-text-muted truncate max-w-[34vw]"
+          title={currentDirectory}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-            />
-          </svg>
-        </button>
+          {currentDirectory}
+        </span>
+        <div className="relative" ref={openInMenuRef}>
+          <button
+            onClick={() => setOpenInMenuOpen((v) => !v)}
+            className="p-1 rounded hover:bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
+            title="Open in"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+          </button>
+          {openInMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5">
+              <button
+                onClick={() => {
+                  openInVSCode(currentDirectory)
+                  setOpenInMenuOpen(false)
+                }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                <img src={vscodeIcon} alt="" className="w-3.5 h-3.5 shrink-0" />
+                VS Code
+              </button>
+              <button
+                onClick={() => {
+                  toggleTerminal()
+                  setOpenInMenuOpen(false)
+                }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Terminal
+              </button>
+              <button
+                onClick={() => { void handleOpenFolder() }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                  />
+                </svg>
+                Folder
+              </button>
+            </div>
+          )}
+        </div>
         <div className="relative" ref={threadMenuRef}>
           <button
             onClick={() => setThreadMenuOpen((v) => !v)}
@@ -248,15 +322,6 @@ export function MainPanel() {
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
               >
                 Rename
-              </button>
-              <button
-                onClick={() => {
-                  openInVSCode(activeSession.worktreePath || activeSession.workingDir)
-                  setThreadMenuOpen(false)
-                }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
-              >
-                Open in VS Code
               </button>
               <div className="border-t border-border my-1" />
               {activeSession.worktreePath ? (

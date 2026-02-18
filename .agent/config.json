@@ -8,5 +8,13 @@
     "agentId": "codex-acp",
     "modelId": "gpt-5.3-codex/medium",
     "interactionMode": "full-access"
+  },
+  "worktreeHooks": {
+    "postSetupCommands": [
+      {
+        "command": "nom install",
+        "label": "NPM"
+      }
+    ]
   }
 }

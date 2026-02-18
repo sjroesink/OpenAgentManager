@@ -124,7 +124,7 @@ function ThreadItem({
           className={`
             w-full text-left pr-3 py-0.5 flex items-start gap-2 transition-colors
             ${isDeleting ? 'opacity-50 pointer-events-none' : ''}
-            ${isActive ? 'bg-accent/10 border-r-2 border-accent' : 'hover:bg-surface-2'}
+            ${isActive ? 'bg-accent/30 border-r-2 border-accent ring-1 ring-inset ring-accent/55' : 'hover:bg-accent/12 hover:ring-1 hover:ring-inset hover:ring-accent/35'}
           `}
         >
           {/* Expand chevron for threads with children */}
@@ -256,7 +256,7 @@ function ThreadItem({
 // ---- Main WorkspaceSection ----
 
 export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps) {
-  const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
+  const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, removeSessionsByWorkspace, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -266,7 +266,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const [generatingTitle, setGeneratingTitle] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
-  const { expandedWorkspaceIds, toggleExpanded, openInVSCode } = useWorkspaceStore()
+  const { expandedWorkspaceIds, toggleExpanded, openInVSCode, removeWorkspace } = useWorkspaceStore()
   const navigate = useRouteStore((s) => s.navigate)
 
   const handleSelectSession = useCallback(
@@ -314,8 +314,28 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     return counts
   }, [pendingPermissions])
 
+  const workspacePendingPermissionCount = useMemo(() => {
+    if (sessions.length === 0 || pendingPermissions.length === 0) return 0
+    const workspaceSessionIds = new Set(sessions.map((session) => session.sessionId))
+    let count = 0
+    for (const permission of pendingPermissions) {
+      if (workspaceSessionIds.has(permission.sessionId)) {
+        count++
+      }
+    }
+    return count
+  }, [sessions, pendingPermissions])
+
   const handleNewThread = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    const existingDraft = useSessionStore.getState().draftThread
+    if (existingDraft) {
+      setActiveDraft(existingDraft.id)
+      navigate('new-thread', { draftId: existingDraft.id })
+      if (!isExpanded) toggleExpanded(workspace.id)
+      return
+    }
+
     startDraftThread(workspace.id, workspace.path)
     const draftId = useSessionStore.getState().draftThread?.id
     if (draftId) {
@@ -339,16 +359,32 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         useWorktree: !!workspace.defaultUseWorktree
       })
     }
+    const baselineDraft = useSessionStore.getState().draftThread
 
     // Then try to fetch from config file (might have more up-to-date or shared values)
     try {
       const config = await window.api.invoke('workspace:get-config', { workspacePath: workspace.path })
       if (config?.defaults) {
+        const currentDraft = useSessionStore.getState().draftThread
+        if (!currentDraft || currentDraft.id !== draftId) return
+
         updateDraftThread({
-          agentId: config.defaults.agentId || workspace.defaultAgentId || null,
-          modelId: config.defaults.modelId || workspace.defaultModelId || null,
-          interactionMode: config.defaults.interactionMode || workspace.defaultInteractionMode || null,
-          useWorktree: config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
+          agentId:
+            currentDraft.agentId === baselineDraft?.agentId
+              ? config.defaults.agentId || workspace.defaultAgentId || null
+              : currentDraft.agentId,
+          modelId:
+            currentDraft.modelId === baselineDraft?.modelId
+              ? config.defaults.modelId || workspace.defaultModelId || null
+              : currentDraft.modelId,
+          interactionMode:
+            currentDraft.interactionMode === baselineDraft?.interactionMode
+              ? config.defaults.interactionMode || workspace.defaultInteractionMode || null
+              : currentDraft.interactionMode,
+          useWorktree:
+            currentDraft.useWorktree === baselineDraft?.useWorktree
+              ? config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
+              : currentDraft.useWorktree
         })
       }
     } catch (err) {
@@ -403,6 +439,38 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     setContextMenu({ x: e.clientX, y: e.clientY, type: 'thread', sessionId })
   }
 
+  const handleDeleteWorkspace = async () => {
+    setContextMenu(null)
+    try {
+      const sessionCount = sessions.length
+      if (sessionCount === 0) {
+        const confirmDeleteWorkspace = window.confirm(`Delete workspace "${workspace.name}"?`)
+        if (!confirmDeleteWorkspace) return
+        await removeWorkspace(workspace.id, false)
+        removeSessionsByWorkspace(workspace.id)
+        return
+      }
+
+      const confirmDeleteWithSessions = window.confirm(
+        `Delete workspace "${workspace.name}" and its ${sessionCount} ${sessionCount === 1 ? 'thread' : 'threads'}?`
+      )
+      if (!confirmDeleteWithSessions) return
+
+      const worktreeSessionCount = sessions.filter((session) => !!session.worktreePath && session.useWorktree).length
+      let cleanupWorktrees = false
+      if (worktreeSessionCount > 0) {
+        cleanupWorktrees = window.confirm(
+          `This workspace has ${worktreeSessionCount} ${worktreeSessionCount === 1 ? 'thread' : 'threads'} with worktrees.\n\nAlso delete their worktrees?`
+        )
+      }
+
+      await removeWorkspace(workspace.id, cleanupWorktrees)
+      removeSessionsByWorkspace(workspace.id)
+    } catch (error) {
+      console.error('Failed to delete workspace:', error)
+    }
+  }
+
   useEffect(() => {
     if (!contextMenu) return
     const handleClick = () => setContextMenu(null)
@@ -411,10 +479,13 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   }, [contextMenu])
 
   return (
-    <div>
+    <div className="mx-2 my-1 overflow-hidden rounded-lg border border-border bg-surface-1">
       {/* Workspace header */}
       <div
-        className="group/workspace flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-2 cursor-pointer"
+        className={`
+          group/workspace flex items-center gap-1.5 px-3 py-2 text-xs text-text-secondary cursor-pointer transition-colors
+          ${isExpanded ? 'bg-surface-2 border-b border-border' : 'bg-surface-1 hover:bg-surface-2'}
+        `}
         onClick={() => toggleExpanded(workspace.id)}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -433,6 +504,8 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
 
+        <span className="h-3.5 w-0.5 rounded-full bg-accent opacity-70 shrink-0" />
+
         {/* Folder icon */}
         <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
@@ -445,6 +518,23 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
         {/* Workspace name */}
         <span className="flex-1 font-medium truncate">{workspace.name}</span>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <span
+            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-3 text-text-secondary"
+            title={`${sessions.length} ${sessions.length === 1 ? 'thread' : 'threads'}`}
+          >
+            {sessions.length}
+          </span>
+          {workspacePendingPermissionCount > 0 && (
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white"
+              title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
+            >
+              {workspacePendingPermissionCount}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto">
           <button
@@ -481,7 +571,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
 
       {/* Thread tree */}
       {isExpanded && (
-        <div>
+        <div className="py-1">
           {/* Draft thread item */}
           {hasDraftForThis && (
             <button
@@ -492,7 +582,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               className={`
                 w-full text-left pl-8 pr-3 py-1 flex items-start gap-2 transition-colors
                 ${activeDraftId === draftThread!.id
-                  ? 'bg-accent/10 border-r-2 border-accent'
+                  ? 'bg-accent/20 border-r-2 border-accent ring-1 ring-inset ring-accent/40'
                   : 'hover:bg-surface-2'
                 }
               `}
@@ -576,6 +666,13 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
               >
                 Open in VS Code
+              </button>
+              <div className="my-1 border-t border-border" />
+              <button
+                onClick={() => { void handleDeleteWorkspace() }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-error/20 text-error"
+              >
+                Delete Workspace
               </button>
             </>
           )}

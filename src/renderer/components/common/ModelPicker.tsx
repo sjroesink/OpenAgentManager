@@ -8,6 +8,8 @@ interface ModelPickerProps {
   onChange: (modelId: string | null) => void
   emptyLabel?: string
   className?: string
+  showLabel?: boolean
+  showError?: boolean
 }
 
 export function ModelPicker({
@@ -16,11 +18,14 @@ export function ModelPicker({
   value,
   onChange,
   emptyLabel = 'Default model',
-  className
+  className,
+  showLabel = true,
+  showError = true
 }: ModelPickerProps) {
   const loadAgentModels = useAgentStore((s) => s.loadAgentModels)
   const modelsByAgent = useAgentStore((s) => s.modelsByAgent)
   const modelsLoadingByAgent = useAgentStore((s) => s.modelsLoadingByAgent)
+  const modelErrorsByAgent = useAgentStore((s) => s.modelErrorsByAgent)
 
   useEffect(() => {
     if (!agentId || !projectPath) return
@@ -31,16 +36,19 @@ export function ModelPicker({
 
   const catalog = agentId ? modelsByAgent[agentId] : undefined
   const isLoading = agentId ? modelsLoadingByAgent[agentId] === true : false
+  const modelError = agentId ? modelErrorsByAgent[agentId] : undefined
   const options = useMemo(() => catalog?.availableModels || [], [catalog])
 
   if (!agentId) return null
-  if (!isLoading && options.length === 0) return null
+  if (!isLoading && options.length === 0 && !modelError) return null
 
   return (
     <div>
-      <label className="block text-xs font-medium text-text-secondary mb-1.5">
-        Model
-      </label>
+      {showLabel && (
+        <label className="block text-xs font-medium text-text-secondary mb-1.5">
+          Model
+        </label>
+      )}
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value || null)}
@@ -57,6 +65,9 @@ export function ModelPicker({
           </option>
         ))}
       </select>
+      {showError && modelError && (
+        <p className="text-[11px] text-error mt-1 break-words whitespace-pre-line">{modelError}</p>
+      )}
     </div>
   )
 }

@@ -9,12 +9,14 @@ import { useAcpFeaturesStore } from './stores/acp-features-store'
 import { useRouteStore } from './stores/route-store'
 import { useIpcEvent } from './hooks/useIpc'
 import { useTheme } from './hooks/useTheme'
-import type { SessionUpdateEvent, PermissionRequestEvent, WorktreeHookProgressEvent } from '@shared/types/session'
+import type { SessionUpdateEvent, PermissionRequestEvent, PermissionResolvedEvent, WorktreeHookProgressEvent } from '@shared/types/session'
+import type { AgentConnection } from '@shared/types/agent'
 
 export default function App() {
   const {
     handleSessionUpdate,
     handlePermissionRequest,
+    handlePermissionResolved,
     handleHookProgress,
     loadPersistedSessions,
     setActiveSession,
@@ -55,19 +57,23 @@ export default function App() {
     [handleHookProgress]
   )
 
+  const onPermissionResolved = useCallback(
+    (event: PermissionResolvedEvent) => {
+      handlePermissionResolved(event)
+    },
+    [handlePermissionResolved]
+  )
+
   const onAgentStatusChange = useCallback(
-    (event: { connectionId: string; status: string; error?: string }) => {
-      updateConnectionStatus(
-        event.connectionId,
-        event.status as 'connected' | 'error' | 'terminated',
-        event.error
-      )
+    (event: { connectionId: string; status: AgentConnection['status']; error?: string }) => {
+      updateConnectionStatus(event.connectionId, event.status, event.error)
     },
     [updateConnectionStatus]
   )
 
   useIpcEvent('session:update', onSessionUpdate)
   useIpcEvent('session:permission-request', onPermissionRequest)
+  useIpcEvent('session:permission-resolved', onPermissionResolved)
   useIpcEvent('session:hook-progress', onHookProgress)
   useIpcEvent('agent:status-change', onAgentStatusChange)
 
@@ -78,6 +84,15 @@ export default function App() {
     loadWorkspaces()
     loadPersistedSessions()
   }, [loadInstalled, fetchRegistry, loadWorkspaces, loadPersistedSessions])
+
+  // Check if onboarding needs to be shown on first launch
+  useEffect(() => {
+    window.api.invoke('settings:get', undefined).then((settings) => {
+      if (!settings.general.completedOnboarding) {
+        useRouteStore.getState().navigate('onboarding')
+      }
+    })
+  }, [])
 
   // Global keyboard shortcuts for navigation
   useEffect(() => {

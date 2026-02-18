@@ -12,6 +12,10 @@ export function registerAgentHandlers(): void {
     return registryService.getCached()
   })
 
+  ipcMain.handle('registry:get-icon-svg', async (_event, { agentId, icon }: { agentId: string; icon?: string }) => {
+    return registryService.fetchRegistryIconSvg(agentId, icon)
+  })
+
   // --- Agent Management ---
   ipcMain.handle('agent:install', async (_event, { agentId }: { agentId: string }) => {
     return agentManager.install(agentId)
@@ -32,6 +36,10 @@ export function registerAgentHandlers(): void {
       return agentManager.launch(agentId, projectPath, extraEnv)
     }
   )
+
+  ipcMain.handle('agent:check-auth', async (_event, { agentId, projectPath }: { agentId: string; projectPath?: string }) => {
+    return agentManager.checkAuthentication(agentId, projectPath)
+  })
 
   ipcMain.handle('agent:terminate', async (_event, { connectionId }: { connectionId: string }) => {
     agentManager.terminate(connectionId)
@@ -73,4 +81,9 @@ export function registerAgentHandlers(): void {
       return agentManager.getModes(agentId, projectPath)
     }
   )
+
+  // --- CLI Detection ---
+  ipcMain.handle('agent:detect-cli', async (_event, { commands }: { commands: string[] }) => {
+    return agentManager.detectCliCommands(commands)
+  })
 }

@@ -298,6 +298,11 @@
       color: var(--text-3);
     }
 
+    .release-links {
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
     .install-sub a {
       color: var(--text-2);
       text-decoration: underline;
@@ -647,7 +652,10 @@
     <div class="container">
       <div class="badge">
         <span class="badge-dot"></span>
-        Desktop app available on Windows, macOS, and Linux. <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest" target="_blank">Download now</a>
+        Desktop app available on Windows, macOS, and Linux.
+        <a href="https://github.com/sjroesink/OpenAgentManager/releases/latest" target="_blank">Latest release</a>
+        &middot;
+        <a href="https://github.com/sjroesink/OpenAgentManager/releases/tag/v1.0.0-preview.1" target="_blank">v1.0.0-preview.1 preview</a>
       </div>
       <h1>The open desktop environment<br>for AI coding agents</h1>
       <p>Connect any agent from any provider &mdash; Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, and more. You pick the agent, not the app.</p>
@@ -681,6 +689,10 @@
       </div>
 
       <p class="install-sub">Open source &middot; MIT License &middot; No account required</p>
+      <p class="install-sub release-links">
+        Install channel:
+        <code>OAM_CHANNEL=stable</code> (default) or <code>OAM_CHANNEL=preview</code>
+      </p>
     </div>
   </section>
 
@@ -688,63 +700,91 @@
   <section class="features" id="features">
     <div class="container">
       <h2>Features</h2>
-      <p class="features-sub">Everything you need to work with AI coding agents, in one app.</p>
+      <p class="features-sub">Everything you need to run, review, and manage AI coding agents in one desktop app.</p>
 
       <div class="features-grid">
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>Agent agnostic</h3>
-            <p>Works with any ACP-compatible agent &mdash; Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, Junie, Kimi, and more.</p>
+            <h3>Agent-agnostic runtime</h3>
+            <p>Connect any ACP-compatible agent &mdash; Claude Code, Gemini CLI, Codex CLI, GitHub Copilot, Junie, Kimi, Mistral Vibe, and more.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>ACP registry</h3>
-            <p>Browse, search, and install agents from the central ACP agent registry. One click to add a new agent.</p>
+            <h3>ACP Registry browser</h3>
+            <p>Browse, search, and install agents from the central ACP Registry with one click.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
+          <div class="feature-text">
+            <h3>Multiple install methods</h3>
+            <p>Supports npx, uvx, and binary agent distributions with platform-aware setup.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
+          <div class="feature-text">
+            <h3>Parallel thread execution</h3>
+            <p>Run multiple agents across multiple threads and tasks in parallel.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
             <h3>Git worktree isolation</h3>
-            <p>Isolate each thread on its own branch with git worktrees. Parallel tasks never interfere with each other.</p>
+            <p>Optionally isolate each thread on its own branch and working directory so parallel tasks never collide.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>Streaming responses</h3>
-            <p>See text, thinking blocks, and tool calls in real time as the agent works.</p>
+            <h3>Streaming agent output</h3>
+            <p>See text, thinking blocks, and tool calls stream live while the agent works.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>Diff review &amp; commit</h3>
-            <p>See exactly what files the agent changed with inline diffs. Stage and commit from the app.</p>
+            <h3>Diff review</h3>
+            <p>Inspect file-level changes with inline diffs and a full diff view before accepting changes.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>Permission system</h3>
-            <p>Approve or deny agent actions like file writes and command execution. You stay in control.</p>
+            <h3>Commit from the app</h3>
+            <p>Send commit requests directly from the UI once there are pending file changes.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>Multi-workspace</h3>
-            <p>Organize work across multiple workspaces. Run different agents on different projects simultaneously.</p>
+            <h3>Permission controls</h3>
+            <p>Approve or deny sensitive agent actions like file writes and command execution.</p>
           </div>
         </div>
         <div class="feature-item">
           <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
           <div class="feature-text">
-            <h3>ATSF thread format</h3>
-            <p>Open, filesystem-based conversation storage. Threads are portable between tools.</p>
+            <h3>Built-in terminal</h3>
+            <p>Run and verify changes in a per-session terminal without leaving the app.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
+          <div class="feature-text">
+            <h3>Multi-workspace support</h3>
+            <p>Organize projects across multiple workspaces and route sessions to the right repository.</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-check"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6l3 3 5-5"/></svg></div>
+          <div class="feature-text">
+            <h3>Settings and themes</h3>
+            <p>Configure per-agent API keys, worktree behavior, and application theme preferences.</p>
           </div>
         </div>
       </div>
@@ -755,7 +795,7 @@
   <section class="spec" id="spec">
     <div class="container">
       <h2>Agent Thread Storage Format</h2>
-      <p class="spec-sub">An open specification for persisting AI agent conversations. Agent-agnostic, tool-agnostic, git-friendly.</p>
+      <p class="spec-sub">ATSF v1.1 is an open, filesystem-based conversation format: agent-agnostic, tool-agnostic, resumable, and git-friendly.</p>
 
       <div class="spec-layout">
         <div class="spec-tree">
@@ -768,34 +808,40 @@
       <span class="dir">&lt;thread-id&gt;/</span>
         <span class="file">thread.json</span>          <span class="comment"># metadata envelope</span>
         <span class="file">messages.jsonl</span>       <span class="comment"># append-only message log</span>
-        <span class="dir">assets/</span>              <span class="comment"># binary content (images)</span></pre>
+        <span class="dir">assets/</span>              <span class="comment"># binary content (images)</span>
+
+<span class="dir">worktrees/thread-abc123/</span>          <span class="comment"># if using git worktrees</span>
+  <span class="dir">.agent/threads/&lt;thread-id&gt;/...</span>   <span class="comment"># worktree-local thread data</span></pre>
         </div>
 
         <div class="spec-card">
-          <h3>thread.json</h3>
-          <p>Each thread directory contains a metadata envelope with thread ID, title, timestamps, agent info, git context, and message stats &mdash; everything needed for fast listing without parsing the full message log.</p>
-          <p>Supports git worktree context, token usage tracking, and an extensible metadata field for application-specific data.</p>
+          <h3>Spec versioning</h3>
+          <p>ATSF uses <strong>MAJOR.MINOR</strong> versioning. v1.1 adds backward-compatible hooks and worktree guidance without breaking existing readers.</p>
+          <p>Implementations should reject newer unsupported MAJOR versions and preserve unknown fields when round-tripping.</p>
         </div>
 
         <div class="spec-card">
-          <h3>messages.jsonl</h3>
-          <p>Append-only log where each line is a self-contained JSON message. Supports user, agent, and system roles with typed content blocks: text, thinking, and image references.</p>
-          <p>Tool calls are stored inline with input, output, status, and optional file diffs. Content-addressable assets keep the log compact.</p>
+          <h3>Worktree-local thread storage</h3>
+          <p>When a thread runs inside a git worktree, its <code>.agent</code> data is stored in that worktree so code and conversation stay together.</p>
+          <p>Tools should scan both the main project <code>.agent</code> and known worktree <code>.agent</code> locations.</p>
         </div>
 
         <div class="spec-card">
-          <h3>Design goals</h3>
-          <p><strong>Agent-agnostic</strong> &mdash; works with any AI agent.<br>
-          <strong>Tool-agnostic</strong> &mdash; any app can read/write.<br>
-          <strong>Git-friendly</strong> &mdash; plain text JSON, deterministic ordering.<br>
-          <strong>Resumable</strong> &mdash; contains all info to restore a conversation.<br>
-          <strong>Concurrent</strong> &mdash; multiple threads coexist safely.</p>
+          <h3>config.json and hooks</h3>
+          <p>Project defaults can define agent preferences plus worktree hooks: symlinks, post-setup commands, and an initial prompt.</p>
+          <p>Hook failures are non-fatal and must not block session creation.</p>
         </div>
 
         <div class="spec-card">
-          <h3>Worktree hooks <span class="spec-tag">v1.1</span></h3>
-          <p>Configure automatic symlinks, post-setup commands, and initial prompts when creating git worktrees for new threads. Platform-aware with configurable timeouts.</p>
-          <p>Hooks are non-fatal &mdash; a failing hook never blocks session creation.</p>
+          <h3>Thread + message schemas</h3>
+          <p><code>thread.json</code> stores metadata for fast listing; <code>messages.jsonl</code> stores append-only user/agent/system messages with typed blocks.</p>
+          <p>Tool calls, token usage, stop reasons, and image asset references are first-class fields.</p>
+        </div>
+
+        <div class="spec-card">
+          <h3>Concurrency and safety</h3>
+          <p>Writers should lock when appending to <code>messages.jsonl</code> and write <code>thread.json</code> atomically via temp-file rename.</p>
+          <p>Unknown fields and content types should be preserved for cross-tool compatibility.</p>
         </div>
       </div>
 

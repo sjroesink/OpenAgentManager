@@ -131,7 +131,7 @@ export function ThreadList() {
                     w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition-colors
                     ${
                       session.sessionId === activeSessionId
-                        ? 'bg-accent/10 border-r-2 border-accent'
+                        ? 'bg-accent/20 border-r-2 border-accent ring-1 ring-inset ring-accent/40'
                         : 'hover:bg-surface-2'
                     }
                   `}

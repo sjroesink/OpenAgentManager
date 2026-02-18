@@ -1,0 +1,21 @@
+{
+  "specVersion": "1.1",
+  "threadId": "ef181267-b527-42d3-befc-086fe3fdd6b5",
+  "title": "Group Threads by Workspace",
+  "createdAt": "2026-02-17T08:06:52.351Z",
+  "updatedAt": "2026-02-17T08:07:15.735Z",
+  "agent": {
+    "id": "codex-acp",
+    "name": "codex-acp",
+    "protocol": "acp"
+  },
+  "context": {
+    "workingDir": "D:\\Projects\\AgentManager"
+  },
+  "stats": {
+    "messageCount": 2,
+    "userMessageCount": 1,
+    "agentMessageCount": 1,
+    "toolCallCount": 10
+  }
+}

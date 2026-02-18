@@ -26,7 +26,13 @@ export function Sidebar() {
   )
 
   const handleNewThread = async () => {
-    const { updateDraftThread } = useSessionStore.getState()
+    const { draftThread, setActiveDraft, updateDraftThread } = useSessionStore.getState()
+    if (draftThread) {
+      setActiveDraft(draftThread.id)
+      navigate('new-thread', { draftId: draftThread.id })
+      return
+    }
+
     if (sortedWorkspaces.length > 0) {
       // Start a draft on the most recently accessed workspace
       const topWorkspace = sortedWorkspaces[0]
@@ -48,14 +54,30 @@ export function Sidebar() {
           useWorktree: !!topWorkspace.defaultUseWorktree
         })
       }
+      const baselineDraft = useSessionStore.getState().draftThread
       try {
         const config = await window.api.invoke('workspace:get-config', { workspacePath: topWorkspace.path })
         if (config?.defaults) {
+          const currentDraft = useSessionStore.getState().draftThread
+          if (!currentDraft || currentDraft.id !== draftId) return
+
           updateDraftThread({
-            agentId: config.defaults.agentId || topWorkspace.defaultAgentId || null,
-            modelId: config.defaults.modelId || topWorkspace.defaultModelId || null,
-            interactionMode: config.defaults.interactionMode || topWorkspace.defaultInteractionMode || null,
-            useWorktree: config.defaults.useWorktree ?? topWorkspace.defaultUseWorktree ?? false
+            agentId:
+              currentDraft.agentId === baselineDraft?.agentId
+                ? config.defaults.agentId || topWorkspace.defaultAgentId || null
+                : currentDraft.agentId,
+            modelId:
+              currentDraft.modelId === baselineDraft?.modelId
+                ? config.defaults.modelId || topWorkspace.defaultModelId || null
+                : currentDraft.modelId,
+            interactionMode:
+              currentDraft.interactionMode === baselineDraft?.interactionMode
+                ? config.defaults.interactionMode || topWorkspace.defaultInteractionMode || null
+                : currentDraft.interactionMode,
+            useWorktree:
+              currentDraft.useWorktree === baselineDraft?.useWorktree
+                ? config.defaults.useWorktree ?? topWorkspace.defaultUseWorktree ?? false
+                : currentDraft.useWorktree
           })
         }
       } catch (err) {
@@ -85,14 +107,30 @@ export function Sidebar() {
             useWorktree: !!ws.defaultUseWorktree
           })
         }
+        const baselineDraft = useSessionStore.getState().draftThread
         try {
           const config = await window.api.invoke('workspace:get-config', { workspacePath: ws.path })
           if (config?.defaults) {
+            const currentDraft = useSessionStore.getState().draftThread
+            if (!currentDraft || currentDraft.id !== draftId) return
+
             updateDraftThread({
-              agentId: config.defaults.agentId || ws.defaultAgentId || null,
-              modelId: config.defaults.modelId || ws.defaultModelId || null,
-              interactionMode: config.defaults.interactionMode || ws.defaultInteractionMode || null,
-              useWorktree: config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+              agentId:
+                currentDraft.agentId === baselineDraft?.agentId
+                  ? config.defaults.agentId || ws.defaultAgentId || null
+                  : currentDraft.agentId,
+              modelId:
+                currentDraft.modelId === baselineDraft?.modelId
+                  ? config.defaults.modelId || ws.defaultModelId || null
+                  : currentDraft.modelId,
+              interactionMode:
+                currentDraft.interactionMode === baselineDraft?.interactionMode
+                  ? config.defaults.interactionMode || ws.defaultInteractionMode || null
+                  : currentDraft.interactionMode,
+              useWorktree:
+                currentDraft.useWorktree === baselineDraft?.useWorktree
+                  ? config.defaults.useWorktree ?? ws.defaultUseWorktree ?? false
+                  : currentDraft.useWorktree
             })
           }
         } catch (err) {

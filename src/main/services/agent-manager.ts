@@ -1,15 +1,20 @@
 import { BrowserWindow } from 'electron'
+import { execSync } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { v4 as uuid } from 'uuid'
 import type {
   AcpRegistryAgent,
   InstalledAgent,
   AgentConnection,
+  AgentAuthCheckResult,
   AgentStatus,
   BinaryDistribution,
   AuthMethod,
   AgentModelCatalog,
   AgentModeCatalog
 } from '@shared/types/agent'
+import { getApiKeyEnvVarsForAgent, getModelArgForAgent, getModelEnvVarsForAgent } from '@shared/config/agent-env'
 import { registryService } from './registry-service'
 import { settingsService } from './settings-service'
 import { downloadService } from './download-service'
@@ -180,19 +185,19 @@ export class AgentManagerService {
     const agentSettings = settingsService.getAgentSettings(agentId)
     const finalEnv: Record<string, string> = { ...env }
 
-    // Add API key if configured
-    if (agentSettings?.apiKey) {
-      // Common env var patterns for API keys
-      finalEnv['API_KEY'] = agentSettings.apiKey
-      finalEnv['ANTHROPIC_API_KEY'] = agentSettings.apiKey
-      finalEnv['OPENAI_API_KEY'] = agentSettings.apiKey
+    // Add mapped API key env vars for this agent.
+    for (const envVarName of getApiKeyEnvVarsForAgent(agentId)) {
+      const mappedValue = this.resolveMappedApiKeyValue(agentId, agentSettings, envVarName)
+      if (mappedValue) {
+        finalEnv[envVarName] = mappedValue
+      }
     }
 
-    // Add model as env var (some agents read this)
+    // Add mapped model env vars for this agent.
     if (agentSettings?.model) {
-      finalEnv['MODEL'] = agentSettings.model
-      finalEnv['ANTHROPIC_MODEL'] = agentSettings.model
-      finalEnv['OPENAI_MODEL'] = agentSettings.model
+      for (const envVarName of getModelEnvVarsForAgent(agentId)) {
+        finalEnv[envVarName] = agentSettings.model
+      }
     }
 
     // Merge custom env
@@ -219,9 +224,12 @@ export class AgentManagerService {
     // Add custom args
     let finalArgs = [...args, ...(agentSettings?.customArgs || [])]
 
-    // Add model as CLI arg for agents like OpenCode that don't support session/set_config_option
+    // Add mapped model CLI arg for agents that require startup model selection.
     if (agentSettings?.model) {
-      finalArgs = [...finalArgs, '--model', agentSettings.model]
+      const modelArg = getModelArgForAgent(agentId)
+      if (modelArg) {
+        finalArgs = [...finalArgs, modelArg, agentSettings.model]
+      }
     }
 
     // Determine spawn parameters (potentially wrapped for WSL)
@@ -317,31 +325,42 @@ export class AgentManagerService {
     agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
     emitStatus: (status: AgentStatus, error?: string) => void
   ): Promise<void> {
-    const apiKey = agentSettings?.apiKey
-    if (!apiKey) return
-
     const envVarMethod = authMethods.find((m) => m.type === 'env_var' && m.varName)
     if (!envVarMethod) {
       logger.debug('No env_var auth method available, skipping auto-authenticate')
       return
     }
 
-    const varName = envVarMethod.varName!.toUpperCase()
-    const providedKeys = ['API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY']
-    const hasEnvVar = providedKeys.some((key) => key.toUpperCase() === varName)
-
-    if (!hasEnvVar) {
-      logger.debug(`API key not provided for env_var auth method: ${varName}`)
+    const envVarName = envVarMethod.varName!
+    const apiKey = this.resolveMappedApiKeyValue(client.agentId, agentSettings, envVarName)
+    if (!apiKey) {
+      logger.debug(`API key not configured for env_var auth method: ${envVarName}`)
       return
     }
 
     try {
       logger.info(`Auto-authenticating with env_var method: ${envVarMethod.id}`)
-      await client.authenticate(envVarMethod.id, { [envVarMethod.varName!]: apiKey })
+      await client.authenticate(envVarMethod.id, { [envVarName]: apiKey })
     } catch (error) {
       logger.warn(`Auto-authenticate failed for ${envVarMethod.id}:`, error)
       emitStatus('error', `Authentication failed: ${(error as Error).message}`)
     }
+  }
+
+  private resolveMappedApiKeyValue(
+    agentId: string,
+    agentSettings: ReturnType<typeof settingsService.getAgentSettings>,
+    envVarName: string
+  ): string | undefined {
+    const configuredValue = agentSettings?.apiKeys?.[envVarName]
+    if (configuredValue) return configuredValue
+
+    // Backward compatibility with legacy single API key setting.
+    const legacyApiKey = agentSettings?.apiKey
+    if (!legacyApiKey) return undefined
+
+    const mappedEnvVars = getApiKeyEnvVarsForAgent(agentId)
+    return mappedEnvVars.includes(envVarName) ? legacyApiKey : undefined
   }
 
   async authenticate(
@@ -381,16 +400,75 @@ export class AgentManagerService {
   }
 
   listConnections(): AgentConnection[] {
-    return Array.from(this.connections.values()).map((client) => ({
-      connectionId: client.connectionId,
-      agentId: client.agentId,
-      agentName: client.agentName,
-      status: client.isRunning ? 'connected' as const : 'terminated' as const,
-      pid: client.pid,
-      startedAt: '',
-      capabilities: client.capabilities || undefined,
-      authMethods: client.authMethods
-    }))
+    return Array.from(this.connections.values()).map((client) => this.toAgentConnection(client))
+  }
+
+  async checkAuthentication(agentId: string, projectPath?: string): Promise<AgentAuthCheckResult> {
+    const resolvedProjectPath = projectPath || this.resolveOnboardingProjectPath()
+    const checkedAt = new Date().toISOString()
+
+    let client = Array.from(this.connections.values()).find(
+      (existing) => existing.agentId === agentId && existing.isRunning
+    )
+    let connection: AgentConnection
+
+    if (!client) {
+      connection = await this.launch(agentId, resolvedProjectPath)
+      const launchedClient = this.connections.get(connection.connectionId)
+      if (!launchedClient) {
+        throw new Error(`Connection not found after launching agent: ${agentId}`)
+      }
+      client = launchedClient
+      connection = this.toAgentConnection(client)
+    } else {
+      connection = this.toAgentConnection(client)
+    }
+
+    const authMethods = client.authMethods || []
+    if (authMethods.length === 0) {
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: true,
+        requiresAuthentication: false,
+        authMethods,
+        connection
+      }
+    }
+
+    try {
+      await client.newSession(
+        resolvedProjectPath,
+        [],
+        `auth-probe-${uuid().slice(0, 8)}`,
+        { suppressInitialUpdates: true }
+      )
+
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: true,
+        requiresAuthentication: false,
+        authMethods,
+        connection
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const requiresAuthentication = this.isAuthenticationError(message)
+
+      return {
+        agentId,
+        checkedAt,
+        projectPath: resolvedProjectPath,
+        isAuthenticated: false,
+        requiresAuthentication,
+        authMethods,
+        connection,
+        error: message
+      }
+    }
   }
 
   async getModels(agentId: string, projectPath: string): Promise<AgentModelCatalog> {
@@ -426,7 +504,7 @@ export class AgentManagerService {
       return connectedClient.getModelCatalog()
     } catch (error) {
       logger.warn(`Failed to probe models for ${agentId}:`, error)
-      return connectedClient.getModelCatalog()
+      throw error
     } finally {
       if (shouldTerminateAfterProbe) {
         this.terminate(connectedClient.connectionId)
@@ -467,7 +545,7 @@ export class AgentManagerService {
       return connectedClient.getModeCatalog()
     } catch (error) {
       logger.warn(`Failed to probe modes for ${agentId}:`, error)
-      return connectedClient.getModeCatalog()
+      throw error
     } finally {
       if (shouldTerminateAfterProbe) {
         this.terminate(connectedClient.connectionId)
@@ -487,9 +565,13 @@ export class AgentManagerService {
 
     if (installed.distributionType === 'npx' && installed.npxPackage) {
       const npxDist = dist?.npx
+      const npxArgs = npxDist?.args || []
+      const hasYesFlag = npxArgs.includes('-y') || npxArgs.includes('--yes')
       return {
         command: getNpxCommand(),
-        args: [installed.npxPackage, ...(npxDist?.args || [])],
+        args: hasYesFlag
+          ? [installed.npxPackage, ...npxArgs]
+          : ['-y', installed.npxPackage, ...npxArgs],
         env: npxDist?.env || {}
       }
     }
@@ -536,6 +618,57 @@ export class AgentManagerService {
     } catch (err) {
       logger.error('Failed to save installed agents:', err)
     }
+  }
+
+  // ============================
+  // CLI Detection
+  // ============================
+
+  detectCliCommands(commands: string[]): Record<string, boolean> {
+    const results: Record<string, boolean> = {}
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which'
+
+    for (const cmd of commands) {
+      try {
+        execSync(`${whichCmd} ${cmd}`, { stdio: 'pipe', timeout: 5000 })
+        results[cmd] = true
+      } catch {
+        results[cmd] = false
+      }
+    }
+
+    return results
+  }
+
+  private toAgentConnection(client: AcpClient): AgentConnection {
+    return {
+      connectionId: client.connectionId,
+      agentId: client.agentId,
+      agentName: client.agentName,
+      status: client.isRunning ? 'connected' : 'terminated',
+      pid: client.pid,
+      startedAt: '',
+      capabilities: client.capabilities || undefined,
+      authMethods: client.authMethods
+    }
+  }
+
+  private resolveOnboardingProjectPath(): string {
+    const configuredDefault = settingsService.get().general.defaultProjectPath
+    if (configuredDefault && existsSync(configuredDefault)) {
+      return configuredDefault
+    }
+
+    const userHome = homedir()
+    if (userHome && existsSync(userHome)) {
+      return userHome
+    }
+
+    return process.cwd()
+  }
+
+  private isAuthenticationError(message: string): boolean {
+    return /auth|login|unauthorized|credential|api.?key|token|forbidden|401|403/i.test(message)
   }
 }
 

@@ -9,20 +9,22 @@ interface AuthMethodPromptProps {
   connectionId: string
   agentId: string
   projectPath: string
+  onAuthFlowComplete?: () => Promise<void> | void
 }
 
 /**
  * Renders actionable auth method cards based on the ACP auth method type.
  *
- * - `agent` / untyped: Show description + "Re-authenticate" button (logout + restart).
+ * - `agent` / untyped: Show description + "Authenticate" button (authenticate call).
  * - `env_var`: Show input for the env variable value + restart button.
- * - `terminal`: Show description + "Log in" button (logout + restart).
+ * - `terminal`: Show description + "Log in" button (authenticate call).
  */
 export function AuthMethodPrompt({
   authMethods,
   connectionId,
   agentId,
-  projectPath
+  projectPath,
+  onAuthFlowComplete
 }: AuthMethodPromptProps) {
   if (!authMethods.length) return null
 
@@ -36,6 +38,7 @@ export function AuthMethodPrompt({
           connectionId={connectionId}
           agentId={agentId}
           projectPath={projectPath}
+          onAuthFlowComplete={onAuthFlowComplete}
         />
       ))}
     </div>
@@ -46,12 +49,14 @@ function AuthMethodCard({
   method,
   connectionId,
   agentId,
-  projectPath
+  projectPath,
+  onAuthFlowComplete
 }: {
   method: AuthMethod
   connectionId: string
   agentId: string
   projectPath: string
+  onAuthFlowComplete?: () => Promise<void> | void
 }) {
   const type = method.type || 'agent'
 
@@ -62,6 +67,7 @@ function AuthMethodCard({
         connectionId={connectionId}
         agentId={agentId}
         projectPath={projectPath}
+        onAuthFlowComplete={onAuthFlowComplete}
       />
     )
   }
@@ -74,6 +80,7 @@ function AuthMethodCard({
         agentId={agentId}
         projectPath={projectPath}
         buttonLabel="Log in"
+        onAuthFlowComplete={onAuthFlowComplete}
       />
     )
   }
@@ -85,45 +92,56 @@ function AuthMethodCard({
       connectionId={connectionId}
       agentId={agentId}
       projectPath={projectPath}
-      buttonLabel="Re-authenticate"
+      buttonLabel="Authenticate"
+      onAuthFlowComplete={onAuthFlowComplete}
     />
   )
 }
 
 /**
  * Auth card for `agent` and `terminal` types.
- * Sends a logout request to clear stale tokens, then terminates and relaunches
- * the agent so it can re-run its authentication flow.
+ * Triggers ACP authenticate with the selected auth method.
+ * Falls back to terminate+relaunch when authenticate is not supported.
  */
 function RelaunchAuthCard({
   method,
   connectionId,
   agentId,
   projectPath,
-  buttonLabel
+  buttonLabel,
+  onAuthFlowComplete
 }: {
   method: AuthMethod
   connectionId: string
   agentId: string
   projectPath: string
   buttonLabel: string
+  onAuthFlowComplete?: () => Promise<void> | void
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { logoutAgent, terminateAgent, launchAgent } = useAgentStore()
+  const { authenticateAgent, terminateAgent, launchAgent } = useAgentStore()
+
+  const isMethodNotSupportedError = (value: unknown): boolean => {
+    if (!(value instanceof Error)) return false
+    return /ACP error -32601/i.test(value.message) || /Method not found/i.test(value.message)
+  }
 
   const handleReauth = async () => {
     setLoading(true)
     setError(null)
     try {
-      // Try to send logout so the agent can clear stale tokens/sessions
       try {
-        await logoutAgent(connectionId)
-      } catch {
-        // Agent may already be in a bad state — continue with terminate
+        await authenticateAgent(connectionId, method.id)
+      } catch (authError) {
+        if (!isMethodNotSupportedError(authError)) {
+          throw authError
+        }
+        // Compatibility fallback for agents that don't implement authenticate.
+        await terminateAgent(connectionId)
+        await launchAgent(agentId, projectPath)
       }
-      await terminateAgent(connectionId)
-      await launchAgent(agentId, projectPath)
+      await onAuthFlowComplete?.()
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -158,12 +176,14 @@ function EnvVarAuthCard({
   method,
   connectionId,
   agentId,
-  projectPath
+  projectPath,
+  onAuthFlowComplete
 }: {
   method: AuthMethod
   connectionId: string
   agentId: string
   projectPath: string
+  onAuthFlowComplete?: () => Promise<void> | void
 }) {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
@@ -175,9 +195,22 @@ function EnvVarAuthCard({
     setLoading(true)
     setError(null)
     try {
-      // Terminate current connection, relaunch with the env var set
+      const currentSettings = await window.api.invoke('settings:get', undefined)
+      const existingApiKeys = currentSettings.agents[agentId]?.apiKeys ?? {}
+      await window.api.invoke('settings:set-agent', {
+        agentId,
+        settings: {
+          apiKeys: {
+            ...existingApiKeys,
+            [method.varName]: value.trim()
+          }
+        }
+      })
+
+      // Persist the key, then relaunch so auto-auth can apply the env_var method.
       await terminateAgent(connectionId)
-      await launchAgent(agentId, projectPath, { [method.varName]: value.trim() })
+      await launchAgent(agentId, projectPath)
+      await onAuthFlowComplete?.()
     } catch (err) {
       setError((err as Error).message)
     } finally {
