@@ -120,7 +120,7 @@ export function AgentAuthenticationStep() {
                       </div>
                     )}
 
-                    {!isChecking && checkError && (
+                    {!isChecking && checkError && !requiresAuthentication && (
                       <p className="text-[11px] text-error mt-2 break-words whitespace-pre-line">{checkError}</p>
                     )}
                   </div>
