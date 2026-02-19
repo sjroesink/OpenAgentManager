@@ -70,8 +70,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     'agent:get-models',
-    async (_event, { agentId, projectPath }: { agentId: string; projectPath: string }) => {
-      return agentManager.getModels(agentId, projectPath)
+    async (_event, { agentId, projectPath, forceRefresh }: { agentId: string; projectPath: string; forceRefresh?: boolean }) => {
+      return agentManager.getModels(agentId, projectPath, forceRefresh)
     }
   )
 

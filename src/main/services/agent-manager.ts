@@ -471,14 +471,18 @@ export class AgentManagerService {
     }
   }
 
-  async getModels(agentId: string, projectPath: string): Promise<AgentModelCatalog> {
+  async getModels(agentId: string, projectPath: string, forceRefresh?: boolean): Promise<AgentModelCatalog> {
     let connectedClient = Array.from(this.connections.values()).find(
       (client) => client.agentId === agentId && client.isRunning
     )
 
-    if (connectedClient) {
+    if (connectedClient && !forceRefresh) {
       const cached = connectedClient.getModelCatalog()
       if (cached.availableModels.length > 0) return cached
+    }
+
+    if (connectedClient && forceRefresh) {
+      connectedClient.clearModelCatalog()
     }
 
     let shouldTerminateAfterProbe = false

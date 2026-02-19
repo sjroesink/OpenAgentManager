@@ -10,6 +10,7 @@ import { AgentIcon } from '../common/AgentIcon'
 import { useRouteStore } from '../../stores/route-store'
 import { useUiStore } from '../../stores/ui-store'
 import vscodeIcon from '../../assets/icons/vscode.svg'
+import type { InstalledAgent } from '@shared/types/agent'
 
 /**
  * Shows worktree hook progress during session creation as a checklist.
@@ -76,7 +77,6 @@ export function MainPanel() {
     getActiveSession,
     activeDraftId,
     draftThread,
-    startDraftThread,
     renameSession,
     forkSession,
     deleteSession
@@ -88,8 +88,10 @@ export function MainPanel() {
   const activeSession = getActiveSession()
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
   const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
+  const [emptyStateDropdownOpen, setEmptyStateDropdownOpen] = useState(false)
   const threadMenuRef = useRef<HTMLDivElement>(null)
   const openInMenuRef = useRef<HTMLDivElement>(null)
+  const emptyStateDropdownRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!threadMenuOpen && !openInMenuOpen) return
     const handleClickOutside = (event: MouseEvent) => {
@@ -114,12 +116,61 @@ export function MainPanel() {
     }
   }, [threadMenuOpen, openInMenuOpen])
 
+  useEffect(() => {
+    if (!emptyStateDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (emptyStateDropdownRef.current && !emptyStateDropdownRef.current.contains(e.target as Node)) {
+        setEmptyStateDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [emptyStateDropdownOpen])
+
   // Draft thread view — workspace + agent configuration before creating a thread
   if (activeDraftId && draftThread) {
     return <DraftThreadView draft={draftThread} />
   }
 
   if (!activeSession) {
+    const handleEmptyStateNewThread = async (agent: InstalledAgent) => {
+      setEmptyStateDropdownOpen(false)
+      const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
+      let workspaceToUse = sorted[0]
+      if (!workspaceToUse) {
+        const path = await window.api.invoke('workspace:select-directory', undefined)
+        if (!path) return
+        try {
+          workspaceToUse = await createWorkspace(path)
+        } catch (err) {
+          console.error('Failed to create workspace:', err)
+          return
+        }
+      }
+      const { startDraftThread, updateDraftThread, commitDraftThread } = useSessionStore.getState()
+      startDraftThread(workspaceToUse.id, workspaceToUse.path)
+      updateDraftThread({
+        agentId: agent.registryId,
+        modelId: workspaceToUse.defaultModelId || null,
+        interactionMode: workspaceToUse.defaultInteractionMode || null,
+        useWorktree: !!workspaceToUse.defaultUseWorktree
+      })
+      commitDraftThread()
+      navigate('home')
+    }
+
+    const handleEmptyStateClick = async () => {
+      if (installedAgents.length === 0) {
+        navigate('agents')
+        return
+      }
+      if (installedAgents.length === 1) {
+        await handleEmptyStateNewThread(installedAgents[0])
+        return
+      }
+      setEmptyStateDropdownOpen((prev) => !prev)
+    }
+
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-text-muted gap-4">
         <svg className="w-16 h-16 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -134,38 +185,38 @@ export function MainPanel() {
           <p className="text-lg font-medium text-text-secondary mb-1">Let's build</p>
           <p className="text-sm">Create a new thread to start working with an agent</p>
         </div>
-        <Button variant="primary" onClick={async () => {
-          const existingDraft = useSessionStore.getState().draftThread
-          if (existingDraft) {
-            useSessionStore.getState().setActiveDraft(existingDraft.id)
-            navigate('new-thread', { draftId: existingDraft.id })
-            return
-          }
-
-          const sorted = [...workspaces].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt))
-          if (sorted.length > 0) {
-            startDraftThread(sorted[0].id, sorted[0].path)
-            const draftId = useSessionStore.getState().draftThread?.id
-            if (draftId) {
-              navigate('new-thread', { draftId })
-            }
-          } else {
-            const path = await window.api.invoke('workspace:select-directory', undefined)
-            if (!path) return
-            try {
-              const ws = await createWorkspace(path)
-              startDraftThread(ws.id, ws.path)
-              const draftId = useSessionStore.getState().draftThread?.id
-              if (draftId) {
-                navigate('new-thread', { draftId })
-              }
-            } catch (err) {
-              console.error('Failed to create workspace:', err)
-            }
-          }
-        }}>
-          New Thread
-        </Button>
+        <div ref={emptyStateDropdownRef} className="relative">
+          <Button variant="primary" onClick={handleEmptyStateClick}>
+            <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Thread
+            {installedAgents.length > 1 && (
+              <svg className="w-3 h-3 ml-2 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </Button>
+          {emptyStateDropdownOpen && (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-surface-2 border border-border rounded-md shadow-xl z-50 min-w-[200px] overflow-hidden">
+              {installedAgents.map((agent) => (
+                <button
+                  key={agent.registryId}
+                  onClick={() => handleEmptyStateNewThread(agent)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-3 text-text-primary transition-colors"
+                >
+                  <AgentIcon agentId={agent.registryId} icon={agent.icon} name={agent.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-medium">{agent.name}</div>
+                    {agent.description && (
+                      <div className="text-xs text-text-muted truncate">{agent.description}</div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     )
   }
