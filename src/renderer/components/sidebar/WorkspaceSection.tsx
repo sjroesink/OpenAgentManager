@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useAgentStore } from '../../stores/agent-store'
@@ -7,6 +8,7 @@ import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
 import { AgentIcon } from '../common/AgentIcon'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { SessionInfo } from '@shared/types/session'
+import type { InstalledAgent } from '@shared/types/agent'
 
 function sortSessionsByCreatedAtDesc(a: SessionInfo, b: SessionInfo): number {
   const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -259,13 +261,16 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   const { activeSessionId, setActiveSession, setActiveDraft, deleteSession, renameSession, generateTitle, forkSession, removeSessionsByWorkspace, draftThread, activeDraftId, startDraftThread, deletingSessionIds } =
     useSessionStore()
   const pendingPermissions = useSessionStore((s) => s.pendingPermissions)
+  const installed = useAgentStore((s) => s.installed)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [generatingTitle, setGeneratingTitle] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
+  const [newThreadDropdownOpen, setNewThreadDropdownOpen] = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
+  const newThreadDropdownRef = useRef<HTMLDivElement>(null)
   const { expandedWorkspaceIds, toggleExpanded, openInVSCode, removeWorkspace } = useWorkspaceStore()
   const navigate = useRouteStore((s) => s.navigate)
 
@@ -326,73 +331,33 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     return count
   }, [sessions, pendingPermissions])
 
-  const handleNewThread = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const existingDraft = useSessionStore.getState().draftThread
-    if (existingDraft) {
-      setActiveDraft(existingDraft.id)
-      navigate('new-thread', { draftId: existingDraft.id })
-      if (!isExpanded) toggleExpanded(workspace.id)
+  const createThreadWithAgent = useCallback((agent: InstalledAgent) => {
+    setNewThreadDropdownOpen(false)
+    const { startDraftThread: start, updateDraftThread: update, commitDraftThread: commit } = useSessionStore.getState()
+    start(workspace.id, workspace.path)
+    update({
+      agentId: agent.registryId,
+      modelId: workspace.defaultModelId || null,
+      interactionMode: workspace.defaultInteractionMode || null,
+      useWorktree: !!workspace.defaultUseWorktree
+    })
+    commit()
+    navigate('home')
+    if (!isExpanded) toggleExpanded(workspace.id)
+  }, [workspace, navigate, isExpanded, toggleExpanded])
+
+  const handleNewThread = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (installed.length === 0) {
+      navigate('agents')
       return
     }
-
-    startDraftThread(workspace.id, workspace.path)
-    const draftId = useSessionStore.getState().draftThread?.id
-    if (draftId) {
-      navigate('new-thread', { draftId })
+    if (installed.length === 1) {
+      createThreadWithAgent(installed[0])
+      return
     }
-
-    // Apply defaults from workspace metadata or config file
-    const { updateDraftThread } = useSessionStore.getState()
-    
-    // First apply from metadata (fast)
-    if (
-      workspace.defaultAgentId ||
-      workspace.defaultModelId ||
-      workspace.defaultInteractionMode ||
-      workspace.defaultUseWorktree !== undefined
-    ) {
-      updateDraftThread({
-        agentId: workspace.defaultAgentId || null,
-        modelId: workspace.defaultModelId || null,
-        interactionMode: workspace.defaultInteractionMode || null,
-        useWorktree: !!workspace.defaultUseWorktree
-      })
-    }
-    const baselineDraft = useSessionStore.getState().draftThread
-
-    // Then try to fetch from config file (might have more up-to-date or shared values)
-    try {
-      const config = await window.api.invoke('workspace:get-config', { workspacePath: workspace.path })
-      if (config?.defaults) {
-        const currentDraft = useSessionStore.getState().draftThread
-        if (!currentDraft || currentDraft.id !== draftId) return
-
-        updateDraftThread({
-          agentId:
-            currentDraft.agentId === baselineDraft?.agentId
-              ? config.defaults.agentId || workspace.defaultAgentId || null
-              : currentDraft.agentId,
-          modelId:
-            currentDraft.modelId === baselineDraft?.modelId
-              ? config.defaults.modelId || workspace.defaultModelId || null
-              : currentDraft.modelId,
-          interactionMode:
-            currentDraft.interactionMode === baselineDraft?.interactionMode
-              ? config.defaults.interactionMode || workspace.defaultInteractionMode || null
-              : currentDraft.interactionMode,
-          useWorktree:
-            currentDraft.useWorktree === baselineDraft?.useWorktree
-              ? config.defaults.useWorktree ?? workspace.defaultUseWorktree ?? false
-              : currentDraft.useWorktree
-        })
-      }
-    } catch (err) {
-      console.error('Failed to load workspace defaults from config:', err)
-    }
-
-    if (!isExpanded) toggleExpanded(workspace.id)
-  }
+    setNewThreadDropdownOpen((prev) => !prev)
+  }, [installed, createThreadWithAgent, navigate])
 
   const startRename = (session: SessionInfo) => {
     setEditingId(session.sessionId)
@@ -478,8 +443,19 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
     return () => document.removeEventListener('click', handleClick)
   }, [contextMenu])
 
+  useEffect(() => {
+    if (!newThreadDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (newThreadDropdownRef.current && !newThreadDropdownRef.current.contains(e.target as Node)) {
+        setNewThreadDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [newThreadDropdownOpen])
+
   return (
-    <div className="mx-2 my-1 overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div className="mx-2 my-1 rounded-lg border border-border bg-surface-1">
       {/* Workspace header */}
       <div
         className={`
@@ -519,34 +495,50 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         {/* Workspace name */}
         <span className="flex-1 font-medium truncate">{workspace.name}</span>
 
-        <div className="flex items-center gap-1 shrink-0">
+        {workspacePendingPermissionCount > 0 && (
           <span
-            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-3 text-text-secondary"
-            title={`${sessions.length} ${sessions.length === 1 ? 'thread' : 'threads'}`}
+            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white shrink-0"
+            title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
           >
-            {sessions.length}
+            {workspacePendingPermissionCount}
           </span>
-          {workspacePendingPermissionCount > 0 && (
-            <span
-              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white"
-              title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
-            >
-              {workspacePendingPermissionCount}
-            </span>
-          )}
-        </div>
+        )}
 
-        <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto">
-          <button
-            onClick={handleNewThread}
-            className="p-1 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
-            title="New Thread"
-            aria-label="New Thread"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <div ref={newThreadDropdownRef}>
+            <button
+              onClick={handleNewThread}
+              className="p-1 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
+              title="New Thread"
+              aria-label="New Thread"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            {newThreadDropdownOpen && createPortal(
+              <div
+                className="fixed bg-surface-2 border border-border rounded-md shadow-xl z-[100] min-w-[160px]"
+                style={(() => {
+                  const rect = newThreadDropdownRef.current?.getBoundingClientRect()
+                  if (!rect) return {}
+                  return { top: rect.bottom + 4, left: rect.left }
+                })()}
+              >
+                {installed.map((agent) => (
+                  <button
+                    key={agent.registryId}
+                    onClick={(e) => { e.stopPropagation(); createThreadWithAgent(agent) }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-surface-3 text-text-primary transition-colors"
+                  >
+                    <AgentIcon agentId={agent.registryId} icon={agent.icon} name={agent.name} size="sm" />
+                    <span className="truncate font-medium">{agent.name}</span>
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -639,16 +631,16 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         defaultUseWorktree={workspace.defaultUseWorktree}
       />
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
-          className="fixed z-50 w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5"
+          className="fixed z-[100] w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
           {contextMenu.type === 'workspace' && (
             <>
               <button
-                onClick={() => { handleNewThread({ stopPropagation: () => {} } as React.MouseEvent); setContextMenu(null) }}
+                onClick={() => { setContextMenu(null); handleNewThread() }}
                 className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
               >
                 New Thread
@@ -767,7 +759,8 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               })()}
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

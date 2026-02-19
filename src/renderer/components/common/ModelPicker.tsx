@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAgentStore } from '@renderer/stores/agent-store'
 
 interface ModelPickerProps {
@@ -23,9 +23,11 @@ export function ModelPicker({
   showError = true
 }: ModelPickerProps) {
   const loadAgentModels = useAgentStore((s) => s.loadAgentModels)
+  const refreshAgentModels = useAgentStore((s) => s.refreshAgentModels)
   const modelsByAgent = useAgentStore((s) => s.modelsByAgent)
   const modelsLoadingByAgent = useAgentStore((s) => s.modelsLoadingByAgent)
   const modelErrorsByAgent = useAgentStore((s) => s.modelErrorsByAgent)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     if (!agentId || !projectPath) return
@@ -39,15 +41,37 @@ export function ModelPicker({
   const modelError = agentId ? modelErrorsByAgent[agentId] : undefined
   const options = useMemo(() => catalog?.availableModels || [], [catalog])
 
+  const handleRefresh = async () => {
+    if (!agentId || !projectPath || refreshing) return
+    setRefreshing(true)
+    try {
+      await refreshAgentModels(agentId, projectPath)
+    } catch (error) {
+      console.error(`Failed to refresh models for ${agentId}:`, error)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   if (!agentId) return null
   if (!isLoading && options.length === 0 && !modelError) return null
 
   return (
     <div>
       {showLabel && (
-        <label className="block text-xs font-medium text-text-secondary mb-1.5">
-          Model
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-medium text-text-secondary">
+            Model
+          </label>
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading || refreshing}
+            className="text-[10px] text-text-muted hover:text-text-primary disabled:opacity-50 transition-colors"
+            title="Refresh model list"
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       )}
       <select
         value={value || ''}
