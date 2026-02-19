@@ -389,6 +389,10 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  clearModelCatalog(): void {
+    this.modelCatalog = { availableModels: [] }
+  }
+
   getModeCatalog(): AgentModeCatalog {
     return {
       currentModeId: this.modeCatalog.currentModeId,
