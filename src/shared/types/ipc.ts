@@ -11,6 +11,7 @@ import type {
   AgentModelCatalog,
   AgentModeCatalog
 } from './agent'
+import type { AgentSkill } from './settings'
 import type {
   SessionInfo,
   PersistedThread,
@@ -137,6 +138,18 @@ export interface IpcChannels {
   'settings:get': { request: void; response: AppSettings }
   'settings:set': { request: Partial<AppSettings>; response: void }
   'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
+
+  // --- Skills ---
+  'skills:list': { request: void; response: AgentSkill[] }
+  'skills:create': {
+    request: { name: string; description: string; prompt: string; agentId?: string }
+    response: AgentSkill
+  }
+  'skills:update': {
+    request: { id: string; name?: string; description?: string; prompt?: string; agentId?: string }
+    response: AgentSkill
+  }
+  'skills:delete': { request: { id: string }; response: void }
 
   // --- Agent CLI Detection ---
   'agent:detect-cli': {

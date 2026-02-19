@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
 
 import { getApiKeyEnvVarsForAgent } from '@shared/config/agent-env'
-import type { AppSettings, McpServerConfig } from '@shared/types/settings'
+import type { AppSettings, McpServerConfig, AgentSkill } from '@shared/types/settings'
 import { DEFAULT_SETTINGS } from '@shared/types/settings'
 
 import { useRouteStore } from '../../stores/route-store'
 import { useAgentStore } from '../../stores/agent-store'
+import { useSkillsStore } from '../../stores/skills-store'
 import { Button } from '../common/Button'
 import { ModelPicker } from '../common/ModelPicker'
 
@@ -35,17 +36,29 @@ export function SettingsView() {
   const navigate = useRouteStore((s) => s.navigate)
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [saving, setSaving] = useState(false)
-  const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp'>('general')
+  const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp' | 'skills'>('general')
   const [modelPickerProjectPath, setModelPickerProjectPath] = useState('')
   const [wslInfo, setWslInfo] = useState<{ available: boolean; distributions: string[] }>({
     available: false,
     distributions: []
   })
   const installedAgents = useAgentStore((s) => s.installed)
+  const { skills, loadSkills, createSkill, updateSkill, deleteSkill } = useSkillsStore()
+
+  // Skills editor state
+  const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null)
+  const [newSkillForm, setNewSkillForm] = useState<{
+    name: string
+    description: string
+    prompt: string
+    agentId: string
+  } | null>(null)
+  const [skillSaving, setSkillSaving] = useState(false)
 
   useEffect(() => {
     window.api.invoke('settings:get', undefined).then(setSettings)
     window.api.invoke('system:wsl-info', undefined).then(setWslInfo).catch(() => {})
+    loadSkills()
     window.api
       .invoke('workspace:list', undefined)
       .then((workspaces) => {
@@ -81,8 +94,46 @@ export function SettingsView() {
     { id: 'general' as const, label: 'General' },
     { id: 'git' as const, label: 'Git & Worktrees' },
     { id: 'agents' as const, label: 'Agents' },
-    { id: 'mcp' as const, label: 'MCP Servers' }
+    { id: 'mcp' as const, label: 'MCP Servers' },
+    { id: 'skills' as const, label: 'Skills' }
   ]
+
+  const handleCreateSkill = async () => {
+    if (!newSkillForm || !newSkillForm.name.trim() || !newSkillForm.prompt.trim()) return
+    setSkillSaving(true)
+    try {
+      await createSkill({
+        name: newSkillForm.name.trim(),
+        description: newSkillForm.description.trim(),
+        prompt: newSkillForm.prompt.trim(),
+        agentId: newSkillForm.agentId || undefined
+      })
+      setNewSkillForm(null)
+    } finally {
+      setSkillSaving(false)
+    }
+  }
+
+  const handleUpdateSkill = async () => {
+    if (!editingSkill) return
+    setSkillSaving(true)
+    try {
+      await updateSkill(editingSkill.id, {
+        name: editingSkill.name,
+        description: editingSkill.description,
+        prompt: editingSkill.prompt,
+        agentId: editingSkill.agentId
+      })
+      setEditingSkill(null)
+    } finally {
+      setSkillSaving(false)
+    }
+  }
+
+  const handleDeleteSkill = async (id: string) => {
+    await deleteSkill(id)
+    if (editingSkill?.id === id) setEditingSkill(null)
+  }
 
   const addMcpServer = () => {
     const id = crypto.randomUUID()
@@ -539,12 +590,185 @@ export function SettingsView() {
                 </div>
               )}
 
-              {/* Save button */}
+              {activeSection === 'skills' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-text-muted">
+                    Skills are reusable prompt templates. Click a skill in the chat input to insert its prompt text instantly.
+                  </p>
+
+                  {!newSkillForm && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setNewSkillForm({ name: '', description: '', prompt: '', agentId: '' })}
+                    >
+                      + New Skill
+                    </Button>
+                  )}
+
+                  {newSkillForm && (
+                    <div className="border border-border rounded-lg p-3 space-y-3 bg-surface-1">
+                      <div className="text-sm font-medium text-text-primary">New Skill</div>
+                      <SettingsField label="Name">
+                        <input
+                          type="text"
+                          value={newSkillForm.name}
+                          onChange={(e) => setNewSkillForm({ ...newSkillForm, name: e.target.value })}
+                          placeholder="e.g., Code Review"
+                          className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                          autoFocus
+                        />
+                      </SettingsField>
+                      <SettingsField label="Description">
+                        <input
+                          type="text"
+                          value={newSkillForm.description}
+                          onChange={(e) => setNewSkillForm({ ...newSkillForm, description: e.target.value })}
+                          placeholder="Brief description shown in the picker"
+                          className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                        />
+                      </SettingsField>
+                      <SettingsField label="Agent" description="Limit to a specific agent (leave empty to show for all)">
+                        <select
+                          value={newSkillForm.agentId}
+                          onChange={(e) => setNewSkillForm({ ...newSkillForm, agentId: e.target.value })}
+                          className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                        >
+                          <option value="">All agents</option>
+                          {installedAgents.map((agent) => (
+                            <option key={agent.registryId} value={agent.registryId}>{agent.name}</option>
+                          ))}
+                        </select>
+                      </SettingsField>
+                      <div>
+                        <label className="text-sm text-text-primary">Prompt</label>
+                        <p className="text-[11px] text-text-muted mt-0.5 mb-1">The prompt text that will be inserted into the chat.</p>
+                        <textarea
+                          value={newSkillForm.prompt}
+                          onChange={(e) => setNewSkillForm({ ...newSkillForm, prompt: e.target.value })}
+                          placeholder="Enter the prompt template..."
+                          rows={4}
+                          className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary w-full resize-y font-mono"
+                        />
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="secondary" onClick={() => setNewSkillForm(null)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="primary"
+                          onClick={handleCreateSkill}
+                          loading={skillSaving}
+                          disabled={!newSkillForm.name.trim() || !newSkillForm.prompt.trim()}
+                        >
+                          Create Skill
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {skills.map((skill) => (
+                    <div key={skill.id} className="border border-border rounded-lg p-3 space-y-3">
+                      {editingSkill?.id === skill.id ? (
+                        <>
+                          <SettingsField label="Name">
+                            <input
+                              type="text"
+                              value={editingSkill.name}
+                              onChange={(e) => setEditingSkill({ ...editingSkill, name: e.target.value })}
+                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                              autoFocus
+                            />
+                          </SettingsField>
+                          <SettingsField label="Description">
+                            <input
+                              type="text"
+                              value={editingSkill.description}
+                              onChange={(e) => setEditingSkill({ ...editingSkill, description: e.target.value })}
+                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary flex-1"
+                            />
+                          </SettingsField>
+                          <SettingsField label="Agent" description="Limit to a specific agent (leave empty to show for all)">
+                            <select
+                              value={editingSkill.agentId || ''}
+                              onChange={(e) => setEditingSkill({ ...editingSkill, agentId: e.target.value || undefined })}
+                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
+                            >
+                              <option value="">All agents</option>
+                              {installedAgents.map((agent) => (
+                                <option key={agent.registryId} value={agent.registryId}>{agent.name}</option>
+                              ))}
+                            </select>
+                          </SettingsField>
+                          <div>
+                            <label className="text-sm text-text-primary">Prompt</label>
+                            <textarea
+                              value={editingSkill.prompt}
+                              onChange={(e) => setEditingSkill({ ...editingSkill, prompt: e.target.value })}
+                              rows={4}
+                              className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary w-full resize-y font-mono mt-1"
+                            />
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="secondary" onClick={() => setEditingSkill(null)}>Cancel</Button>
+                            <Button
+                              variant="primary"
+                              onClick={handleUpdateSkill}
+                              loading={skillSaving}
+                              disabled={!editingSkill.name.trim() || !editingSkill.prompt.trim()}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-sm font-medium text-text-primary">{skill.name}</span>
+                              {skill.agentId && (
+                                <span className="text-[10px] text-text-muted border border-border rounded px-1">
+                                  {installedAgents.find((a) => a.registryId === skill.agentId)?.name ?? skill.agentId}
+                                </span>
+                              )}
+                            </div>
+                            {skill.description && (
+                              <p className="text-xs text-text-secondary mb-1">{skill.description}</p>
+                            )}
+                            <p className="text-[11px] text-text-muted font-mono truncate">{skill.prompt}</p>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => setEditingSkill(skill)}
+                              className="text-xs text-text-muted hover:text-text-primary px-2 py-1 rounded hover:bg-surface-2 transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSkill(skill.id)}
+                              className="text-xs text-text-muted hover:text-error px-2 py-1 rounded hover:bg-surface-2 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {skills.length === 0 && !newSkillForm && (
+                    <p className="text-text-muted text-xs">No skills defined yet. Create one to get started.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Save button — not shown on Skills tab since skills are saved immediately */}
+              {activeSection !== 'skills' && (
               <div className="flex justify-end pt-4 border-t border-border">
                 <Button variant="primary" onClick={handleSave} loading={saving}>
                   Save Settings
                 </Button>
               </div>
+              )}
             </div>
           </div>
         </div>
