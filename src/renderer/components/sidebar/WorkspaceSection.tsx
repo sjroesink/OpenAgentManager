@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useSessionStore } from '../../stores/session-store'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useAgentStore } from '../../stores/agent-store'
@@ -454,7 +455,7 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
   }, [newThreadDropdownOpen])
 
   return (
-    <div className="mx-2 my-1 overflow-hidden rounded-lg border border-border bg-surface-1">
+    <div className="mx-2 my-1 rounded-lg border border-border bg-surface-1">
       {/* Workspace header */}
       <div
         className={`
@@ -494,25 +495,17 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         {/* Workspace name */}
         <span className="flex-1 font-medium truncate">{workspace.name}</span>
 
-        <div className="flex items-center gap-1 shrink-0">
+        {workspacePendingPermissionCount > 0 && (
           <span
-            className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-surface-3 text-text-secondary"
-            title={`${sessions.length} ${sessions.length === 1 ? 'thread' : 'threads'}`}
+            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white shrink-0"
+            title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
           >
-            {sessions.length}
+            {workspacePendingPermissionCount}
           </span>
-          {workspacePendingPermissionCount > 0 && (
-            <span
-              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-error text-white"
-              title={`${workspacePendingPermissionCount} open permission ${workspacePendingPermissionCount === 1 ? 'question' : 'questions'}`}
-            >
-              {workspacePendingPermissionCount}
-            </span>
-          )}
-        </div>
+        )}
 
-        <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto">
-          <div ref={newThreadDropdownRef} className="relative">
+        <div className="flex items-center gap-0.5 shrink-0">
+          <div ref={newThreadDropdownRef}>
             <button
               onClick={handleNewThread}
               className="p-1 rounded hover:bg-surface-3 text-text-muted hover:text-text-primary"
@@ -523,8 +516,15 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
-            {newThreadDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-surface-2 border border-border rounded-md shadow-xl z-50 min-w-[160px] overflow-hidden">
+            {newThreadDropdownOpen && createPortal(
+              <div
+                className="fixed bg-surface-2 border border-border rounded-md shadow-xl z-[100] min-w-[160px]"
+                style={(() => {
+                  const rect = newThreadDropdownRef.current?.getBoundingClientRect()
+                  if (!rect) return {}
+                  return { top: rect.bottom + 4, left: rect.left }
+                })()}
+              >
                 {installed.map((agent) => (
                   <button
                     key={agent.registryId}
@@ -535,7 +535,8 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
                     <span className="truncate font-medium">{agent.name}</span>
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
           <button
@@ -630,9 +631,9 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
         defaultUseWorktree={workspace.defaultUseWorktree}
       />
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
-          className="fixed z-50 w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5"
+          className="fixed z-[100] w-48 rounded-lg bg-surface-2 border border-border shadow-lg shadow-black/40 py-1.5"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -758,7 +759,8 @@ export function WorkspaceSection({ workspace, sessions }: WorkspaceSectionProps)
               })()}
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
