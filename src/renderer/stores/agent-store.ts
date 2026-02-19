@@ -66,6 +66,7 @@ interface AgentState {
   authenticateAgent: (connectionId: string, method: string, credentials?: Record<string, string>) => Promise<void>
   updateConnectionStatus: (connectionId: string, status: AgentConnection['status'], error?: string) => void
   loadAgentModels: (agentId: string, projectPath: string) => Promise<AgentModelCatalog>
+  refreshAgentModels: (agentId: string, projectPath: string) => Promise<AgentModelCatalog>
   loadAgentModes: (agentId: string, projectPath: string) => Promise<AgentModeCatalog>
 
   // Helpers
@@ -229,6 +230,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         modelsByAgent: { ...state.modelsByAgent, [agentId]: catalog },
         modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false },
         modelErrorsByAgent: { ...state.modelErrorsByAgent, [agentId]: '' }
+      }))
+      return catalog
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      const message = sanitizeAgentCheckErrorMessage(rawMessage)
+      set((state) => ({
+        modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false },
+        modelErrorsByAgent: { ...state.modelErrorsByAgent, [agentId]: message }
+      }))
+      throw error
+    }
+  },
+
+  refreshAgentModels: async (agentId, projectPath) => {
+    // Clear cache and force a fresh probe from the agent
+    set((state) => ({
+      modelsByAgent: { ...state.modelsByAgent, [agentId]: { availableModels: [] } },
+      modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: true },
+      modelErrorsByAgent: { ...state.modelErrorsByAgent, [agentId]: '' }
+    }))
+    try {
+      const catalog = await window.api.invoke('agent:get-models', { agentId, projectPath, forceRefresh: true })
+      set((state) => ({
+        modelsByAgent: { ...state.modelsByAgent, [agentId]: catalog },
+        modelsLoadingByAgent: { ...state.modelsLoadingByAgent, [agentId]: false }
       }))
       return catalog
     } catch (error) {

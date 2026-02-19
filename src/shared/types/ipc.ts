@@ -53,7 +53,7 @@ export interface IpcChannels {
   }
   'agent:logout': { request: { connectionId: string }; response: void }
   'agent:list-connections': { request: void; response: AgentConnection[] }
-  'agent:get-models': { request: { agentId: string; projectPath: string }; response: AgentModelCatalog }
+  'agent:get-models': { request: { agentId: string; projectPath: string; forceRefresh?: boolean }; response: AgentModelCatalog }
   'agent:get-modes': { request: { agentId: string; projectPath: string }; response: AgentModeCatalog }
 
   // --- Sessions ---
