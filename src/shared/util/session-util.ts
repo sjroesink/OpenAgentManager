@@ -8,15 +8,14 @@ import { v4 as uuid } from 'uuid'
 export function applyUpdateToMessages(messages: Message[], update: SessionUpdate): Message[] {
   switch (update.type) {
     case 'message_start': {
-      const lastUserIdx = findLastIndex(messages, (m) => m.role === 'user')
       const hasOpenStreamingAgent = messages.some(
-        (m, index) => index > lastUserIdx && m.role === 'agent' && m.isStreaming
+        (m) => m.role === 'agent' && m.isStreaming
       )
       if (update.messageId === 'current' && hasOpenStreamingAgent) {
         return messages
       }
       const hasExplicitMessage = update.messageId !== 'current' && messages.some(
-        (m, index) => index > lastUserIdx && m.id === update.messageId
+        (m) => m.id === update.messageId
       )
       if (hasExplicitMessage) {
         return messages
@@ -163,20 +162,20 @@ function replaceAgentMessage(
   messageId: string,
   transform: (msg: Message) => Message
 ): Message[] {
-  const lastUserIdx = findLastIndex(messages, (m) => m.role === 'user')
-
+  // Search the entire thread for an exact message ID match.
+  // This ensures streaming chunks are always routed to the correct message,
+  // even if the user sends another message before the agent finishes responding.
   let idx = -1
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (i <= lastUserIdx) break
     if (messages[i].id === messageId) {
       idx = i
       break
     }
   }
 
+  // Fall back to the latest streaming agent message.
   if (idx < 0) {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (i <= lastUserIdx) break
       if (messages[i].role === 'agent' && messages[i].isStreaming) {
         idx = i
         break

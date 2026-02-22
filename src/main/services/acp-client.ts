@@ -26,6 +26,7 @@ import type {
   StopReason
 } from '@shared/types/session'
 import { logger } from '../util/logger'
+import { permissionRuleService } from './permission-rule-service'
 
 // ============================================================
 // ACP Client - Wraps a child process agent via ACP protocol
@@ -90,6 +91,9 @@ export class AcpClient extends EventEmitter {
   private remoteToInternal = new Map<string, string>()
   private internalToRemote = new Map<string, string>()
 
+  // Session context: internalSessionId -> { workspaceId }
+  private sessionContext = new Map<string, { workspaceId: string }>()
+
   // Public state
   capabilities: AgentCapabilities | null = null
   authMethods: AuthMethod[] = []
@@ -112,6 +116,11 @@ export class AcpClient extends EventEmitter {
 
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window
+  }
+
+  /** Register session context for permission rule matching */
+  setSessionContext(internalSessionId: string, workspaceId: string): void {
+    this.sessionContext.set(internalSessionId, { workspaceId })
   }
 
   /** Spawn the agent and connect via stdio */
@@ -1129,6 +1138,30 @@ export class AcpClient extends EventEmitter {
         )
       }
 
+      // Check for saved "always" permission rules before prompting the user
+      const ctx = this.sessionContext.get(internalSessionId)
+      if (ctx) {
+        const matchKey = toolCall.kind || toolCall.title || ''
+        if (matchKey) {
+          const rule = permissionRuleService.findMatchingRule(
+            ctx.workspaceId,
+            internalSessionId,
+            matchKey
+          )
+          if (rule) {
+            logger.info(
+              `[${this.agentId}] Auto-resolved permission ${requestId} via rule ${rule.id} (${rule.ruleKind})`
+            )
+            if (id !== undefined) {
+              this.sendResponse(id, {
+                outcome: { outcome: 'selected', optionId: rule.optionId }
+              })
+            }
+            return
+          }
+        }
+      }
+
       const event: PermissionRequestEvent = {
         sessionId: internalSessionId,
         requestId,
@@ -1384,6 +1417,11 @@ export class AcpClient extends EventEmitter {
 
   private isMethodNotFoundError(error: unknown): boolean {
     if (!(error instanceof Error)) return false
-    return /ACP error -32601/i.test(error.message) || /Method not found/i.test(error.message)
+    return (
+      /ACP error -32601/i.test(error.message) ||
+      /Method not found/i.test(error.message) ||
+      /Method not implemented/i.test(error.message)
+    )
   }
 }
+

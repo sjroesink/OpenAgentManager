@@ -149,10 +149,14 @@ export function MainPanel() {
       }
       const { startDraftThread, updateDraftThread, commitDraftThread } = useSessionStore.getState()
       startDraftThread(workspaceToUse.id, workspaceToUse.path)
+      const shouldApplyDefaultInteractionMode =
+        !!workspaceToUse.defaultAgentId && workspaceToUse.defaultAgentId === agent.registryId
       updateDraftThread({
         agentId: agent.registryId,
         modelId: workspaceToUse.defaultModelId || null,
-        interactionMode: workspaceToUse.defaultInteractionMode || null,
+        interactionMode: shouldApplyDefaultInteractionMode
+          ? workspaceToUse.defaultInteractionMode || null
+          : null,
         useWorktree: !!workspaceToUse.defaultUseWorktree
       })
       commitDraftThread()

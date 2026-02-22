@@ -19,6 +19,7 @@ import type {
   SessionUpdateEvent,
   PermissionRequestEvent,
   PermissionResponse,
+  PermissionRule,
   PermissionResolvedEvent,
   InteractionMode,
   WorktreeHookProgressEvent,
@@ -137,6 +138,20 @@ export interface IpcChannels {
   'settings:get': { request: void; response: AppSettings }
   'settings:set': { request: Partial<AppSettings>; response: void }
   'settings:set-agent': { request: { agentId: string; settings: Record<string, unknown> }; response: void }
+
+  // --- Permission Rules ---
+  'permission:save-rule': {
+    request: Omit<PermissionRule, 'id' | 'createdAt'>
+    response: PermissionRule
+  }
+  'permission:list-rules': {
+    request: { workspaceId?: string }
+    response: PermissionRule[]
+  }
+  'permission:remove-rule': {
+    request: { ruleId: string }
+    response: void
+  }
 
   // --- Agent CLI Detection ---
   'agent:detect-cli': {

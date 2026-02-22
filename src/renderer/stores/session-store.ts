@@ -110,6 +110,13 @@ function getPendingPromptText(content?: ContentBlock[]): string | undefined {
   return firstTextBlock?.type === 'text' ? firstTextBlock.text : undefined
 }
 
+function sanitizeSessionErrorMessage(message: string): string {
+  return message
+    .replace(/^Error invoking remote method 'session:[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim()
+}
+
 function enqueuePrompt(sessionId: string, item: { content: ContentBlock[]; mode?: InteractionMode }): void {
   const queue = promptQueueBySession.get(sessionId) ?? []
   queue.push(item)
@@ -353,25 +360,39 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         modelId,
         title
       })
-      // Replace placeholder with actual session
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.sessionId === placeholderId ? session : s
-        ),
-        activeSessionId:
-          state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
-      }))
+      // Replace placeholder with actual session and preserve composer draft input.
+      set((state) => {
+        const nextComposerDrafts = { ...state.composerDrafts }
+        if (nextComposerDrafts[placeholderId]) {
+          nextComposerDrafts[session.sessionId] = nextComposerDrafts[placeholderId]
+          delete nextComposerDrafts[placeholderId]
+        }
+
+        return {
+          sessions: state.sessions.map((s) =>
+            s.sessionId === placeholderId ? session : s
+          ),
+          activeSessionId:
+            state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId,
+          composerDrafts: nextComposerDrafts
+        }
+      })
       return session
     } catch (error) {
       // Remove placeholder on failure
-      set((state) => ({
-        sessions: state.sessions.filter((s) => s.sessionId !== placeholderId),
-        activeSessionId: state.activeSessionId === placeholderId ? null : state.activeSessionId
-      }))
+      set((state) => {
+        const nextComposerDrafts = { ...state.composerDrafts }
+        delete nextComposerDrafts[placeholderId]
+
+        return {
+          sessions: state.sessions.filter((s) => s.sessionId !== placeholderId),
+          activeSessionId: state.activeSessionId === placeholderId ? null : state.activeSessionId,
+          composerDrafts: nextComposerDrafts
+        }
+      })
       throw error
     }
   },
-
   setSessionInteractionMode: async (sessionId, mode) => {
     set((state) => ({
       sessions: state.sessions.map((s) =>
@@ -833,6 +854,15 @@ async function runInitPipeline(
       connection = launched
     }
 
+    // Persist connection on the placeholder so auth prompts can render on init errors.
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === placeholderId
+          ? { ...s, connectionId: connection.connectionId }
+          : s
+      )
+    }))
+
     // Step: Creating session
     updateInitStep(set, placeholderId, 'Creating session', 'running')
     const session = await window.api.invoke('session:create', {
@@ -848,24 +878,32 @@ async function runInitPipeline(
     const pendingQueue = queuedPrompts()
     const pendingPromptText = getPendingPromptText(pendingQueue[0]?.content)
 
-    // Replace placeholder with real session
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.sessionId === placeholderId
-          ? {
-              ...session,
-              // Preserve optimistic user messages entered while initializing.
-              messages: s.messages,
-              pendingPromptQueue: pendingQueue,
-              pendingPromptContent: pendingQueue[0]?.content,
-              pendingPrompt: pendingPromptText
-            }
-          : s
-      ),
-      activeSessionId:
-        state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId
-    }))
+    // Replace placeholder with real session and preserve composer draft input.
+    set((state) => {
+      const nextComposerDrafts = { ...state.composerDrafts }
+      if (nextComposerDrafts[placeholderId]) {
+        nextComposerDrafts[session.sessionId] = nextComposerDrafts[placeholderId]
+        delete nextComposerDrafts[placeholderId]
+      }
 
+      return {
+        sessions: state.sessions.map((s) =>
+          s.sessionId === placeholderId
+            ? {
+                ...session,
+                // Preserve optimistic user messages entered while initializing.
+                messages: s.messages,
+                pendingPromptQueue: pendingQueue,
+                pendingPromptContent: pendingQueue[0]?.content,
+                pendingPrompt: pendingPromptText
+              }
+            : s
+        ),
+        activeSessionId:
+          state.activeSessionId === placeholderId ? session.sessionId : state.activeSessionId,
+        composerDrafts: nextComposerDrafts
+      }
+    })
     if (params.interactionMode) {
       useAcpFeaturesStore.getState().applyUpdate(session.sessionId, {
         type: 'current_mode_update',
@@ -904,20 +942,22 @@ async function runInitPipeline(
       }))
     }
   } catch (error) {
+    const errorMessage = sanitizeSessionErrorMessage((error as Error).message || 'Initialization failed')
+
     // Mark the running step as failed and set error status
     set((state) => ({
       sessions: state.sessions.map((s) => {
         if (s.sessionId !== placeholderId) return s
         const updatedSteps = (s.initProgress || []).map((step) =>
           step.status === 'running'
-            ? { ...step, status: 'failed' as const, detail: (error as Error).message }
+            ? { ...step, status: 'failed' as const, detail: errorMessage }
             : step
         )
         return {
           ...s,
           status: 'error' as const,
           initProgress: updatedSteps,
-          initError: (error as Error).message
+          initError: errorMessage
         }
       })
     }))
@@ -934,16 +974,15 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   switch (update.type) {
     case 'message_start': {
       const normalizedSession = finalizeOpenToolCalls(session)
-      const lastUserIdx = findLastIndex(normalizedSession.messages, (m) => m.role === 'user')
       const hasOpenStreamingAgent = normalizedSession.messages.some(
-        (m, index) => index > lastUserIdx && m.role === 'agent' && m.isStreaming
+        (m) => m.role === 'agent' && m.isStreaming
       )
       if (update.messageId === 'current' && hasOpenStreamingAgent) {
         // Some agents emit duplicate/late message_start("current"). Reuse the active bubble.
         return normalizedSession
       }
       const hasExplicitMessage = update.messageId !== 'current' && normalizedSession.messages.some(
-        (m, index) => index > lastUserIdx && m.id === update.messageId
+        (m) => m.id === update.messageId
       )
       if (hasExplicitMessage) {
         return normalizedSession
@@ -1111,43 +1150,29 @@ function applyUpdate(session: SessionInfo, update: SessionUpdate): SessionInfo {
   }
 }
 
-/** Find the last index in an array matching a predicate. */
-function findLastIndex<T>(arr: T[], pred: (item: T) => boolean): number {
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (pred(arr[i])) return i
-  }
-  return -1
-}
-
 /**
  * Immutably replace (or auto-create) the target agent message in session.messages.
  * `transform` receives the existing message and must return a *new* object.
- *
- * Only reuses an existing message if it appears AFTER the last user message,
- * ensuring agent responses don't get inserted above subsequent user prompts.
  */
 function replaceAgentMessage(
   session: SessionInfo,
   messageId: string,
   transform: (msg: Message) => Message
 ): SessionInfo {
-  const lastUserIdx = findLastIndex(session.messages, (m) => m.role === 'user')
-
-  // Try to find by id first, but only if it's after the last user message
+  // First, always prefer an exact message id match anywhere in the thread.
+  // This prevents stream chunks from being re-routed when the user sends
+  // another message before the prior response finishes.
   let targetIdx = -1
   for (let i = session.messages.length - 1; i >= 0; i--) {
     if (session.messages[i].id === messageId) {
-      if (i > lastUserIdx) {
-        targetIdx = i
-      }
+      targetIdx = i
       break
     }
   }
 
-  // Fall back to last streaming agent message (must be after last user message)
+  // Fall back to the latest streaming agent message.
   if (targetIdx < 0) {
     for (let i = session.messages.length - 1; i >= 0; i--) {
-      if (i <= lastUserIdx) break
       if (session.messages[i].role === 'agent' && session.messages[i].isStreaming) {
         targetIdx = i
         break
@@ -1161,7 +1186,7 @@ function replaceAgentMessage(
     return { ...session, messages }
   }
 
-  // No matching message after last user — create a new one at the end
+  // No matching message — create a new one at the end.
   const newMsg: Message = {
     id: messageId === 'current' ? uuid() : (messageId || uuid()),
     role: 'agent',
