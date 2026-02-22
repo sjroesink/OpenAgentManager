@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import type { SessionInfo } from '@shared/types/session'
 import type { AuthMethod } from '@shared/types/agent'
 import { useAgentStore } from '../../stores/agent-store'
+import { useSessionStore } from '../../stores/session-store'
 import { MessageBubble } from './MessageBubble'
 import { InitializationProgress } from './InitializationProgress'
 import { AuthMethodPrompt } from './AuthMethodPrompt'
@@ -108,6 +109,7 @@ export function ThreadView({ session }: ThreadViewProps) {
               connectionId={session.connectionId}
               agentId={session.agentId}
               projectPath={session.workingDir}
+              sessionId={session.sessionId}
             />
           )}
         </div>
@@ -121,18 +123,37 @@ function ErrorBanner({
   authMethods,
   connectionId,
   agentId,
-  projectPath
+  projectPath,
+  sessionId
 }: {
   error: string
   authMethods?: AuthMethod[]
   connectionId: string
   agentId: string
   projectPath: string
+  sessionId: string
 }) {
   const looksLikeAuthError =
     authMethods &&
     authMethods.length > 0 &&
-    /auth|login|unauthorized|credential|api.key|token|forbidden|401|403/i.test(error)
+    /auth|login|unauthorized|credential|api.?key|token|forbidden|401|403/i.test(error)
+
+  const handleAuthFlowComplete = useCallback(async () => {
+    // Clear the error and reconnect the session after successful re-authentication.
+    // The session-store will update the connectionId and status.
+    useSessionStore.setState((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.sessionId === sessionId
+          ? { ...s, status: 'active' as const, lastError: undefined }
+          : s
+      )
+    }))
+    try {
+      await window.api.invoke('session:ensure-connected', { sessionId })
+    } catch {
+      // If reconnect fails, the session will show an error via IPC events
+    }
+  }, [sessionId])
 
   return (
     <div className="bg-error/10 border border-error/20 rounded-xl px-4 py-3 text-sm">
@@ -151,20 +172,27 @@ function ErrorBanner({
           />
         </svg>
         <div className="flex-1 min-w-0">
-          <p className="text-error font-medium">Error</p>
-          {!looksLikeAuthError && (
-            <p className="text-text-secondary mt-0.5 break-words">{error}</p>
-          )}
-
-          {looksLikeAuthError && (
-            <div className="mt-3 pt-3 border-t border-error/10">
-              <AuthMethodPrompt
-                authMethods={authMethods!}
-                connectionId={connectionId}
-                agentId={agentId}
-                projectPath={projectPath}
-              />
-            </div>
+          {looksLikeAuthError ? (
+            <>
+              <p className="text-error font-medium">Authentication expired</p>
+              <p className="text-text-secondary mt-0.5">
+                Your session token has expired. Re-authenticate to continue.
+              </p>
+              <div className="mt-3 pt-3 border-t border-error/10">
+                <AuthMethodPrompt
+                  authMethods={authMethods!}
+                  connectionId={connectionId}
+                  agentId={agentId}
+                  projectPath={projectPath}
+                  onAuthFlowComplete={handleAuthFlowComplete}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-error font-medium">Error</p>
+              <p className="text-text-secondary mt-0.5 break-words">{error}</p>
+            </>
           )}
         </div>
       </div>

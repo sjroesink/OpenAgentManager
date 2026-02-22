@@ -45,6 +45,7 @@ export class SessionManagerService {
     if (!authResult.isAuthenticated) {
       throw new Error(authResult.error || 'Authentication required')
     }
+    await agentManager.authenticateConnectionForSession(authResult.connection.connectionId)
     return authResult.connection
   }
 
@@ -87,6 +88,7 @@ export class SessionManagerService {
     if (!client) {
       throw new Error(`Agent connection not found: ${request.connectionId}`)
     }
+    await agentManager.authenticateConnectionForSession(request.connectionId)
 
     let workingDir = request.workingDir
     let worktreePath: string | undefined

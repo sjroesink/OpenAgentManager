@@ -1417,6 +1417,11 @@ export class AcpClient extends EventEmitter {
 
   private isMethodNotFoundError(error: unknown): boolean {
     if (!(error instanceof Error)) return false
-    return /ACP error -32601/i.test(error.message) || /Method not found/i.test(error.message)
+    return (
+      /ACP error -32601/i.test(error.message) ||
+      /Method not found/i.test(error.message) ||
+      /Method not implemented/i.test(error.message)
+    )
   }
 }
+
