@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useRouteStore } from '../../stores/route-store'
 import { WorkspaceSettingsDialog } from './WorkspaceSettingsDialog'
+import { ReAuthDialog } from '../thread/ReAuthDialog'
 import { AgentIcon } from '../common/AgentIcon'
 import type { WorkspaceInfo } from '@shared/types/workspace'
 import type { SessionInfo } from '@shared/types/session'
@@ -271,6 +272,7 @@ export function WorkspaceSection({ workspace: workspaceProp, sessions }: Workspa
   const [generatingTitle, setGeneratingTitle] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; type: 'workspace' | 'thread'; sessionId?: string } | null>(null)
   const [newThreadDropdownOpen, setNewThreadDropdownOpen] = useState(false)
+  const [reAuthSessionId, setReAuthSessionId] = useState<string | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const newThreadDropdownRef = useRef<HTMLDivElement>(null)
   const newThreadDropdownMenuRef = useRef<HTMLDivElement>(null)
@@ -730,6 +732,17 @@ export function WorkspaceSection({ workspace: workspaceProp, sessions }: Workspa
                         Open in VS Code
                       </button>
                     )}
+                    {(() => {
+                      const conn = useAgentStore.getState().connections.find((c) => c.connectionId === session?.connectionId)
+                      return conn?.authMethods && conn.authMethods.length > 0 ? (
+                        <button
+                          onClick={() => { if (contextMenu.sessionId) { setReAuthSessionId(contextMenu.sessionId); setContextMenu(null) } }}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                        >
+                          Re-authenticate
+                        </button>
+                      ) : null
+                    })()}
                     {confirmDelete === contextMenu.sessionId ? (
                       (() => {
                         const session = sessions.find(s => s.sessionId === contextMenu.sessionId)
@@ -795,6 +808,25 @@ export function WorkspaceSection({ workspace: workspaceProp, sessions }: Workspa
         </div>,
         document.body
       )}
+
+      {/* Re-authenticate dialog */}
+      {reAuthSessionId && (() => {
+        const session = sessions.find((s) => s.sessionId === reAuthSessionId)
+        const conn = useAgentStore.getState().connections.find((c) => c.connectionId === session?.connectionId)
+        if (!session || !conn?.authMethods?.length) return null
+        return (
+          <ReAuthDialog
+            open
+            onClose={() => setReAuthSessionId(null)}
+            authMethods={conn.authMethods}
+            connectionId={session.connectionId}
+            agentId={session.agentId}
+            agentName={session.agentName}
+            projectPath={session.workingDir}
+            sessionId={session.sessionId}
+          />
+        )
+      })()}
     </div>
   )
 }

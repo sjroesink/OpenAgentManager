@@ -514,6 +514,16 @@ export class AcpClient extends EventEmitter {
     return !!this.capabilities?.sessionCapabilities?.fork
   }
 
+  /** Check if the connected agent supports session/load */
+  get supportsLoad(): boolean {
+    return !!this.capabilities?.loadSession || !!this.capabilities?.sessionCapabilities?.loadSession
+  }
+
+  /** Check if the connected agent supports session/resume (experimental) */
+  get supportsResume(): boolean {
+    return !!this.capabilities?.sessionCapabilities?.resume
+  }
+
   /** Send a prompt to a session (spec: prompt is ContentBlock[]) */
   async prompt(
     sessionId: string,
@@ -566,6 +576,32 @@ export class AcpClient extends EventEmitter {
       cwd,
       mcpServers
     })
+  }
+
+  /** Resume an existing session (experimental: session/resume) */
+  async resumeSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<void> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    await this.sendRequest('session/resume', {
+      sessionId: remoteId,
+      cwd,
+      mcpServers
+    })
+  }
+
+  /** List all available sessions (spec: session/list) */
+  async listSessions(): Promise<Array<{
+    sessionId: string
+    cwd: string
+    lastUpdated?: string
+  }>> {
+    const result = await this.sendRequest('session/list', {}) as {
+      sessions: Array<{
+        sessionId: string
+        cwd: string
+        lastUpdated?: string
+      }>
+    }
+    return result.sessions || []
   }
 
   /** Cancel a running prompt (ACP spec: notification, not request) */
@@ -1424,4 +1460,3 @@ export class AcpClient extends EventEmitter {
     )
   }
 }
-

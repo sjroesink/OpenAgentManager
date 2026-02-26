@@ -144,6 +144,7 @@ export interface AgentCapabilities {
     list?: Record<string, unknown>
     delete?: Record<string, unknown>
     fork?: Record<string, unknown>
+    loadSession?: Record<string, unknown>
     resume?: Record<string, unknown>
   }
 

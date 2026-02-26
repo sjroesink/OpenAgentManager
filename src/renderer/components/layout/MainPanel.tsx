@@ -5,6 +5,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { ThreadView } from '../thread/ThreadView'
 import { PromptInput } from '../thread/PromptInput'
 import { DraftThreadView } from '../thread/DraftThreadView'
+import { ReAuthDialog } from '../thread/ReAuthDialog'
 import { Button } from '../common/Button'
 import { AgentIcon } from '../common/AgentIcon'
 import { useRouteStore } from '../../stores/route-store'
@@ -85,10 +86,12 @@ export function MainPanel() {
   const toggleTerminal = useUiStore((s) => s.toggleTerminal)
   const navigate = useRouteStore((s) => s.navigate)
   const installedAgents = useAgentStore((s) => s.installed)
+  const agentConnections = useAgentStore((s) => s.connections)
   const activeSession = getActiveSession()
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
   const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
   const [emptyStateDropdownOpen, setEmptyStateDropdownOpen] = useState(false)
+  const [reAuthOpen, setReAuthOpen] = useState(false)
   const threadMenuRef = useRef<HTMLDivElement>(null)
   const openInMenuRef = useRef<HTMLDivElement>(null)
   const emptyStateDropdownRef = useRef<HTMLDivElement>(null)
@@ -228,6 +231,8 @@ export function MainPanel() {
   const activeSessionAgentIcon = installedAgents.find(
     (agent) => agent.registryId === activeSession.agentId
   )?.icon
+  const activeConnection = agentConnections.find((c) => c.connectionId === activeSession.connectionId)
+  const authMethods = activeConnection?.authMethods
   const canFork =
     activeSession.status !== 'prompting' &&
     activeSession.status !== 'creating' &&
@@ -378,6 +383,14 @@ export function MainPanel() {
               >
                 Rename
               </button>
+              {authMethods && authMethods.length > 0 && (
+                <button
+                  onClick={() => { setReAuthOpen(true); setThreadMenuOpen(false) }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 text-text-primary"
+                >
+                  Re-authenticate
+                </button>
+              )}
               <div className="border-t border-border my-1" />
               {activeSession.worktreePath ? (
                 <>
@@ -430,6 +443,20 @@ export function MainPanel() {
 
       {/* Prompt input */}
       <PromptInput />
+
+      {/* Re-authenticate dialog */}
+      {authMethods && authMethods.length > 0 && (
+        <ReAuthDialog
+          open={reAuthOpen}
+          onClose={() => setReAuthOpen(false)}
+          authMethods={authMethods}
+          connectionId={activeSession.connectionId}
+          agentId={activeSession.agentId}
+          agentName={activeSession.agentName}
+          projectPath={activeSession.workingDir}
+          sessionId={activeSession.sessionId}
+        />
+      )}
     </div>
   )
 }
