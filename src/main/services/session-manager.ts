@@ -45,6 +45,7 @@ export class SessionManagerService {
     if (!authResult.isAuthenticated) {
       throw new Error(authResult.error || 'Authentication required')
     }
+    await agentManager.authenticateConnectionForSession(authResult.connection.connectionId)
     return authResult.connection
   }
 
@@ -52,6 +53,51 @@ export class SessionManagerService {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('session:hook-progress', event)
     }
+  }
+
+  /**
+   * Restore an ACP session using cascading strategy:
+   * 1. Try session/resume (experimental, fastest - no history replay)
+   * 2. Try session/load (standard - agent streams history back)
+   * 3. Fallback to session/new (no history restoration)
+   */
+  private async restoreAcpSession(
+    client: ReturnType<typeof agentManager.getClient>,
+    sessionId: string,
+    workingDir: string
+  ): Promise<{ method: 'resume' | 'load' | 'new' }> {
+    if (!client) throw new Error('Client is null')
+
+    const mcpServers = this.getEnabledMcpServers()
+
+    // Strategy 1: Try resume (experimental, no history replay needed)
+    if (client.supportsResume) {
+      try {
+        logger.info(`Attempting session/resume for ${sessionId}`)
+        await client.resumeSession(sessionId, workingDir, mcpServers)
+        logger.info(`Successfully resumed session ${sessionId}`)
+        return { method: 'resume' }
+      } catch (error) {
+        logger.warn(`session/resume failed for ${sessionId}:`, error)
+      }
+    }
+
+    // Strategy 2: Try load (standard, agent streams history back)
+    if (client.supportsLoad) {
+      try {
+        logger.info(`Attempting session/load for ${sessionId}`)
+        await client.loadSession(sessionId, workingDir, mcpServers)
+        logger.info(`Successfully loaded session ${sessionId}`)
+        return { method: 'load' }
+      } catch (error) {
+        logger.warn(`session/load failed for ${sessionId}:`, error)
+      }
+    }
+
+    // Strategy 3: Fallback to new session (no history)
+    logger.info(`Falling back to session/new for ${sessionId} (no history restoration)`)
+    await client.newSession(workingDir, mcpServers, sessionId)
+    return { method: 'new' }
   }
 
   private ensureListener(connectionId: string): void {
@@ -87,6 +133,7 @@ export class SessionManagerService {
     if (!client) {
       throw new Error(`Agent connection not found: ${request.connectionId}`)
     }
+    await agentManager.authenticateConnectionForSession(request.connectionId)
 
     let workingDir = request.workingDir
     let worktreePath: string | undefined
@@ -170,6 +217,7 @@ export class SessionManagerService {
 
     this.sessions.set(sessionId, session)
     this.ensureListener(request.connectionId)
+    client.setSessionContext(sessionId, request.workspaceId)
     threadStore.save(session)
     logger.info(`Session created: ${sessionId} on agent ${client.agentName}`)
 
@@ -229,7 +277,8 @@ export class SessionManagerService {
       source.connectionId = connection.connectionId
       this.sessions.set(sourceSessionId, source)
       client = agentManager.getClient(source.connectionId)!
-      await client.newSession(source.workingDir, this.getEnabledMcpServers(), sourceSessionId)
+      await this.restoreAcpSession(client, sourceSessionId, source.workingDir)
+      client.setSessionContext(sourceSessionId, source.workspaceId)
     }
 
     // Verify agent connection
@@ -270,6 +319,7 @@ export class SessionManagerService {
 
     this.sessions.set(newSessionId, session)
     this.ensureListener(source.connectionId)
+    client.setSessionContext(newSessionId, source.workspaceId)
     threadStore.save(session)
     logger.info(`Session forked: ${newSessionId} from ${sourceSessionId}`)
 
@@ -304,8 +354,9 @@ export class SessionManagerService {
       session.connectionId = connection.connectionId
       client = agentManager.getClient(session.connectionId)!
       
-      // Re-create ACP session
-      await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      // Restore ACP session with cascading strategy
+      await this.restoreAcpSession(client, sessionId, session.workingDir)
+      client.setSessionContext(sessionId, session.workspaceId)
     }
 
     this.ensureListener(session.connectionId)
@@ -620,7 +671,7 @@ export class SessionManagerService {
       this.sessions.set(sessionId, session)
 
       const client = agentManager.getClient(session.connectionId)!
-      await client.newSession(session.workingDir, this.getEnabledMcpServers(), sessionId)
+      await this.restoreAcpSession(client, sessionId, session.workingDir)
       if (session.interactionMode) {
         try {
           await client.setMode(sessionId, session.interactionMode)
@@ -629,6 +680,7 @@ export class SessionManagerService {
         }
       }
       this.ensureListener(session.connectionId)
+      client.setSessionContext(sessionId, session.workspaceId)
 
       session.status = 'active'
 

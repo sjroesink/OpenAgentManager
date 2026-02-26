@@ -26,6 +26,7 @@ import type {
   StopReason
 } from '@shared/types/session'
 import { logger } from '../util/logger'
+import { permissionRuleService } from './permission-rule-service'
 
 // ============================================================
 // ACP Client - Wraps a child process agent via ACP protocol
@@ -90,6 +91,9 @@ export class AcpClient extends EventEmitter {
   private remoteToInternal = new Map<string, string>()
   private internalToRemote = new Map<string, string>()
 
+  // Session context: internalSessionId -> { workspaceId }
+  private sessionContext = new Map<string, { workspaceId: string }>()
+
   // Public state
   capabilities: AgentCapabilities | null = null
   authMethods: AuthMethod[] = []
@@ -112,6 +116,11 @@ export class AcpClient extends EventEmitter {
 
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window
+  }
+
+  /** Register session context for permission rule matching */
+  setSessionContext(internalSessionId: string, workspaceId: string): void {
+    this.sessionContext.set(internalSessionId, { workspaceId })
   }
 
   /** Spawn the agent and connect via stdio */
@@ -505,6 +514,16 @@ export class AcpClient extends EventEmitter {
     return !!this.capabilities?.sessionCapabilities?.fork
   }
 
+  /** Check if the connected agent supports session/load */
+  get supportsLoad(): boolean {
+    return !!this.capabilities?.loadSession || !!this.capabilities?.sessionCapabilities?.loadSession
+  }
+
+  /** Check if the connected agent supports session/resume (experimental) */
+  get supportsResume(): boolean {
+    return !!this.capabilities?.sessionCapabilities?.resume
+  }
+
   /** Send a prompt to a session (spec: prompt is ContentBlock[]) */
   async prompt(
     sessionId: string,
@@ -557,6 +576,32 @@ export class AcpClient extends EventEmitter {
       cwd,
       mcpServers
     })
+  }
+
+  /** Resume an existing session (experimental: session/resume) */
+  async resumeSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<void> {
+    const remoteId = this.internalToRemote.get(sessionId) || sessionId
+    await this.sendRequest('session/resume', {
+      sessionId: remoteId,
+      cwd,
+      mcpServers
+    })
+  }
+
+  /** List all available sessions (spec: session/list) */
+  async listSessions(): Promise<Array<{
+    sessionId: string
+    cwd: string
+    lastUpdated?: string
+  }>> {
+    const result = await this.sendRequest('session/list', {}) as {
+      sessions: Array<{
+        sessionId: string
+        cwd: string
+        lastUpdated?: string
+      }>
+    }
+    return result.sessions || []
   }
 
   /** Cancel a running prompt (ACP spec: notification, not request) */
@@ -1129,6 +1174,30 @@ export class AcpClient extends EventEmitter {
         )
       }
 
+      // Check for saved "always" permission rules before prompting the user
+      const ctx = this.sessionContext.get(internalSessionId)
+      if (ctx) {
+        const matchKey = toolCall.kind || toolCall.title || ''
+        if (matchKey) {
+          const rule = permissionRuleService.findMatchingRule(
+            ctx.workspaceId,
+            internalSessionId,
+            matchKey
+          )
+          if (rule) {
+            logger.info(
+              `[${this.agentId}] Auto-resolved permission ${requestId} via rule ${rule.id} (${rule.ruleKind})`
+            )
+            if (id !== undefined) {
+              this.sendResponse(id, {
+                outcome: { outcome: 'selected', optionId: rule.optionId }
+              })
+            }
+            return
+          }
+        }
+      }
+
       const event: PermissionRequestEvent = {
         sessionId: internalSessionId,
         requestId,
@@ -1384,6 +1453,10 @@ export class AcpClient extends EventEmitter {
 
   private isMethodNotFoundError(error: unknown): boolean {
     if (!(error instanceof Error)) return false
-    return /ACP error -32601/i.test(error.message) || /Method not found/i.test(error.message)
+    return (
+      /ACP error -32601/i.test(error.message) ||
+      /Method not found/i.test(error.message) ||
+      /Method not implemented/i.test(error.message)
+    )
   }
 }

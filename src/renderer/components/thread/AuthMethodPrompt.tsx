@@ -122,9 +122,17 @@ function RelaunchAuthCard({
   const [error, setError] = useState<string | null>(null)
   const { authenticateAgent, terminateAgent, launchAgent } = useAgentStore()
 
-  const isMethodNotSupportedError = (value: unknown): boolean => {
+  const shouldFallbackToRelaunch = (value: unknown): boolean => {
     if (!(value instanceof Error)) return false
-    return /ACP error -32601/i.test(value.message) || /Method not found/i.test(value.message)
+    // Fall back to terminate+relaunch when authenticate is not supported
+    // OR when the error is auth-related (e.g. expired OAuth token) —
+    // the agent needs a fresh process to re-trigger its auth flow.
+    return (
+      /ACP error -32601/i.test(value.message) ||
+      /Method not found/i.test(value.message) ||
+      /Method not implemented/i.test(value.message) ||
+      /auth|unauthorized|token|forbidden|401|403|expired/i.test(value.message)
+    )
   }
 
   const handleReauth = async () => {
@@ -134,10 +142,10 @@ function RelaunchAuthCard({
       try {
         await authenticateAgent(connectionId, method.id)
       } catch (authError) {
-        if (!isMethodNotSupportedError(authError)) {
+        if (!shouldFallbackToRelaunch(authError)) {
           throw authError
         }
-        // Compatibility fallback for agents that don't implement authenticate.
+        // Relaunch the agent so it can re-trigger its auth flow (e.g. OAuth).
         await terminateAgent(connectionId)
         await launchAgent(agentId, projectPath)
       }
@@ -261,3 +269,4 @@ function EnvVarAuthCard({
     </div>
   )
 }
+

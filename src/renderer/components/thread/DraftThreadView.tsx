@@ -13,6 +13,15 @@ interface DraftThreadViewProps {
   draft: DraftThread
 }
 
+function resolveDefaultInteractionMode(
+  defaultInteractionMode: string | undefined,
+  defaultAgentId: string | null,
+  selectedAgentId: string | null
+): string | null {
+  if (!defaultInteractionMode || !defaultAgentId) return null
+  return selectedAgentId === defaultAgentId ? defaultInteractionMode : null
+}
+
 export function DraftThreadView({ draft }: DraftThreadViewProps) {
   const { updateDraftThread, commitDraftThread, discardDraftThread } = useSessionStore()
   const { workspaces, createWorkspace } = useWorkspaceStore()
@@ -127,10 +136,15 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             ws.defaultInteractionMode ||
             ws.defaultUseWorktree !== undefined
           ) {
+            const defaultAgentId = ws.defaultAgentId || null
             updateDraftThread({
-              agentId: ws.defaultAgentId || null,
+              agentId: defaultAgentId,
               modelId: ws.defaultModelId || null,
-              interactionMode: ws.defaultInteractionMode || null,
+              interactionMode: resolveDefaultInteractionMode(
+                ws.defaultInteractionMode,
+                defaultAgentId,
+                defaultAgentId
+              ),
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -144,10 +158,16 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               const currentDraft = useSessionStore.getState().draftThread
               if (!currentDraft || currentDraft.id !== draftId) return
 
+              const effectiveDefaultAgentId = config.defaults.agentId || ws.defaultAgentId || null
+              const nextAgentId =
+                currentDraft.agentId === baselineDraft?.agentId
+                  ? effectiveDefaultAgentId
+                  : currentDraft.agentId
+
               updateDraftThread({
                 agentId:
                   currentDraft.agentId === baselineDraft?.agentId
-                    ? config.defaults.agentId || ws.defaultAgentId || null
+                    ? effectiveDefaultAgentId
                     : currentDraft.agentId,
                 modelId:
                   currentDraft.modelId === baselineDraft?.modelId
@@ -155,7 +175,11 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
                     : currentDraft.modelId,
                 interactionMode:
                   currentDraft.interactionMode === baselineDraft?.interactionMode
-                    ? config.defaults.interactionMode || ws.defaultInteractionMode || null
+                    ? resolveDefaultInteractionMode(
+                      config.defaults.interactionMode || ws.defaultInteractionMode,
+                      effectiveDefaultAgentId,
+                      nextAgentId
+                    )
                     : currentDraft.interactionMode,
                 useWorktree:
                   currentDraft.useWorktree === baselineDraft?.useWorktree
@@ -181,10 +205,15 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
             ws.defaultInteractionMode ||
             ws.defaultUseWorktree !== undefined
           ) {
+            const defaultAgentId = ws.defaultAgentId || null
             updateDraftThread({
-              agentId: ws.defaultAgentId || null,
+              agentId: defaultAgentId,
               modelId: ws.defaultModelId || null,
-              interactionMode: ws.defaultInteractionMode || null,
+              interactionMode: resolveDefaultInteractionMode(
+                ws.defaultInteractionMode,
+                defaultAgentId,
+                defaultAgentId
+              ),
               useWorktree: !!ws.defaultUseWorktree
             })
           }
@@ -198,10 +227,16 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
               const currentDraft = useSessionStore.getState().draftThread
               if (!currentDraft || currentDraft.id !== draftId) return
 
+              const effectiveDefaultAgentId = config.defaults.agentId || ws.defaultAgentId || null
+              const nextAgentId =
+                currentDraft.agentId === baselineDraft?.agentId
+                  ? effectiveDefaultAgentId
+                  : currentDraft.agentId
+
               updateDraftThread({
                 agentId:
                   currentDraft.agentId === baselineDraft?.agentId
-                    ? config.defaults.agentId || ws.defaultAgentId || null
+                    ? effectiveDefaultAgentId
                     : currentDraft.agentId,
                 modelId:
                   currentDraft.modelId === baselineDraft?.modelId
@@ -209,7 +244,11 @@ export function DraftThreadView({ draft }: DraftThreadViewProps) {
                     : currentDraft.modelId,
                 interactionMode:
                   currentDraft.interactionMode === baselineDraft?.interactionMode
-                    ? config.defaults.interactionMode || ws.defaultInteractionMode || null
+                    ? resolveDefaultInteractionMode(
+                      config.defaults.interactionMode || ws.defaultInteractionMode,
+                      effectiveDefaultAgentId,
+                      nextAgentId
+                    )
                     : currentDraft.interactionMode,
                 useWorktree:
                   currentDraft.useWorktree === baselineDraft?.useWorktree

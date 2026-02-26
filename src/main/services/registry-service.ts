@@ -81,17 +81,29 @@ export class RegistryService {
       return null
     }
 
-    const response = await fetch(iconUrl)
-    if (!response.ok) {
-      throw new Error(`Icon fetch failed: ${response.status} ${response.statusText}`)
-    }
+    try {
+      const response = await fetch(iconUrl)
+      if (!response.ok) {
+        logger.warn('Registry icon fetch returned non-OK response', {
+          agentId,
+          iconUrl,
+          status: response.status,
+          statusText: response.statusText
+        })
+        return null
+      }
 
-    const svg = await response.text()
-    if (!svg.includes('<svg')) {
+      const svg = await response.text()
+      if (!svg.includes('<svg')) {
+        logger.warn('Registry icon response was not valid SVG', { agentId, iconUrl })
+        return null
+      }
+
+      return svg
+    } catch (error) {
+      logger.warn('Failed to fetch registry icon SVG', { agentId, iconUrl, error })
       return null
     }
-
-    return svg
   }
 
   private loadFromDisk(): CachedRegistry | null {

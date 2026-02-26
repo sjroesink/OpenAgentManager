@@ -381,6 +381,53 @@ export class AgentManagerService {
     }
   }
 
+  /**
+   * Ensure a connection runs an explicit authentication flow before chat/session creation.
+   * This is stricter than checkAuthentication() probe logic.
+   */
+  async authenticateConnectionForSession(connectionId: string): Promise<void> {
+    const client = this.connections.get(connectionId)
+    if (!client) throw new Error(`Connection not found: ${connectionId}`)
+
+    const authMethods = client.authMethods || []
+    if (authMethods.length === 0) return
+
+    const agentSettings = settingsService.getAgentSettings(client.agentId)
+    const envVarMethodWithKey = authMethods.find(
+      (method) =>
+        method.type === 'env_var' &&
+        method.varName &&
+        !!this.resolveMappedApiKeyValue(client.agentId, agentSettings, method.varName)
+    )
+    const selectedMethod = envVarMethodWithKey || authMethods.find((method) => method.type === 'env_var') || authMethods[0]
+
+    if (!selectedMethod) return
+
+    // Proactively authenticate only env_var methods.
+    // For agent/terminal methods, defer auth to user-triggered flow in the renderer.
+    if (selectedMethod.type !== 'env_var') {
+      return
+    }
+
+    try {
+      if (selectedMethod.type === 'env_var' && selectedMethod.varName) {
+        const apiKey = this.resolveMappedApiKeyValue(client.agentId, agentSettings, selectedMethod.varName)
+        if (!apiKey) {
+          throw new Error(`Authentication required: missing ${selectedMethod.varName}`)
+        }
+        logger.info(`Authenticating ${client.agentId} with ${selectedMethod.id} (${selectedMethod.varName})`)
+        await client.authenticate(selectedMethod.id, { [selectedMethod.varName]: apiKey })
+      } else {
+        logger.info(`Authenticating ${client.agentId} with ${selectedMethod.id}`)
+        await client.authenticate(selectedMethod.id)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`Authentication failed for ${client.agentId} using ${selectedMethod.id}:`, error)
+      throw new Error(`Authentication required: ${message}`)
+    }
+  }
+
   async logout(connectionId: string): Promise<void> {
     const client = this.connections.get(connectionId)
     if (!client) throw new Error(`Connection not found: ${connectionId}`)

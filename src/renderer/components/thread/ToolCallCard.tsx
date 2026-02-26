@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { PermissionRequestEvent, PermissionOption, ToolCallInfo } from '@shared/types/session'
 import { toRelativeDisplayPath } from '@renderer/lib/path-display'
+import { useSessionStore } from '../../stores/session-store'
 import { Badge } from '../common/Badge'
 
 function formatInput(input: string): string {
@@ -96,6 +97,42 @@ function PermissionInlinePanel({
   onPermissionRespond: (requestId: string, optionId: string) => void
 }) {
   const permissionSummary = getPermissionInputSummary(permissionRequest.toolCall.rawInput)
+  const [scopePickerFor, setScopePickerFor] = useState<PermissionOption | null>(null)
+  const sessions = useSessionStore((s) => s.sessions)
+  const session = sessions.find((s) => s.sessionId === permissionRequest.sessionId)
+
+  const handleOptionClick = (option: PermissionOption) => {
+    if (option.kind === 'allow_always' || option.kind === 'reject_always') {
+      setScopePickerFor(option)
+    } else {
+      onPermissionRespond(permissionRequest.requestId, option.optionId)
+    }
+  }
+
+  const handleScopeSelect = async (scope: 'thread' | 'workspace') => {
+    if (!scopePickerFor) return
+
+    const matchKey =
+      permissionRequest.toolCall.kind || permissionRequest.toolCall.title || ''
+
+    if (matchKey && session) {
+      try {
+        await window.api.invoke('permission:save-rule', {
+          optionId: scopePickerFor.optionId,
+          ruleKind: scopePickerFor.kind as 'allow_always' | 'reject_always',
+          matchKey,
+          scope,
+          threadId: scope === 'thread' ? permissionRequest.sessionId : undefined,
+          workspaceId: session.workspaceId
+        })
+      } catch (err) {
+        console.error('[ToolCallCard] Failed to save permission rule:', err)
+      }
+    }
+
+    onPermissionRespond(permissionRequest.requestId, scopePickerFor.optionId)
+    setScopePickerFor(null)
+  }
 
   return (
     <div className="border-t border-border px-3 py-2">
@@ -125,22 +162,50 @@ function PermissionInlinePanel({
             </div>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {permissionRequest.options.map((option) => (
-            <button
-              key={option.optionId}
-              onClick={() => onPermissionRespond(permissionRequest.requestId, option.optionId)}
-              className={`
-                px-2 py-1 rounded text-xs border transition-colors
-                ${optionVariant(option) === 'primary' ? 'bg-accent text-accent-text border-accent hover:bg-accent-hover' : ''}
-                ${optionVariant(option) === 'secondary' ? 'bg-surface-2 text-text-primary border-border hover:bg-surface-3' : ''}
-                ${optionVariant(option) === 'ghost' ? 'bg-transparent text-text-secondary border-border hover:bg-surface-2' : ''}
-              `}
-            >
-              {option.name}
-            </button>
-          ))}
-        </div>
+        {scopePickerFor ? (
+          <div className="mt-2 space-y-1.5">
+            <div className="text-xs text-text-secondary">
+              Apply &quot;{scopePickerFor.name}&quot; to:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setScopePickerFor(null)}
+                className="px-2 py-1 rounded text-xs border transition-colors bg-transparent text-text-secondary border-border hover:bg-surface-2"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => handleScopeSelect('thread')}
+                className="px-2 py-1 rounded text-xs border transition-colors bg-surface-2 text-text-primary border-border hover:bg-surface-3"
+              >
+                This thread
+              </button>
+              <button
+                onClick={() => handleScopeSelect('workspace')}
+                className="px-2 py-1 rounded text-xs border transition-colors bg-accent text-accent-text border-accent hover:bg-accent-hover"
+              >
+                This workspace
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {permissionRequest.options.map((option) => (
+              <button
+                key={option.optionId}
+                onClick={() => handleOptionClick(option)}
+                className={`
+                  px-2 py-1 rounded text-xs border transition-colors
+                  ${optionVariant(option) === 'primary' ? 'bg-accent text-accent-text border-accent hover:bg-accent-hover' : ''}
+                  ${optionVariant(option) === 'secondary' ? 'bg-surface-2 text-text-primary border-border hover:bg-surface-3' : ''}
+                  ${optionVariant(option) === 'ghost' ? 'bg-transparent text-text-secondary border-border hover:bg-surface-2' : ''}
+                `}
+              >
+                {option.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
