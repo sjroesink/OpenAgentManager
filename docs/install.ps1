@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # OpenAgentManager installer for Windows
-# Usage: irm https://sjroesink.github.io/OpenAgentManager/install.ps1 | iex
+# Usage: irm https://openagentmanager.roesink.dev/install.ps1 | iex
 # Optional channel: $env:OAM_CHANNEL='preview'; irm ... | iex
 
 $ErrorActionPreference = "Stop"

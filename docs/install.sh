@@ -1,8 +1,8 @@
 #!/bin/sh
 # OpenAgentManager installer for macOS and Linux
-# Usage: curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | sh
+# Usage: curl -fsSL https://openagentmanager.roesink.dev/install.sh | sh
 # Optional preview channel:
-#   curl -fsSL https://sjroesink.github.io/OpenAgentManager/install.sh | env OAM_CHANNEL=preview sh
+#   curl -fsSL https://openagentmanager.roesink.dev/install.sh | env OAM_CHANNEL=preview sh
 
 set -e
 
