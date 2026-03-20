@@ -39,6 +39,7 @@ export function SettingsView() {
   const [activeSection, setActiveSection] = useState<'general' | 'git' | 'agents' | 'mcp' | 'permissions'>('general')
   const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([])
   const [modelPickerProjectPath, setModelPickerProjectPath] = useState('')
+  const [checkingForUpdate, setCheckingForUpdate] = useState(false)
   const [wslInfo, setWslInfo] = useState<{ available: boolean; distributions: string[] }>({
     available: false,
     distributions: []
@@ -288,6 +289,40 @@ export function SettingsView() {
                       showLabel={false}
                       className="bg-surface-2 border border-border rounded px-2 py-1 text-sm text-text-primary"
                     />
+                  </SettingsField>
+
+                  <SettingsField
+                    label="Auto-Update"
+                    description="Automatically download and install updates when available"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={settings.general.autoUpdate || false}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          general: { ...settings.general, autoUpdate: e.target.checked }
+                        })
+                      }
+                    />
+                  </SettingsField>
+
+                  <SettingsField
+                    label="Check for Updates"
+                    description="Manually check if a newer version is available"
+                  >
+                    <button
+                      onClick={() => {
+                        setCheckingForUpdate(true)
+                        window.api.invoke('updater:check', undefined).finally(() => {
+                          setTimeout(() => setCheckingForUpdate(false), 3000)
+                        })
+                      }}
+                      disabled={checkingForUpdate}
+                      className="px-3 py-1 rounded bg-surface-2 border border-border text-sm text-text-primary hover:bg-surface-3 transition-colors disabled:opacity-50"
+                    >
+                      {checkingForUpdate ? 'Checking...' : 'Check Now'}
+                    </button>
                   </SettingsField>
                 </>
               )}

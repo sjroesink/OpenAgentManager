@@ -22,6 +22,8 @@ export interface GeneralSettings {
   terminalShell?: string
   /** Whether the user has completed (or skipped) the onboarding wizard */
   completedOnboarding?: boolean
+  /** Automatically download and install updates */
+  autoUpdate?: boolean
 }
 
 export interface GitSettings {

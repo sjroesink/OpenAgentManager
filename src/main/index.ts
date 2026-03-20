@@ -8,6 +8,7 @@ import { threadStore } from './services/thread-store'
 import { folderThreadStore } from './services/folder-thread-store'
 import { workspaceService } from './services/workspace-service'
 import { startInternalApi, stopInternalApi } from './mcp/internal-api'
+import { initAutoUpdater, stopAutoUpdater } from './services/auto-updater'
 import { logger } from './util/logger'
 
 // Prevent multiple instances
@@ -73,6 +74,9 @@ app.whenReady().then(() => {
   // Start internal HTTP API for MCP bridge
   startInternalApi()
 
+  // Initialize auto-updater (checks for updates after 5s, then every 4h)
+  initAutoUpdater()
+
   logger.info('AgentManager ready')
 })
 
@@ -88,4 +92,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   terminalService.killAll()
   stopInternalApi()
+  stopAutoUpdater()
 })

@@ -15,6 +15,11 @@ files:
 extraMetadata:
   main: ./out/main/index.js
 
+publish:
+  provider: github
+  owner: sjroesink
+  repo: OpenAgentManager
+
 asar: true
 compression: maximum
 npmRebuild: false

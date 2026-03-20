@@ -9,6 +9,7 @@ import { SettingsView } from '../settings/SettingsView'
 import { AgentBrowserView } from '../registry/AgentBrowserView'
 import { ThreadsOverview } from '../threads/ThreadsOverview'
 import { OnboardingView } from '../onboarding/OnboardingView'
+import { UpdateBanner } from '../common/UpdateBanner'
 import { useUiStore } from '../../stores/ui-store'
 import { useRouteStore } from '../../stores/route-store'
 
@@ -28,6 +29,9 @@ export function AppLayout() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
+      {/* Update notification banner */}
+      <UpdateBanner />
+
       {/* Top toolbar */}
       <Toolbar />
 

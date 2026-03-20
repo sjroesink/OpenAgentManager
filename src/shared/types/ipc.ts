@@ -166,6 +166,11 @@ export interface IpcChannels {
     response: { available: boolean; distributions: string[] }
   }
 
+  // --- Auto-Updater ---
+  'updater:check': { request: void; response: void }
+  'updater:download': { request: void; response: void }
+  'updater:install': { request: void; response: void }
+
   // --- Window ---
   'window:reload': { request: void; response: void }
   'window:toggle-devtools': { request: void; response: void }
@@ -188,6 +193,11 @@ export interface IpcEvents {
   'session:hook-progress': WorktreeHookProgressEvent
   'terminal:data': { terminalId: string; data: string }
   'agent:status-change': { connectionId: string; status: AgentConnection['status']; error?: string }
+  'updater:update-available': { version: string; releaseNotes?: string }
+  'updater:update-not-available': Record<string, never>
+  'updater:download-progress': { percent: number; transferred: number; total: number }
+  'updater:update-downloaded': { version: string }
+  'updater:error': { message: string }
 }
 
 // ============================================================
